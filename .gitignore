@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.jax_cache/
+runs/
+wandb/
+
+# generated MJX model + terrain arenas (build_model.py / build_terrain.py outputs)
+assets/wojtek_description/mujoco/wojtek_mjx.xml
+assets/wojtek_description/mujoco/scene_mjx.xml
+assets/wojtek_description/mujoco/scene_terrain*.xml
+assets/wojtek_description/mujoco/terrain*_hfield.bin
+assets/wojtek_description/mujoco/terrain*_spec.json
+assets/wojtek_description/mujoco/terrain*_lookup.npz
+train.log
