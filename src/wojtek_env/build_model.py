@@ -16,7 +16,7 @@ import argparse
 import mujoco
 import numpy as np
 
-from wojtek_ued import paths
+from wojtek_env import paths
 
 # The real foot is a half-disc rubber pad bolted to the sixth-link tip, its
 # arc centered on the fifth/sixth closure pivot, so a pivot-centered sphere

@@ -15,7 +15,7 @@ import time
 import mujoco
 import numpy as np
 
-from wojtek_ued import paths
+from wojtek_env import paths
 
 
 def check_static() -> bool:
@@ -79,7 +79,7 @@ def check_gpu(nenv: int, nsteps: int, backend: str = "jax") -> bool:
 
     from mujoco_playground import registry
 
-    from wojtek_ued.base import make_data_fn
+    from wojtek_env.base import make_data_fn
 
     m = mujoco.MjModel.from_xml_path(str(paths.SCENE_XML))
     wojtek_model = mjx.put_model(m, impl=backend)
@@ -119,7 +119,7 @@ def main() -> None:
         _bench(mjx, jax, jp, mjx.put_model(m, impl="jax"), m.key("home").qpos, 2, 5)
         print("mjx: compiles and steps")
     if ok and args.gpu:
-        from wojtek_ued.base import resolve_backend
+        from wojtek_env.base import resolve_backend
 
         ok = check_gpu(args.nenv, args.nsteps, resolve_backend(args.backend))
     print("GATE PASS" if ok else "GATE FAIL")

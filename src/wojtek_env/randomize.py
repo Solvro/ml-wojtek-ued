@@ -23,7 +23,7 @@ import jax
 import jax.numpy as jnp
 import mujoco
 
-from wojtek_ued import paths
+from wojtek_env import paths
 
 # Defaults for each dr_cfg field. The conf/config.yaml `dr:` block mirrors
 # this shape; missing keys fall back to these values.

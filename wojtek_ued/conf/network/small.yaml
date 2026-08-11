@@ -1,3 +1,0 @@
-# Deploy-friendly actor: fewer weights for the on-robot inference loop.
-policy_hidden_layer_sizes: [128, 128]
-value_hidden_layer_sizes: [256, 256]

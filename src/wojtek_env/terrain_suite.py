@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from wojtek_ued import terrain
+from wojtek_env import terrain
 
 # Arena identity. Seed 0 and sorted columns (`ordered=True`), so the course is
 # reproducible from the row table alone.

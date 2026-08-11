@@ -18,7 +18,7 @@ import jax
 import jax.numpy as jp
 import numpy as np
 
-from wojtek_ued import paths, terrain
+from wojtek_env import paths, terrain
 
 
 def bilinear_sample(grid, x_min, cell_x, y_min, cell_y, x, y):

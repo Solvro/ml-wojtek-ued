@@ -15,9 +15,9 @@ from ml_collections import config_dict
 from mujoco import mjx
 from mujoco_playground._src import mjx_env
 
-from wojtek_ued import height_scan, paths
-from wojtek_ued import terrain_env
-from wojtek_ued.base import ABDUCTION_ACTUATORS, KNEE_ACTUATORS, WojtekEnv
+from wojtek_env import height_scan, paths
+from wojtek_env import terrain_env
+from wojtek_env.base import ABDUCTION_ACTUATORS, KNEE_ACTUATORS, WojtekEnv
 
 # 3 gyro + 3 gravity + 12 qpos + 12 qvel + 12 last_act + 4 cmd + 8 phase
 OBS_SIZE = 54
@@ -731,7 +731,7 @@ class WojtekJoystick(WojtekEnv):
         # Mirror maps for the symmetry augmentation, assembled once from
         # the resolved obs lists (so the include filter is respected).
         if self._config.symmetry.enable:
-            from wojtek_ued import symmetry
+            from wojtek_env import symmetry
 
             act_perm, act_sign = symmetry.joint_mirror()
             self._act_perm = jp.array(act_perm)

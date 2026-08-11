@@ -1,6 +1,6 @@
 """Build a terrain arena and its scene from a seed.
 
-Generates the arena with wojtek_ued.terrain and writes, next to the robot XML
+Generates the arena with wojtek_env.terrain and writes, next to the robot XML
 (names shown for the default `train` arena; see paths.terrain_paths):
   - scene_terrain.xml   -- mirrors build_model.SCENE_XML_TEXT, but the flat
     floor plane is replaced by the heightfield geom plus the terrain boxes,
@@ -13,7 +13,7 @@ Generates the arena with wojtek_ued.terrain and writes, next to the robot XML
   - terrain_lookup.npz  -- ground-truth height grid + extents/resolution
 
 `--arena eval` writes a separate file set holding the fixed measurement course
-(wojtek_ued.terrain_suite): its rows, sorted columns and 0.40 m pads. Its
+(wojtek_env.terrain_suite): its rows, sorted columns and 0.40 m pads. Its
 row/pad settings come from the suite, so `--rows`, `--ordered`, `--pad-radius`,
 `--stair-tread`, `--type-caps` and `--flat-row` do not apply there.
 `--arena eval_deep` is the suite's second course: the same rows on real
@@ -48,7 +48,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
-from wojtek_ued import paths, terrain, terrain_suite
+from wojtek_env import paths, terrain, terrain_suite
 
 # Box tint, alternating by parity so steps read in the viewer; collision
 # attributes match the floor line in build_model.SCENE_XML_TEXT.
@@ -277,7 +277,7 @@ def main() -> None:
         if conflicts:
             p.error(
                 f"--arena {args.arena} defines {', '.join(conflicts)} itself "
-                "(wojtek_ued.terrain_suite); drop them or build a `train` arena"
+                "(wojtek_env.terrain_suite); drop them or build a `train` arena"
             )
         kwargs.update(suite)
         tread = suite.get("stair_tread", terrain.TREAD)

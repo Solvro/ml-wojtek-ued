@@ -16,7 +16,7 @@ against its real observation sizes at construction.
 
 import numpy as np
 
-from wojtek_ued import height_scan
+from wojtek_env import height_scan
 
 # paths.LEGS order (rear_left, rear_right, front_right, front_left) -> the
 # laterally mirrored leg's index.
@@ -96,7 +96,7 @@ def component_mirror(name):
     if name not in table:
         raise KeyError(
             f"no mirror map for obs component {name!r}; add it to "
-            f"wojtek_ued.symmetry before training with symmetry on"
+            f"wojtek_env.symmetry before training with symmetry on"
         )
     return table[name]
 

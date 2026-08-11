@@ -37,7 +37,7 @@ from pathlib import Path
 
 import numpy as np
 
-from wojtek_ued import paths
+from wojtek_env import paths
 
 # Uniform half-width of the per-env actuator noise added to the home ctrl,
 # in ctrl units. Small enough that every env stays near the standing pose.
@@ -111,7 +111,7 @@ def _tile_spawns(arena: str, num_envs: int) -> np.ndarray | None:
     rides the lookup grid's surface height there. None when the arena has no
     spec on disk (a custom --scene), which falls back to the origin spawn.
     """
-    from wojtek_ued import terrain
+    from wojtek_env import terrain
 
     files = paths.terrain_paths(arena)
     if not (files["spec"].exists() and files["lookup"].exists()):
@@ -173,7 +173,7 @@ def run_check(args) -> dict:
     import mujoco
     from mujoco import mjx
 
-    from wojtek_ued.base import make_data_fn, resolve_backend
+    from wojtek_env.base import make_data_fn, resolve_backend
 
     scene = Path(args.scene)
     backend = resolve_backend(args.backend)

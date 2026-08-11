@@ -16,7 +16,7 @@ from ml_collections import config_dict
 from mujoco import mjx
 from mujoco_playground._src import mjx_env
 
-from wojtek_ued.base import KNEE_ACTUATORS, KNEE_SINGULARITY, WojtekEnv
+from wojtek_env.base import KNEE_ACTUATORS, KNEE_SINGULARITY, WojtekEnv
 
 # 3 gyro + 3 gravity + 12 qpos + 12 qvel + 12 last_act + 2 jump signal
 OBS_SIZE = 44

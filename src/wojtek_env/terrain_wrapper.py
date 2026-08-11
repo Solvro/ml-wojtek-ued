@@ -38,7 +38,7 @@ from mujoco_playground._src.wrapper import (
     Wrapper,
 )
 
-from wojtek_ued import height_scan, symmetry, terrain_env
+from wojtek_env import height_scan, symmetry, terrain_env
 
 
 def _nefc_of(data):
