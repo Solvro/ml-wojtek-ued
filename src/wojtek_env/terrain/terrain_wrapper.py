@@ -38,7 +38,8 @@ from mujoco_playground._src.wrapper import (
     Wrapper,
 )
 
-from wojtek_env import height_scan, symmetry, terrain_env
+from wojtek_env.envs import height_scan, symmetry
+from wojtek_env.terrain import terrain_env
 
 
 def _nefc_of(data):
@@ -143,7 +144,8 @@ class TerrainAutoResetWrapper(Wrapper):
             self._hold_steps = int(hs.hold_steps)
             self._quat_adr = int(base._sensor_adr["orientation"])
             self._actor_scan = (
-                None if hs.dark
+                None
+                if hs.dark
                 else _component_slice(base.actor_obs_names, "height_scan")
             )
             self._critic_scan = _component_slice(
@@ -151,7 +153,8 @@ class TerrainAutoResetWrapper(Wrapper):
             )
             self._scan_mirror = (
                 jp.array(height_scan.mirror_map()[0])
-                if base._config.symmetry.enable else None
+                if base._config.symmetry.enable
+                else None
             )
 
     def reset(self, rng: jax.Array) -> mjx_env.State:
@@ -160,9 +163,24 @@ class TerrainAutoResetWrapper(Wrapper):
         state.info["first_obs"] = state.obs
         return state
 
-    def _respawn(self, done, level, ttype, spawn_xy, last_xy, commanded, spawn_h,
-                 steps_lived, cached_qpos, rng, strikes, cheby_min, cheby_max,
-                 pinned, pinned_level):
+    def _respawn(
+        self,
+        done,
+        level,
+        ttype,
+        spawn_xy,
+        last_xy,
+        commanded,
+        spawn_h,
+        steps_lived,
+        cached_qpos,
+        rng,
+        strikes,
+        cheby_min,
+        cheby_max,
+        pinned,
+        pinned_level,
+    ):
         """One env's teleport. Everything returned is gated on ``done``; a
         live env keeps its values."""
         walked = jp.linalg.norm(last_xy - spawn_xy)
@@ -173,16 +191,24 @@ class TerrainAutoResetWrapper(Wrapper):
             # platform AND past the feature's outer ring. The flat row has no
             # band, so it keeps the legacy walked-distance rule.
             f_r = self._feature_r[level, ttype]
-            band = (
-                (cheby_min <= self._pad_radius) & (cheby_max >= f_r) & (f_r > 0)
-            )
+            band = (cheby_min <= self._pad_radius) & (cheby_max >= f_r) & (f_r > 0)
             on_flat = self._flat_row & (level == 0)
             crossed = jp.where(on_flat, walked > 0.5 * self._tile_size, band)
         new_level, new_strikes, rng2 = terrain_env.curriculum_step(
-            level, walked, commanded, steps_lived, self._episode_length, rng,
-            self._n_rows, self._tile_size, self._demote_fraction,
-            strikes=strikes, demote_strikes=self._demote_strikes,
-            crossed=crossed, grace_steps=self._grace_steps, pinned=pinned,
+            level,
+            walked,
+            commanded,
+            steps_lived,
+            self._episode_length,
+            rng,
+            self._n_rows,
+            self._tile_size,
+            self._demote_fraction,
+            strikes=strikes,
+            demote_strikes=self._demote_strikes,
+            crossed=crossed,
+            grace_steps=self._grace_steps,
+            pinned=pinned,
         )
         # A pinned env holds its own rung, whatever level its first reset
         # happened to draw; its first respawn moves it there for good.
@@ -191,15 +217,26 @@ class TerrainAutoResetWrapper(Wrapper):
         if self._spawn_mode == "feature":
             on_flat_new = self._flat_row & (new_level == 0)
             new_xy, pad_h, quat = terrain_env.sample_feature_spawn(
-                r_spawn, ttype, new_level, on_flat_new,
-                self._origin_xy, self._pad_h, self._pad_jitter,
-                self._tile_size, self._spawn_yaw,
+                r_spawn,
+                ttype,
+                new_level,
+                on_flat_new,
+                self._origin_xy,
+                self._pad_h,
+                self._pad_jitter,
+                self._tile_size,
+                self._spawn_yaw,
             )
             ground = jp.where(on_flat_new, pad_h, self._height(new_xy))
         else:
             new_xy, ground, quat = terrain_env.sample_tile_spawn(
-                r_spawn, ttype, new_level,
-                self._origin_xy, self._pad_h, self._pad_jitter, self._spawn_yaw,
+                r_spawn,
+                ttype,
+                new_level,
+                self._origin_xy,
+                self._pad_h,
+                self._pad_jitter,
+                self._spawn_yaw,
             )
         qpos = cached_qpos
         qpos = qpos.at[0:2].set(jp.where(done, new_xy, qpos[0:2]))
@@ -240,16 +277,22 @@ class TerrainAutoResetWrapper(Wrapper):
         c = self._scan_corrupt
         regime, drift, cam_jit = jax.vmap(
             lambda k: height_scan.sample_corruption(
-                k, c.noise_prob, c.drift_prob, c.blackout_prob,
-                c.drift_z, c.drift_tilt, c.pitch_jitter_deg, c.mount_jitter,
+                k,
+                c.noise_prob,
+                c.drift_prob,
+                c.blackout_prob,
+                c.drift_z,
+                c.drift_tilt,
+                c.pitch_jitter_deg,
+                c.mount_jitter,
             )
         )(keys[:, 1])
         regime = jp.where(done, regime, info["scan_regime"])
         drift = jp.where(done[:, None], drift, info["scan_drift"])
         cam_jit = jp.where(done[:, None], cam_jit, info["scan_cam_jit"])
-        phase = jax.vmap(
-            lambda k: jax.random.randint(k, (), 0, self._hold_steps)
-        )(keys[:, 2])
+        phase = jax.vmap(lambda k: jax.random.randint(k, (), 0, self._hold_steps))(
+            keys[:, 2]
+        )
         scan = jax.vmap(self._base._scan_actor)(
             scan_data, keys[:, 3], regime, drift, cam_jit
         )
@@ -259,17 +302,13 @@ class TerrainAutoResetWrapper(Wrapper):
         info["scan_cam_jit"] = cam_jit
         info["scan_step"] = jp.where(done, phase, info["scan_step"])
         info["scan_hold"] = jp.where(done[:, None], scan, info["scan_hold"])
-        info["scan_pending"] = jp.where(
-            done[:, None], scan, info["scan_pending"]
-        )
+        info["scan_pending"] = jp.where(done[:, None], scan, info["scan_pending"])
         return scan, clean
 
     def _splice_scan(self, vector, where, values, done, mirror):
         """Write `values` into one observation component for the done envs."""
         if self._scan_mirror is not None:
-            values = jp.where(
-                mirror[:, None], values[:, self._scan_mirror], values
-            )
+            values = jp.where(mirror[:, None], values[:, self._scan_mirror], values)
         return vector.at[:, where].set(
             jp.where(done[:, None], values, vector[:, where])
         )
@@ -325,8 +364,13 @@ class TerrainAutoResetWrapper(Wrapper):
             pinned = jp.zeros(n_envs, dtype=bool)
             pinned_level = jp.zeros(n_envs, dtype=jp.int32)
         (
-            new_qpos, new_level, new_spawn_xy, new_rng,
-            new_strikes, new_origin, new_r0,
+            new_qpos,
+            new_level,
+            new_spawn_xy,
+            new_rng,
+            new_strikes,
+            new_origin,
+            new_r0,
         ) = jax.vmap(self._respawn)(
             done,
             info["terrain_level"],
@@ -366,7 +410,10 @@ class TerrainAutoResetWrapper(Wrapper):
                 )
             if self._critic_scan is not None:
                 obs["privileged_state"] = self._splice_scan(
-                    obs["privileged_state"], self._critic_scan, clean, done,
+                    obs["privileged_state"],
+                    self._critic_scan,
+                    clean,
+                    done,
                     info["mirror"],
                 )
 
@@ -378,9 +425,7 @@ class TerrainAutoResetWrapper(Wrapper):
         )
         info["terrain_rng"] = new_rng
         info["curriculum_strikes"] = new_strikes
-        info["tile_origin"] = jp.where(
-            done[:, None], new_origin, info["tile_origin"]
-        )
+        info["tile_origin"] = jp.where(done[:, None], new_origin, info["tile_origin"])
         info["cheby_min"] = jp.where(done, new_r0, info["cheby_min"])
         info["cheby_max"] = jp.where(done, new_r0, info["cheby_max"])
         if "progress_ema" in info:

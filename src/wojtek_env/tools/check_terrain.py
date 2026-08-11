@@ -111,7 +111,7 @@ def _tile_spawns(arena: str, num_envs: int) -> np.ndarray | None:
     rides the lookup grid's surface height there. None when the arena has no
     spec on disk (a custom --scene), which falls back to the origin spawn.
     """
-    from wojtek_env import terrain
+    from wojtek_env.terrain import terrain
 
     files = paths.terrain_paths(arena)
     if not (files["spec"].exists() and files["lookup"].exists()):
@@ -130,8 +130,13 @@ def _tile_spawns(arena: str, num_envs: int) -> np.ndarray | None:
         spawns[i, 0] = t["origin"][0] + np.cos(yaw) * FEATURE_RADIUS * stretch
         spawns[i, 1] = t["origin"][1] + np.sin(yaw) * FEATURE_RADIUS * stretch
     spawns[:, 2] = terrain._bilinear(
-        npz["lookup"], float(npz["x_min"]), cell_x, float(npz["y_min"]), cell_y,
-        spawns[:, 0], spawns[:, 1],
+        npz["lookup"],
+        float(npz["x_min"]),
+        cell_x,
+        float(npz["y_min"]),
+        cell_y,
+        spawns[:, 0],
+        spawns[:, 1],
     )
     return spawns
 
@@ -173,7 +178,7 @@ def run_check(args) -> dict:
     import mujoco
     from mujoco import mjx
 
-    from wojtek_env.base import make_data_fn, resolve_backend
+    from wojtek_env.envs.base import make_data_fn, resolve_backend
 
     scene = Path(args.scene)
     backend = resolve_backend(args.backend)
@@ -320,24 +325,41 @@ def main() -> None:
     p.add_argument("--backend", choices=["auto", "warp", "jax"], default="auto")
     p.add_argument("--num-envs", type=int, default=256)
     p.add_argument("--steps", type=int, default=200)
-    p.add_argument("--spawn", choices=["tiles", "origin"], default="tiles",
-                   help="tiles: spread the batch over the arena, hardest rows "
-                        "first, offset into each tile's feature band; origin: "
-                        "the old one-pose batch at the world origin")
-    p.add_argument("--naconmax-per-env", type=int, default=NACONMAX_PER_ENV,
-                   help=f"warp contact pool per env (default "
-                        f"{NACONMAX_PER_ENV}, generous on purpose: an "
-                        "undersized pool hides the peak this tool measures)")
-    p.add_argument("--njmax", type=int, default=NJMAX,
-                   help=f"warp constraint rows per world (default {NJMAX}, "
-                        "generous on purpose; the training default 320 is "
-                        "sized from the peak measured here)")
-    p.add_argument("--arena", choices=paths.TERRAIN_KINDS, default="train",
-                   help="which generated arena to check; also names the "
-                        "default report so two arenas do not overwrite "
-                        "each other")
-    p.add_argument("--scene", default=None,
-                   help="scene XML to check (default: the --arena one)")
+    p.add_argument(
+        "--spawn",
+        choices=["tiles", "origin"],
+        default="tiles",
+        help="tiles: spread the batch over the arena, hardest rows "
+        "first, offset into each tile's feature band; origin: "
+        "the old one-pose batch at the world origin",
+    )
+    p.add_argument(
+        "--naconmax-per-env",
+        type=int,
+        default=NACONMAX_PER_ENV,
+        help=f"warp contact pool per env (default "
+        f"{NACONMAX_PER_ENV}, generous on purpose: an "
+        "undersized pool hides the peak this tool measures)",
+    )
+    p.add_argument(
+        "--njmax",
+        type=int,
+        default=NJMAX,
+        help=f"warp constraint rows per world (default {NJMAX}, "
+        "generous on purpose; the training default 320 is "
+        "sized from the peak measured here)",
+    )
+    p.add_argument(
+        "--arena",
+        choices=paths.TERRAIN_KINDS,
+        default="train",
+        help="which generated arena to check; also names the "
+        "default report so two arenas do not overwrite "
+        "each other",
+    )
+    p.add_argument(
+        "--scene", default=None, help="scene XML to check (default: the --arena one)"
+    )
     p.add_argument("--out", default=None)
     p.add_argument("--sentinel", default=None)
     args = p.parse_args()
@@ -371,9 +393,7 @@ def main() -> None:
             sys.exit(1)
         _write(out, result)
         _sentinel(args.sentinel, "OK")
-        rows = (
-            f"  nefc max {c['nefc_max']}/{c['njmax']}" if "nefc_max" in c else ""
-        )
+        rows = f"  nefc max {c['nefc_max']}/{c['njmax']}" if "nefc_max" in c else ""
         print(
             f"check-terrain OK  {result['backend']}  "
             f"spawn {result.get('spawn', '?')}  "
@@ -385,12 +405,15 @@ def main() -> None:
         sys.exit(0)
     except Exception:
         tb = traceback.format_exc()
-        _write(out, {
-            "status": "fail",
-            "scene": args.scene,
-            "backend_requested": args.backend,
-            "error": tb,
-        })
+        _write(
+            out,
+            {
+                "status": "fail",
+                "scene": args.scene,
+                "backend_requested": args.backend,
+                "error": tb,
+            },
+        )
         reason = tb.strip().splitlines()[-1][:200]
         _sentinel(args.sentinel, f"FAIL {reason}")
         print(tb, file=sys.stderr)

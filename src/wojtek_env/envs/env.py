@@ -15,9 +15,10 @@ from ml_collections import config_dict
 from mujoco import mjx
 from mujoco_playground._src import mjx_env
 
-from wojtek_env import height_scan, paths
-from wojtek_env import terrain_env
-from wojtek_env.base import ABDUCTION_ACTUATORS, KNEE_ACTUATORS, WojtekEnv
+from wojtek_env import paths
+from wojtek_env.envs import height_scan
+from wojtek_env.envs.base import ABDUCTION_ACTUATORS, KNEE_ACTUATORS, WojtekEnv
+from wojtek_env.terrain import terrain_env
 
 # 3 gyro + 3 gravity + 12 qpos + 12 qvel + 12 last_act + 4 cmd + 8 phase
 OBS_SIZE = 54
@@ -48,7 +49,7 @@ def default_config() -> config_dict.ConfigDict:
         sim_dt=0.004,
         # Physics backend. auto picks warp on a CUDA host and jax elsewhere.
         # naconmax_per_env scales with the training batch; njmax is per
-                sim=config_dict.create(
+        sim=config_dict.create(
             backend="auto", naconmax_per_env=32, njmax=320, num_envs=1
         ),
         episode_length=1000,
@@ -387,15 +388,15 @@ def default_config() -> config_dict.ConfigDict:
         # in its auto-reset path.
         no_progress=config_dict.create(
             enable=False,
-            grace_sec=2.0,   # no hazard this long after reset/resample
-            ema_sec=1.0,     # smoothing horizon of the progress measure
+            grace_sec=2.0,  # no hazard this long after reset/resample
+            ema_sec=1.0,  # smoothing horizon of the progress measure
             risk_below=0.5,  # hazard starts below this fraction of demand
-            p_max=0.02,      # per-step hazard at zero progress
+            p_max=0.02,  # per-step hazard at zero progress
             # Terrain rows get their own patience: standing at a riser and
             # pushing IS the learning this cut was never meant to punish.
             # 0.0 / 1.0 keep the base values everywhere (the flat row keeps
             # them regardless).
-            terrain_grace_sec=0.0,   # grace on terrain rows; 0 = grace_sec
+            terrain_grace_sec=0.0,  # grace on terrain rows; 0 = grace_sec
             terrain_p_max_scale=1.0,  # p_max multiplier on terrain rows
         ),
         # Trot clock: fbb_v2 skated at 7 Hz instead of stepping (duty factor
@@ -609,8 +610,10 @@ class WojtekJoystick(WojtekEnv):
         self._target_lo = self._ctrlrange[:, 0]
         ktm = self._config.get("knee_target_max", 0.0)
         if ktm:
-            self._target_hi = self._ctrlrange[:, 1].at[knee_idx].set(
-                jp.minimum(self._ctrlrange[knee_idx, 1], ktm)
+            self._target_hi = (
+                self._ctrlrange[:, 1]
+                .at[knee_idx]
+                .set(jp.minimum(self._ctrlrange[knee_idx, 1], ktm))
             )
         else:
             self._target_hi = self._ctrlrange[:, 1]
@@ -636,11 +639,7 @@ class WojtekJoystick(WojtekEnv):
         # like the other reward constants resolved here.
         self._orientation_tol = float(
             np.square(
-                np.sin(
-                    np.radians(
-                        self._config.reward.get("orientation_tol_deg", 0.0)
-                    )
-                )
+                np.sin(np.radians(self._config.reward.get("orientation_tol_deg", 0.0)))
             )
         )
         # The gated flat-ground cone, resolved the same way. None unless the
@@ -650,9 +649,7 @@ class WojtekJoystick(WojtekEnv):
         _tg = self._config.reward.terrain_gate
         _flat_deg = _tg.get("orientation_tol_flat_deg", 0.0)
         if _tg.enable and _flat_deg:
-            self._orientation_tol_flat = float(
-                np.square(np.sin(np.radians(_flat_deg)))
-            )
+            self._orientation_tol_flat = float(np.square(np.sin(np.radians(_flat_deg))))
         # flat_pitch hinge threshold as the sine of its cone half-angle:
         # the hinge compares against gravity[0], which IS the pitch sine.
         self._flat_pitch_tol_sin = float(
@@ -731,7 +728,7 @@ class WojtekJoystick(WojtekEnv):
         # Mirror maps for the symmetry augmentation, assembled once from
         # the resolved obs lists (so the include filter is respected).
         if self._config.symmetry.enable:
-            from wojtek_env import symmetry
+            from wojtek_env.envs import symmetry
 
             act_perm, act_sign = symmetry.joint_mirror()
             self._act_perm = jp.array(act_perm)
@@ -806,9 +803,7 @@ class WojtekJoystick(WojtekEnv):
         if arc_p:
             r8, r9 = jax.random.split(jax.random.fold_in(rng, 1))
             arc = jax.random.bernoulli(r8, arc_p)
-            vx_arc = jax.random.uniform(
-                r9, minval=c.arc_vx[0], maxval=c.arc_vx[1]
-            )
+            vx_arc = jax.random.uniform(r9, minval=c.arc_vx[0], maxval=c.arc_vx[1])
             vel = jp.where(arc, jp.array([vx_arc, 0.0, vel[2]]), vel)
         # slow-walk training: redraw vx from slow_vx, zero vy and wz.
         # Gated and fold_in-keyed like arc, so presets with the prob at 0
@@ -818,9 +813,7 @@ class WojtekJoystick(WojtekEnv):
         if slow_p or biased:
             r10, r11 = jax.random.split(jax.random.fold_in(rng, 2))
             slow = jax.random.bernoulli(r10, prob("pure_slow_prob"))
-            vx_slow = jax.random.uniform(
-                r11, minval=c.slow_vx[0], maxval=c.slow_vx[1]
-            )
+            vx_slow = jax.random.uniform(r11, minval=c.slow_vx[0], maxval=c.slow_vx[1])
             vel = jp.where(slow, jp.array([vx_slow, 0.0, 0.0]), vel)
         # fast-walk training: redraw vx from fast_vx, zero vy and wz.
         # Gated and fold_in-keyed like arc/slow (index 3), stream-safe.
@@ -828,9 +821,7 @@ class WojtekJoystick(WojtekEnv):
         if fast_p:
             r12, r13 = jax.random.split(jax.random.fold_in(rng, 3))
             fast = jax.random.bernoulli(r12, fast_p)
-            vx_fast = jax.random.uniform(
-                r13, minval=c.fast_vx[0], maxval=c.fast_vx[1]
-            )
+            vx_fast = jax.random.uniform(r13, minval=c.fast_vx[0], maxval=c.fast_vx[1])
             vel = jp.where(fast, jp.array([vx_fast, 0.0, 0.0]), vel)
         # backward training: redraw vx from back_vx, zero vy and wz.
         # Gated and fold_in-keyed like arc/slow/fast (index 4), stream-safe.
@@ -838,9 +829,7 @@ class WojtekJoystick(WojtekEnv):
         if back_p or biased:
             r14, r15 = jax.random.split(jax.random.fold_in(rng, 4))
             back = jax.random.bernoulli(r14, prob("pure_back_prob"))
-            vx_back = jax.random.uniform(
-                r15, minval=c.back_vx[0], maxval=c.back_vx[1]
-            )
+            vx_back = jax.random.uniform(r15, minval=c.back_vx[0], maxval=c.back_vx[1])
             vel = jp.where(back, jp.array([vx_back, 0.0, 0.0]), vel)
         zero = jax.random.bernoulli(r4, prob("zero_prob"))
         vel = jp.where(zero, jp.zeros(3), vel)
@@ -890,9 +879,7 @@ class WojtekJoystick(WojtekEnv):
         n_steps = int(round(2.0 / m.opt.timestep))
         heights, poses = [], []
         for ds in DSECOND_TABLE:
-            ctrl = np.clip(
-                home_ctrl + np.tile([0.0, 1.0, 2.0], 4) * ds, lo, hi
-            )
+            ctrl = np.clip(home_ctrl + np.tile([0.0, 1.0, 2.0], 4) * ds, lo, hi)
             mujoco.mj_resetData(m, d)
             d.qpos[:] = np.asarray(self._home_qpos)
             d.ctrl[:] = ctrl
@@ -925,9 +912,7 @@ class WojtekJoystick(WojtekEnv):
         if self._config.get("real_pose_ref", False):
             dsecond = jp.interp(height, self._anchor_heights, self._anchor_dsecond)
         else:
-            dsecond = jp.interp(
-                height, jp.array(HEIGHT_TABLE), jp.array(DSECOND_TABLE)
-            )
+            dsecond = jp.interp(height, jp.array(HEIGHT_TABLE), jp.array(DSECOND_TABLE))
         offset = jp.tile(jp.array([0.0, 1.0, 2.0]), 4) * dsecond
         return jp.clip(
             self._home_ctrl + offset, self._ctrlrange[:, 0], self._ctrlrange[:, 1]
@@ -957,9 +942,7 @@ class WojtekJoystick(WojtekEnv):
         g = self._config.gait
         f = self._gait_frac(info["command"])
         duty = (1.0 - f) * g.duty[0] + f * g.duty[1]
-        theta = jp.fmod(self._leg_phases(info) + 2 * jp.pi, 2 * jp.pi) / (
-            2 * jp.pi
-        )
+        theta = jp.fmod(self._leg_phases(info) + 2 * jp.pi, 2 * jp.pi) / (2 * jp.pi)
         swing_frac = 1.0 - duty
         in_swing = theta < swing_frac
         rz = g.swing_height * jp.sin(jp.pi * theta / swing_frac) * in_swing
@@ -1019,7 +1002,12 @@ class WojtekJoystick(WojtekEnv):
         if not c.enable:
             return scan
         return height_scan.apply_corruption(
-            rng, scan, regime, drift, self._scan_grid[:, 0], c.noise_std,
+            rng,
+            scan,
+            regime,
+            drift,
+            self._scan_grid[:, 0],
+            c.noise_std,
             c.dropout_prob,
         )
 
@@ -1031,7 +1019,10 @@ class WojtekJoystick(WojtekEnv):
         rng, r_scan = jax.random.split(info["scan_rng"])
         info["scan_rng"] = rng
         fresh = self._scan_actor(
-            data, r_scan, info["scan_regime"], info["scan_drift"],
+            data,
+            r_scan,
+            info["scan_regime"],
+            info["scan_drift"],
             info["scan_cam_jit"],
         )
         phase = info["scan_step"] % hs.hold_steps
@@ -1067,9 +1058,7 @@ class WojtekJoystick(WojtekEnv):
             rng, r_type, r_level, r_spawn, r_trng = jax.random.split(rng, 5)
             terrain_type = jax.random.randint(r_type, (), 0, self._terrain.n_types)
             if self._terrain.spawn_level >= 0:
-                level = jp.minimum(
-                    self._terrain.spawn_level, self._terrain.n_rows - 1
-                )
+                level = jp.minimum(self._terrain.spawn_level, self._terrain.n_rows - 1)
             else:
                 init_rows = max(
                     1, round(self._terrain.n_rows * self._terrain.init_level_frac)
@@ -1078,19 +1067,26 @@ class WojtekJoystick(WojtekEnv):
             on_flat = self._terrain.flat_row & (level == 0)
             if self._terrain.spawn_mode == "feature":
                 spawn_xy, pad_height, quat = terrain_env.sample_feature_spawn(
-                    r_spawn, terrain_type, level, on_flat,
-                    self._terrain.origin_xy, self._terrain.pad_h,
-                    self._terrain.pad_jitter, self._terrain.tile_size,
+                    r_spawn,
+                    terrain_type,
+                    level,
+                    on_flat,
+                    self._terrain.origin_xy,
+                    self._terrain.pad_h,
+                    self._terrain.pad_jitter,
+                    self._terrain.tile_size,
                     self._terrain.spawn_yaw,
                 )
-                ground = jp.where(
-                    on_flat, pad_height, self._terrain.height(spawn_xy)
-                )
+                ground = jp.where(on_flat, pad_height, self._terrain.height(spawn_xy))
             else:
                 spawn_xy, ground, quat = terrain_env.sample_tile_spawn(
-                    r_spawn, terrain_type, level,
-                    self._terrain.origin_xy, self._terrain.pad_h,
-                    self._terrain.pad_jitter, self._terrain.spawn_yaw,
+                    r_spawn,
+                    terrain_type,
+                    level,
+                    self._terrain.origin_xy,
+                    self._terrain.pad_h,
+                    self._terrain.pad_jitter,
+                    self._terrain.spawn_yaw,
                 )
         command = self._sample_command(r_cmd, on_flat)
         # Start posed for the commanded height: legs on the pose reference
@@ -1148,8 +1144,13 @@ class WojtekJoystick(WojtekEnv):
             rng, r_regime, r_scan, r_phase, r_hold = jax.random.split(rng, 5)
             hc = self._config.height_scan.corrupt
             scan_regime, scan_drift, scan_cam_jit = height_scan.sample_corruption(
-                r_regime, hc.noise_prob, hc.drift_prob, hc.blackout_prob,
-                hc.drift_z, hc.drift_tilt, hc.pitch_jitter_deg,
+                r_regime,
+                hc.noise_prob,
+                hc.drift_prob,
+                hc.blackout_prob,
+                hc.drift_z,
+                hc.drift_tilt,
+                hc.pitch_jitter_deg,
                 hc.mount_jitter,
             )
             scan0 = self._scan_actor(
@@ -1293,14 +1294,18 @@ class WojtekJoystick(WojtekEnv):
             # Substeps before ctrl_delay use the previous targets, the rest
             # the new ones.
             data = self._step_with_latency(
-                data, info["motor_targets"] - eps, motor_targets - eps, info["ctrl_delay"]
+                data,
+                info["motor_targets"] - eps,
+                motor_targets - eps,
+                info["ctrl_delay"],
             )
         else:
             # Default path: one ctrl for the whole period. Kept on the stock
             # mjx_env.step so the trajectory is unchanged; the where-scan
             # above shifts the float output by a few ULPs.
             applied_targets = (
-                info["motor_targets"] if self._config.action_delay > 0
+                info["motor_targets"]
+                if self._config.action_delay > 0
                 else motor_targets
             )
             data = mjx_env.step(
@@ -1379,15 +1384,11 @@ class WojtekJoystick(WojtekEnv):
             # the commanded turn, blended like _cmd_speed blends demand.
             # Moving against the command reads negative, i.e. worse than
             # standing.
-            served = (
-                jp.dot(self._local_linvel(data)[:2], cmd[:2])
-                / jp.maximum(jp.linalg.norm(cmd[:2]), 1e-6)
-                + 0.3 * self._gyro(data)[2] * jp.sign(cmd[2])
-            )
+            served = jp.dot(self._local_linvel(data)[:2], cmd[:2]) / jp.maximum(
+                jp.linalg.norm(cmd[:2]), 1e-6
+            ) + 0.3 * self._gyro(data)[2] * jp.sign(cmd[2])
             alpha = self.dt / npg.ema_sec
-            info["progress_ema"] = (
-                (1.0 - alpha) * info["progress_ema"] + alpha * served
-            )
+            info["progress_ema"] = (1.0 - alpha) * info["progress_ema"] + alpha * served
             progress_ratio = info["progress_ema"] / jp.maximum(demand, 1e-6)
             # Terrain rows may carry their own grace and hazard scale; the
             # flat row (and every run without the fields) keeps the base
@@ -1398,9 +1399,7 @@ class WojtekJoystick(WojtekEnv):
             p_max = npg.p_max
             t_grace, t_scale = self._npg_patience
             if self._terrain_enabled and (t_grace > 0.0 or t_scale != 1.0):
-                on_terrain = ~(
-                    self._terrain.flat_row & (info["terrain_level"] == 0)
-                )
+                on_terrain = ~(self._terrain.flat_row & (info["terrain_level"] == 0))
                 grace_sec = jp.where(
                     on_terrain & (t_grace > 0.0), t_grace, npg.grace_sec
                 )
@@ -1408,17 +1407,14 @@ class WojtekJoystick(WojtekEnv):
             hazard = p_max * jp.clip(
                 (npg.risk_below - progress_ratio) / npg.risk_below, 0.0, 1.0
             )
-            armed = (demand > 0.05) & (
-                info["steps_since_cmd"] * self.dt >= grace_sec
-            )
-            no_progress_cut = jax.random.bernoulli(
-                r_term, jp.where(armed, hazard, 0.0)
-            )
+            armed = (demand > 0.05) & (info["steps_since_cmd"] * self.dt >= grace_sec)
+            no_progress_cut = jax.random.bernoulli(r_term, jp.where(armed, hazard, 0.0))
             done = done | no_progress_cut
         resample = info["steps_since_cmd"] >= self._config.command.resample_steps
         row_flat = (
             self._terrain.flat_row & (info["terrain_level"] == 0)
-            if self._terrain_enabled else None
+            if self._terrain_enabled
+            else None
         )
         info["command"] = jp.where(
             resample, self._sample_command(r_cmd, row_flat), info["command"]
@@ -1432,9 +1428,7 @@ class WojtekJoystick(WojtekEnv):
                 resample, self._cmd_speed(info["command"]), info["progress_ema"]
             )
 
-        reward = sum(
-            rewards[k] * self._config.reward.scales[k] for k in rewards
-        )
+        reward = sum(rewards[k] * self._config.reward.scales[k] for k in rewards)
         reward = jp.clip(reward * self.dt, -100.0, 100.0)
         # Merge over the incoming metrics: brax's EvalWrapper injects keys
         # (e.g. "reward") that must survive the step for scan carry parity.
@@ -1454,9 +1448,9 @@ class WojtekJoystick(WojtekEnv):
         # nose-down sine; sign per battery.pitch_down_deg (+y rotation test)
         pitch_down_deg = jp.degrees(jp.arcsin(jp.clip(gravity[0], 0.0, 1.0)))
         if self._terrain_enabled:
-            is_flat = (
-                self._terrain.flat_row & (info["terrain_level"] == 0)
-            ).astype(jp.float32)
+            is_flat = (self._terrain.flat_row & (info["terrain_level"] == 0)).astype(
+                jp.float32
+            )
         else:
             is_flat = jp.ones(())
         # The command that drove this step (state.info predates the
@@ -1519,7 +1513,8 @@ class WojtekJoystick(WojtekEnv):
             m = info["mirror"]
             obs = {
                 "state": jp.where(
-                    m, self._state_sign * obs["state"][self._state_perm],
+                    m,
+                    self._state_sign * obs["state"][self._state_perm],
                     obs["state"],
                 ),
                 "privileged_state": jp.where(
@@ -1543,8 +1538,14 @@ class WojtekJoystick(WojtekEnv):
         anchor = self._pose_ref(cmd[3])
         # Abduction full weight; leg joints lighter (gait flexes around it).
         pose_w = jp.tile(
-            jp.array([1.0, self._config.reward.pose_leg_weight,
-                      self._config.reward.pose_leg_weight]), 4
+            jp.array(
+                [
+                    1.0,
+                    self._config.reward.pose_leg_weight,
+                    self._config.reward.pose_leg_weight,
+                ]
+            ),
+            4,
         )
 
         # Terrain: measured from the surface. Flat: the old expressions,
@@ -1566,8 +1567,7 @@ class WojtekJoystick(WojtekEnv):
             u = af - a5
             v = sb - af
             cosang = jp.sum(u * v, axis=-1) / (
-                jp.linalg.norm(u, axis=-1) * jp.linalg.norm(v, axis=-1)
-                + 1e-9
+                jp.linalg.norm(u, axis=-1) * jp.linalg.norm(v, axis=-1) + 1e-9
             )
             toggle_deg = jp.degrees(jp.arccos(jp.clip(cosang, -1.0, 1.0)))
             # smooth proximity ramp: 0 at 90 deg, 1 at 180 (see toggle_flat)
@@ -1576,9 +1576,7 @@ class WojtekJoystick(WojtekEnv):
             )
             if max_toggle:
                 # angle > max_toggle_deg <=> cos(angle) < cos(max_toggle_deg)
-                fall = fall | jp.any(
-                    cosang < jp.cos(jp.deg2rad(max_toggle))
-                )
+                fall = fall | jp.any(cosang < jp.cos(jp.deg2rad(max_toggle)))
         if self._terrain_enabled and self._config.fall.on_base_contact:
             fall = fall | self._base_terrain_contact(data)
 
@@ -1587,9 +1585,7 @@ class WojtekJoystick(WojtekEnv):
         foot_clearance = self._foot_clearance(data)
         target_clearance, stance_mask = self._gait_targets(info)
         phase_err = jp.sum(jp.square(foot_clearance - target_clearance))
-        contact_match = jp.mean(
-            (contact == stance_mask).astype(jp.float32)
-        )
+        contact_match = jp.mean((contact == stance_mask).astype(jp.float32))
 
         # Horizontal foot speed while in contact = skating.
         feet_vel = data.sensordata[self._foot_linvel_adr]
@@ -1599,8 +1595,7 @@ class WojtekJoystick(WojtekEnv):
         # up to the swing_height target.
         swing = ~contact
         high_step = jp.mean(
-            jp.clip(foot_clearance / self._config.gait.swing_height, 0.0, 1.0)
-            * swing
+            jp.clip(foot_clearance / self._config.gait.swing_height, 0.0, 1.0) * swing
         )
 
         qvel = data.qvel[self._vadr]
@@ -1625,16 +1620,10 @@ class WojtekJoystick(WojtekEnv):
             r = self._config.reward
             err_lin = jp.sum(jp.square(cmd[:2] - linvel[:2]))
             err_ang = jp.square(cmd[2] - gyro[2])
-            denom_lin = jp.maximum(
-                jp.linalg.norm(cmd[:2]), r.tracking_rel_floor_lin
-            )
+            denom_lin = jp.maximum(jp.linalg.norm(cmd[:2]), r.tracking_rel_floor_lin)
             denom_ang = jp.maximum(jp.abs(cmd[2]), r.tracking_rel_floor_ang)
-            k_lin = jp.exp(
-                -err_lin / (r.tracking_rel_sigma * jp.square(denom_lin))
-            )
-            k_ang = jp.exp(
-                -err_ang / (r.tracking_rel_sigma * jp.square(denom_ang))
-            )
+            k_lin = jp.exp(-err_lin / (r.tracking_rel_sigma * jp.square(denom_lin)))
+            k_ang = jp.exp(-err_ang / (r.tracking_rel_sigma * jp.square(denom_ang)))
             # The far mix-in applies to the relative kernels too. The far
             # kernel stays absolute: a state far off the command sees the
             # same pull at any commanded speed, and the kernel's optimum
@@ -1652,9 +1641,7 @@ class WojtekJoystick(WojtekEnv):
         # the positive gait terms follow the linear tracking kernel, after
         # the product gate when that is on.
         shape_gate = (
-            k_lin
-            if self._config.reward.get("shaping_tracking_gate", False)
-            else 1.0
+            k_lin if self._config.reward.get("shaping_tracking_gate", False) else 1.0
         )
         # Roughness gate (see reward.terrain_gate): the height spread under
         # the feet and over the strip just ahead of them. Flat ground pays
@@ -1677,13 +1664,9 @@ class WojtekJoystick(WojtekEnv):
                 height_scan.yaw_from_quat(self._quat(data)),
             )
             local = self._terrain.height(
-                jp.concatenate(
-                    [data.geom_xpos[self._foot_geom_ids][:, :2], strip]
-                )
+                jp.concatenate([data.geom_xpos[self._foot_geom_ids][:, :2], strip])
             )
-            rough = jp.clip(
-                (jp.max(local) - jp.min(local)) / tg.rough_ref, 0.0, 1.0
-            )
+            rough = jp.clip((jp.max(local) - jp.min(local)) / tg.rough_ref, 0.0, 1.0)
             gate = tg.floor + (1.0 - tg.floor) * rough
             landing_soften = 1.0 - tg.landing_soften * rough
             if tg.get("flat_pitch_row_only", False):
@@ -1704,8 +1687,7 @@ class WojtekJoystick(WojtekEnv):
             if self._orientation_tol_flat is not None:
                 orientation_tol = (
                     self._orientation_tol_flat
-                    + (self._orientation_tol - self._orientation_tol_flat)
-                    * rough
+                    + (self._orientation_tol - self._orientation_tol_flat) * rough
                 )
 
         # sin^2 of the tilt from vertical, less the tolerance cone (see
@@ -1725,8 +1707,7 @@ class WojtekJoystick(WojtekEnv):
             "tracking_lin_vel": k_lin,
             "tracking_ang_vel": k_ang,
             "height_tracking": jp.exp(
-                -jp.square(base_height - cmd[3])
-                / self._config.reward.height_sigma
+                -jp.square(base_height - cmd[3]) / self._config.reward.height_sigma
             ),
             "lin_vel_z": jp.square(linvel[2]),
             "ang_vel_xy": jp.sum(jp.square(gyro[:2])),
@@ -1734,9 +1715,7 @@ class WojtekJoystick(WojtekEnv):
             # scales entry carries the sign (negative = penalty)
             "flat_pitch": gate_flat * excess,
             "torques": jp.sum(jp.square(data.actuator_force)),
-            "torque_rate": jp.sum(
-                jp.square(data.actuator_force - info["last_torque"])
-            ),
+            "torque_rate": jp.sum(jp.square(data.actuator_force - info["last_torque"])),
             "action_rate": jp.sum(jp.square(action - info["last_act"])),
             "action_accel": jp.sum(
                 jp.square(action - 2 * info["last_act"] + info["last_last_act"])
@@ -1791,8 +1770,7 @@ class WojtekJoystick(WojtekEnv):
             )
             * moving
             * landing_soften,
-            "feet_phase": jp.exp(-phase_err / self._config.reward.phase_sigma)
-            * moving,
+            "feet_phase": jp.exp(-phase_err / self._config.reward.phase_sigma) * moving,
             "high_step": high_step * moving * shape_gate * gate,
             "contact_match": contact_match * moving,
             # Position pull to the anchor plus velocity damping: L1 position
@@ -1802,8 +1780,7 @@ class WojtekJoystick(WojtekEnv):
                 + 0.2 * jp.sum(jp.abs(qvel))
             )
             * (~moving),
-            "stand_feet_down": jp.sum(jp.clip(foot_clearance, 0.0, None))
-            * (~moving),
+            "stand_feet_down": jp.sum(jp.clip(foot_clearance, 0.0, None)) * (~moving),
             "termination": fall.astype(jp.float32),
             "torque_limit": jp.sum(
                 jp.maximum(

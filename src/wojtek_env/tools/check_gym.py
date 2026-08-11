@@ -41,9 +41,7 @@ def check_single(task: str, steps: int) -> None:
 
 
 def check_vector(task: str, num_envs: int, steps: int) -> None:
-    envs = WojtekVectorGymEnv(
-        num_envs=num_envs, task=task, episode_length=20, seed=0
-    )
+    envs = WojtekVectorGymEnv(num_envs=num_envs, task=task, episode_length=20, seed=0)
     obs, infos = envs.reset(seed=0)
     assert obs.shape == (num_envs, *envs.single_observation_space.shape)
     for _ in range(steps):

@@ -23,7 +23,7 @@ from ml_collections import config_dict
 from mujoco import mjx
 from mujoco_playground._src import mjx_env
 
-from wojtek_env.base import KNEE_ACTUATORS, KNEE_SINGULARITY, WojtekEnv
+from wojtek_env.envs.base import KNEE_ACTUATORS, KNEE_SINGULARITY, WojtekEnv
 
 # 3 gyro + 3 gravity + 12 qpos + 12 qvel + 12 last_act
 OBS_SIZE = 42
@@ -35,7 +35,7 @@ def default_config() -> config_dict.ConfigDict:
         sim_dt=0.004,
         # Physics backend. auto picks warp on a CUDA host and jax elsewhere.
         # naconmax_per_env scales with the training batch; njmax is per
-                sim=config_dict.create(
+        sim=config_dict.create(
             backend="auto", naconmax_per_env=32, njmax=320, num_envs=1
         ),
         episode_length=300,  # 6 s
@@ -93,8 +93,8 @@ class WojtekGetup(WojtekEnv):
         self._knee_idx = jp.array(KNEE_ACTUATORS)
         # Per-actuator target bounds with the knees capped at the safe branch.
         self._target_lo = self._ctrlrange[:, 0]
-        self._target_hi = self._ctrlrange[:, 1].at[self._knee_idx].set(
-            self._config.knee_target_max
+        self._target_hi = (
+            self._ctrlrange[:, 1].at[self._knee_idx].set(self._config.knee_target_max)
         )
         lo, hi = self._ctrlrange[:, 0], self._ctrlrange[:, 1]
         c, r = (lo + hi) / 2, hi - lo
@@ -162,9 +162,7 @@ class WojtekGetup(WojtekEnv):
         info["last_last_act"] = info["last_act"]
         info["last_act"] = action
 
-        reward = sum(
-            rewards[k] * self._config.reward.scales[k] for k in rewards
-        )
+        reward = sum(rewards[k] * self._config.reward.scales[k] for k in rewards)
         reward = jp.clip(reward * self.dt, 0.0, 10000.0)
         metrics = {
             **state.metrics,
@@ -201,15 +199,11 @@ class WojtekGetup(WojtekEnv):
             * jp.exp(-0.5 * jp.sum(jp.square(qpos - self._home_ctrl))),
             "stand_still": gate * jp.exp(-0.5 * jp.sum(jp.square(action))),
             "action_rate": jp.sum(jp.square(action - info["last_act"]))
-            + jp.sum(
-                jp.square(action - 2 * info["last_act"] + info["last_last_act"])
-            ),
+            + jp.sum(jp.square(action - 2 * info["last_act"] + info["last_last_act"])),
             "torques": jp.sqrt(jp.sum(jp.square(data.actuator_force)))
             + jp.sum(jp.abs(data.actuator_force)),
             "dof_acc": jp.sum(jp.square(data.qacc[self._vadr])),
-            "dof_vel": jp.sum(
-                jp.square(jp.maximum(jp.abs(qvel) - 2 * jp.pi, 0.0))
-            ),
+            "dof_vel": jp.sum(jp.square(jp.maximum(jp.abs(qvel) - 2 * jp.pi, 0.0))),
             "dof_pos_limits": jp.sum(
                 -jp.clip(qpos - self._soft_lo, None, 0.0)
                 + jp.clip(qpos - self._soft_hi, 0.0, None)
@@ -217,7 +211,5 @@ class WojtekGetup(WojtekEnv):
             # Safety: no sideways momentum while righting (world-frame xy).
             "lateral_vel": jp.sum(jp.square(world_vxy)),
             # Safety: get off the singular knee branch, gently.
-            "knee_singularity": jp.sum(
-                jp.maximum(knees - KNEE_SINGULARITY, 0.0)
-            ),
+            "knee_singularity": jp.sum(jp.maximum(knees - KNEE_SINGULARITY, 0.0)),
         }

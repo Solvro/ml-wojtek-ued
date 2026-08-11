@@ -9,7 +9,7 @@ import numpy as np
 from brax.envs.wrappers import training as brax_training
 from gymnasium import spaces
 
-from wojtek_env import registry
+from wojtek_env.envs import registry
 
 
 class WojtekGymEnv(gym.Env):
@@ -40,8 +40,10 @@ class WojtekGymEnv(gym.Env):
 
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         super().reset(seed=seed)
-        self._key = jax.random.PRNGKey(seed) if seed is not None else (
-            jax.random.split(self._key)[0]
+        self._key = (
+            jax.random.PRNGKey(seed)
+            if seed is not None
+            else (jax.random.split(self._key)[0])
         )
         self._state = self._reset_fn(self._key)
         self._needs_reset = False

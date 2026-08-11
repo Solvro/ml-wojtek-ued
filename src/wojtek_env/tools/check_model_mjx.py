@@ -76,25 +76,28 @@ def check_gpu(nenv: int, nsteps: int, backend: str = "jax") -> bool:
     import jax
     import jax.numpy as jp
     from mujoco import mjx
-
     from mujoco_playground import registry
 
-    from wojtek_env.base import make_data_fn
+    from wojtek_env.envs.base import make_data_fn
 
     m = mujoco.MjModel.from_xml_path(str(paths.SCENE_XML))
     wojtek_model = mjx.put_model(m, impl=backend)
     data_fn = make_data_fn(backend, m, wojtek_model, 32, 320, nenv)
     wojtek_rate = _bench(
-        mjx, jax, jp, wojtek_model, m.key("home").qpos, nenv, nsteps,
+        mjx,
+        jax,
+        jp,
+        wojtek_model,
+        m.key("home").qpos,
+        nenv,
+        nsteps,
         init_data=lambda _: data_fn(),
     )
     print(f"wojtek ({backend}): {wojtek_rate:,.0f} steps/s ({nenv} envs)")
 
     go1_env = registry.load("Go1JoystickFlatTerrain", config_overrides={"impl": "jax"})
     g = go1_env.mj_model
-    go1_rate = _bench(
-        mjx, jax, jp, go1_env.mjx_model, g.key("home").qpos, nenv, nsteps
-    )
+    go1_rate = _bench(mjx, jax, jp, go1_env.mjx_model, g.key("home").qpos, nenv, nsteps)
     print(f"go1 : {go1_rate:,.0f} steps/s ({nenv} envs)")
     print(f"ratio: {wojtek_rate / go1_rate:.2f} (gate: >= 0.20)")
     return wojtek_rate >= go1_rate / 5
@@ -119,7 +122,7 @@ def main() -> None:
         _bench(mjx, jax, jp, mjx.put_model(m, impl="jax"), m.key("home").qpos, 2, 5)
         print("mjx: compiles and steps")
     if ok and args.gpu:
-        from wojtek_env.base import resolve_backend
+        from wojtek_env.envs.base import resolve_backend
 
         ok = check_gpu(args.nenv, args.nsteps, resolve_backend(args.backend))
     print("GATE PASS" if ok else "GATE FAIL")

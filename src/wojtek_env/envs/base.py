@@ -18,8 +18,9 @@ from brax import math as brax_math
 from mujoco import mjx
 from mujoco_playground._src import mjx_env
 
-from wojtek_env import paths, terrain_env
-from wojtek_env.build_model import BASE_BOX_NAMES, FOOT_RADIUS
+from wojtek_env import paths
+from wojtek_env.terrain import terrain_env
+from wojtek_env.tools.build_model import BASE_BOX_NAMES, FOOT_RADIUS
 
 # Actuator indices of the knee cranks (third joints), paths.LEGS order.
 KNEE_ACTUATORS = (2, 5, 8, 11)
@@ -139,9 +140,7 @@ class WojtekEnv(mjx_env.MjxEnv):
             [m.geom(f"{leg}_foot_sphere").id for leg in paths.LEGS]
         )
         self._base_geom_ids = np.array([m.geom(n).id for n in BASE_BOX_NAMES])
-        self._base_geom_half = jp.array(
-            m.geom_size[self._base_geom_ids][:, :3]
-        )
+        self._base_geom_half = jp.array(m.geom_size[self._base_geom_ids][:, :3])
         self._sensor_adr = {
             name: m.sensor(name).adr[0]
             for name in ("orientation", "angular-velocity", "linear-acceleration")
@@ -368,8 +367,7 @@ class WojtekEnv(mjx_env.MjxEnv):
             missing = [n for n in names if n not in catalog]
             if missing:
                 raise KeyError(
-                    f"unknown obs component(s) {missing}; available: "
-                    f"{sorted(catalog)}"
+                    f"unknown obs component(s) {missing}; available: {sorted(catalog)}"
                 )
             return jp.concatenate([catalog[n] for n in names])
 

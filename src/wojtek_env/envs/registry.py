@@ -7,8 +7,8 @@ tuple/float coercion so yaml `vx: [-0.8, 1.8]` lands on a tuple field.
 
 from ml_collections import config_dict
 
-from wojtek_env import env as env_joystick
-from wojtek_env import env_getup, env_jump
+from wojtek_env.envs import env as env_joystick
+from wojtek_env.envs import env_getup, env_jump
 
 TASKS = {
     "joystick": (env_joystick.WojtekJoystick, env_joystick.default_config),

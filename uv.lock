@@ -1724,7 +1724,7 @@ wheels = [
 ]
 
 [[package]]
-name = "wojtek-ued"
+name = "wojtek-env"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
@@ -1738,6 +1738,7 @@ dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "playground" },
+    { name = "ruff" },
     { name = "warp-lang" },
 ]
 
@@ -1759,6 +1760,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "playground", specifier = ">=0.0.4" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
+    { name = "ruff", specifier = ">=0.16.2" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.1" },
     { name = "warp-lang", specifier = "==1.13.0" },
 ]

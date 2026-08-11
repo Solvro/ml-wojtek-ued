@@ -1,17 +1,3 @@
-"""Batched Gymnasium surface over a wojtek_env task.
-
-Vmapped through the same brax wrapper stack the original PPO trainer used
-(curriculum auto-reset when the task has terrain on, brax's stock wrapper
-otherwise). metadata["autoreset_mode"] = SAME_STEP: the observation
-returned on a done step is already the next episode's first observation
-(brax's AutoResetWrapper / this repo's TerrainAutoResetWrapper substitute it
-within the same step() call) -- the true terminal observation is not
-separately exposed.
-
-Observation is the actor's flat "state" vector; the critic-only
-"privileged_state" rides along under info["privileged_obs"].
-"""
-
 from __future__ import annotations
 
 import functools
@@ -25,14 +11,12 @@ from gymnasium.vector import VectorEnv
 from gymnasium.vector.utils import batch_space
 from gymnasium.vector.vector_env import AutoresetMode
 
-from wojtek_env import registry
+from wojtek_env.envs import registry
 
 
 def _wrap(env, episode_length: int, randomization_fn):
-    """The same wrapper stack train.py picked: curriculum auto-reset when
-    the env has terrain on, brax's stock wrapper otherwise."""
     if getattr(env, "_terrain_enabled", False):
-        from wojtek_env.terrain_wrapper import wrap_for_terrain_brax_training
+        from wojtek_env.terrain.terrain_wrapper import wrap_for_terrain_brax_training
 
         return wrap_for_terrain_brax_training(
             env, episode_length=episode_length, randomization_fn=randomization_fn
@@ -45,9 +29,6 @@ def _wrap(env, episode_length: int, randomization_fn):
 
 
 class WojtekVectorGymEnv(VectorEnv):
-    """Batched Gymnasium VectorEnv over a wojtek_env task, vmapped through
-    the same brax wrapper stack the PPO trainer used."""
-
     metadata: dict[str, Any] = {"autoreset_mode": AutoresetMode.SAME_STEP}
 
     def __init__(
@@ -67,17 +48,15 @@ class WojtekVectorGymEnv(VectorEnv):
         self._key = jax.random.PRNGKey(seed)
         randomization_fn = None
         if domain_randomize:
-            from wojtek_env.randomize import make_domain_randomize
+            from wojtek_env.envs.randomize import make_domain_randomize
 
             self._key, dr_key = jax.random.split(self._key)
-            # One randomized model per env lane, fixed for the process
-            # lifetime -- the same convention brax.training.agents.ppo.train
-            # uses (functools.partial(randomization_fn, rng=...) before the
-            # vmap wrapper sees it).
+
             randomization_fn = functools.partial(
                 make_domain_randomize(self._env.mj_model),
                 rng=jax.random.split(dr_key, num_envs),
             )
+
         wrapped = _wrap(self._env, length, randomization_fn)
         self._reset_fn = jax.jit(wrapped.reset)
         self._step_fn = jax.jit(wrapped.step)

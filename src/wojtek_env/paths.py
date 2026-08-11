@@ -2,7 +2,9 @@
 
 from pathlib import Path
 
-PROJECT_DIR = Path(__file__).resolve().parents[2]  # src/wojtek_env/paths.py -> repo root
+PROJECT_DIR = (
+    Path(__file__).resolve().parents[2]
+)  # src/wojtek_env/paths.py -> repo root
 MUJOCO_DIR = PROJECT_DIR / "assets/wojtek_description/mujoco"
 SOURCE_XML = MUJOCO_DIR / "wojtek.xml"
 ROBOT_XML = MUJOCO_DIR / "wojtek_mjx.xml"

@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from wojtek_env import terrain
+from wojtek_env.terrain import terrain
 
 # Arena identity. Seed 0 and sorted columns (`ordered=True`), so the course is
 # reproducible from the row table alone.
@@ -184,7 +184,9 @@ _STEP = (0.025, 0.05, 0.065, 0.08)  # m
 # no bar for either, so all six cells are tracked.
 _RUBBLE_WAVE_ROWS = (_ROUGH[0], _ROUGH[1], _ROUGH[2])
 
-_FAMILIES: tuple[tuple[tuple[str, ...], tuple[float, ...], tuple[float | None, ...]], ...] = (
+_FAMILIES: tuple[
+    tuple[tuple[str, ...], tuple[float, ...], tuple[float | None, ...]], ...
+] = (
     (
         ("rough_uniform",),
         tuple(terrain.rough_difficulty(a) for a in _ROUGH),
@@ -390,8 +392,11 @@ def course() -> tuple[Run, ...]:
             for offset in START_OFFSETS:
                 runs.append(
                     Run(
-                        index=len(runs), heading_index=h, yaw=yaw,
-                        offset=offset, draw=draw,
+                        index=len(runs),
+                        heading_index=h,
+                        yaw=yaw,
+                        offset=offset,
+                        draw=draw,
                     )
                 )
     return tuple(runs)
@@ -408,7 +413,7 @@ def heading_stretch(yaw: float) -> float:
     return 1.0 / max(abs(math.cos(yaw)), abs(math.sin(yaw)))
 
 
-def run_distance(run: "Run") -> float:
+def run_distance(run: Run) -> float:
     """Metres this particular run walks: out to OUT_RADIUS from its start offset,
     then three legs between BACK_RADIUS and OUT_RADIUS, at its own heading.
 

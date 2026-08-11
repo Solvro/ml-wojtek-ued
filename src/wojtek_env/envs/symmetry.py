@@ -16,7 +16,7 @@ against its real observation sizes at construction.
 
 import numpy as np
 
-from wojtek_env import height_scan
+from wojtek_env.envs import height_scan
 
 # paths.LEGS order (rear_left, rear_right, front_right, front_left) -> the
 # laterally mirrored leg's index.

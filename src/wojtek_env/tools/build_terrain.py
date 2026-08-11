@@ -48,7 +48,8 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
-from wojtek_env import paths, terrain, terrain_suite
+from wojtek_env import paths
+from wojtek_env.terrain import terrain, terrain_suite
 
 # Box tint, alternating by parity so steps read in the viewer; collision
 # attributes match the floor line in build_model.SCENE_XML_TEXT.
@@ -186,8 +187,13 @@ def write_arena(arena: terrain.Arena, kind: str = "train") -> None:
     np.savez_compressed(
         out["lookup"],
         lookup=arena.lookup,
-        x_min=s.x_min, x_max=s.x_max, y_min=s.y_min, y_max=s.y_max,
-        cell_size=s.cell_size, nrow=s.hfield.nrow, ncol=s.hfield.ncol,
+        x_min=s.x_min,
+        x_max=s.x_max,
+        y_min=s.y_min,
+        y_max=s.y_max,
+        cell_size=s.cell_size,
+        nrow=s.hfield.nrow,
+        ncol=s.hfield.ncol,
     )
     for p in (out["hfield"], out["scene"], out["spec"], out["lookup"]):
         print(f"wrote {p} ({p.stat().st_size / 1e6:.2f} MB)")
@@ -195,33 +201,54 @@ def write_arena(arena: terrain.Arena, kind: str = "train") -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--arena", choices=paths.TERRAIN_KINDS, default="train",
-                   help="which file set to write; eval is the fixed "
-                        "measurement course (terrain_suite)")
+    p.add_argument(
+        "--arena",
+        choices=paths.TERRAIN_KINDS,
+        default="train",
+        help="which file set to write; eval is the fixed "
+        "measurement course (terrain_suite)",
+    )
     # Default None on the four flags the eval arena owns, so "not given" is
     # distinguishable from "given the same value the default happens to be".
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--rows", type=int, default=None)
     p.add_argument("--pad-radius", type=float, default=None)
-    p.add_argument("--ordered", action="store_true", default=None,
-                   help="sorted-column, exact-difficulty layout")
-    p.add_argument("--flat-row", action="store_true", default=None,
-                   help="prepend a genuinely flat row as level 0; the run's "
-                        "preset must carry task.env.terrain.flat_row=true")
+    p.add_argument(
+        "--ordered",
+        action="store_true",
+        default=None,
+        help="sorted-column, exact-difficulty layout",
+    )
+    p.add_argument(
+        "--flat-row",
+        action="store_true",
+        default=None,
+        help="prepend a genuinely flat row as level 0; the run's "
+        "preset must carry task.env.terrain.flat_row=true",
+    )
     p.add_argument("--tile-size", type=float, default=terrain.TILE_SIZE)
     p.add_argument("--border", type=float, default=terrain.BORDER)
     p.add_argument("--cell-size", type=float, default=terrain.CELL_SIZE)
-    p.add_argument("--stair-tread", type=float, nargs="+", default=None,
-                   metavar="M",
-                   help="stair tread depth: one value builds fixed treads, "
-                        "two are a [lo hi] range drawn per tile; default is "
-                        f"the legacy {terrain.TREAD}. The run's preset must "
-                        "carry the same task.env.terrain.stair_tread_range.")
-    p.add_argument("--type-caps", type=str, default=None,
-                   metavar="T=CAP,...",
-                   help="per-type difficulty caps, e.g. "
-                        "'pyramid_stairs=0.7,random_grid=0.55'; the preset "
-                        "must carry the same task.env.terrain.type_caps")
+    p.add_argument(
+        "--stair-tread",
+        type=float,
+        nargs="+",
+        default=None,
+        metavar="M",
+        help="stair tread depth: one value builds fixed treads, "
+        "two are a [lo hi] range drawn per tile; default is "
+        f"the legacy {terrain.TREAD}. The run's preset must "
+        "carry the same task.env.terrain.stair_tread_range.",
+    )
+    p.add_argument(
+        "--type-caps",
+        type=str,
+        default=None,
+        metavar="T=CAP,...",
+        help="per-type difficulty caps, e.g. "
+        "'pyramid_stairs=0.7,random_grid=0.55'; the preset "
+        "must carry the same task.env.terrain.type_caps",
+    )
     p.add_argument("--no-check", action="store_true", help="skip the compile check")
     args = p.parse_args()
 
@@ -243,9 +270,12 @@ def main() -> None:
             type_caps[name.strip()] = float(cap)
 
     owned = {
-        "--seed": args.seed, "--rows": args.rows,
-        "--pad-radius": args.pad_radius, "--ordered": args.ordered,
-        "--flat-row": args.flat_row, "--stair-tread": stair_tread,
+        "--seed": args.seed,
+        "--rows": args.rows,
+        "--pad-radius": args.pad_radius,
+        "--ordered": args.ordered,
+        "--flat-row": args.flat_row,
+        "--stair-tread": stair_tread,
         "--type-caps": type_caps,
     }
     kwargs = dict(
@@ -254,7 +284,9 @@ def main() -> None:
         pad_radius=terrain.PAD_RADIUS if args.pad_radius is None else args.pad_radius,
         ordered=bool(args.ordered),
         flat_row=bool(args.flat_row),
-        tile_size=args.tile_size, border=args.border, cell_size=args.cell_size,
+        tile_size=args.tile_size,
+        border=args.border,
+        cell_size=args.cell_size,
         stair_tread=terrain.TREAD if stair_tread is None else stair_tread,
         type_caps=type_caps,
     )
@@ -270,7 +302,8 @@ def main() -> None:
         # error, not a preference. (terrain_scan.check_arena refuses such an
         # arena too.)
         suite = (
-            terrain_suite.eval_arena_kwargs() if args.arena == "eval"
+            terrain_suite.eval_arena_kwargs()
+            if args.arena == "eval"
             else terrain_suite.deep_arena_kwargs()
         )
         conflicts = sorted(flag for flag, given in owned.items() if given is not None)
