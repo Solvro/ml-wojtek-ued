@@ -1,9 +1,17 @@
 .venv/
 __pycache__/
+.ruff_cache/
+.pytest_cache/
+.ty_cache/
 *.pyc
 .jax_cache/
 runs/
 wandb/
+artifacts/
+outputs/
+multirun/
+logs/
+.env
 
 # generated MJX model + terrain arenas (build_model.py / build_terrain.py outputs)
 assets/wojtek_description/mujoco/wojtek_mjx.xml
