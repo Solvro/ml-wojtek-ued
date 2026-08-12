@@ -1,0 +1,210 @@
+import functools
+
+import equinox as eqx
+import jax
+import jax.numpy as jnp
+
+from modules.ppo_modules import A2C, Episode
+from utils.env import FunctionalEnv
+
+
+def clip_log_std(model, low=-5.0, high=0.5):
+    clipped = jnp.clip(model.actor_log_std, low, high)
+    return eqx.tree_at(lambda m: m.actor_log_std, model, clipped)
+
+
+def is_finite(model):
+    leaves = jax.tree_util.tree_leaves(eqx.filter(model, eqx.is_array))
+    return bool(
+        jnp.all(jnp.array([jnp.all(jnp.isfinite(leave)) for leave in leaves])),
+    )
+
+
+def compute_gae(rewards, values, dones, next_value, gamma=0.99, lam=0.95):
+    def gae_step(carry, transition):
+        next_advantage, next_value = carry
+        reward, value, done = transition
+        delta = reward + gamma * (1 - done) * next_value - value
+        advantage = delta + (1 - done) * gamma * lam * next_advantage
+        return (advantage, value), advantage
+
+    _, advantages = jax.lax.scan(
+        gae_step,
+        (jnp.zeros_like(next_value), next_value),
+        (rewards, values, dones),
+        reverse=True,
+    )
+    returns = advantages + values
+    return advantages, returns
+
+
+def policy_step(
+    env: FunctionalEnv,
+    model: A2C,
+    state_input: list,
+    tmp: tuple[()],
+) -> tuple[list, Episode]:
+    obs, state, key = state_input
+    key, key_step, key_act = jax.random.split(key, 3)
+    action, log_prob, value, entropy = model(obs, key_act)
+    next_obs, next_state, reward, done, _ = env.step(key_step, state, action)
+    carry = [next_obs, next_state, key]
+    step_out = Episode(
+        obs=obs,
+        action=action,
+        log_prob=log_prob,
+        value=value,
+        entropy=entropy,
+        reward=reward,
+        next_obs=next_obs,
+        done=done,
+    )
+    return carry, step_out
+
+
+def rollout(
+    env: FunctionalEnv,
+    key_input: jax.Array,
+    model: A2C,
+    steps_in_episode: int,
+) -> Episode:
+    key_reset, key_episode = jax.random.split(key_input)
+    obs, state = env.reset(key_reset)
+    step_fn = functools.partial(policy_step, env, model)
+    _, episode = jax.lax.scan(
+        step_fn,
+        [obs, state, key_episode],
+        (),
+        steps_in_episode,
+    )
+    return episode
+
+
+def batch_rollout(
+    env: FunctionalEnv,
+    key_input: jax.Array,
+    model: A2C,
+    envs_num: int,
+    steps_in_episode: int,
+) -> Episode:
+    keys = jax.random.split(key_input, envs_num)
+    rollout_fn = functools.partial(rollout, env)
+    return jax.vmap(rollout_fn, in_axes=(0, None, None))(
+        keys,
+        model,
+        steps_in_episode,
+    )
+
+
+def calculate_episode_advantage(model, episode, gamma=0.99, lam=0.95):
+    next_values = jax.vmap(model.critic)(
+        episode.next_obs.critic[:, -1, :],
+    ).squeeze(-1)
+    advantages, returns = jax.vmap(
+        compute_gae,
+        in_axes=(0, 0, 0, 0, None, None),
+    )(
+        episode.reward,
+        episode.value.squeeze(-1),
+        episode.done,
+        next_values,
+        gamma,
+        lam,
+    )
+    return advantages, returns
+
+
+def ppo_loss(
+    model,
+    obs,
+    actions,
+    old_log_prob,
+    advantages,
+    returns,
+    keys,
+    epsilon=0.1,
+    value_coef=0.5,
+    entropy_coef=0.01,
+):
+    _, new_log_prob, value, entropy = jax.vmap(model, in_axes=(0, 0, 0))(
+        obs, keys, actions
+    )
+    log_ratio = jnp.clip(new_log_prob - old_log_prob, -20.0, 20.0)
+    ratio = jnp.exp(log_ratio)
+
+    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+    clipped = jnp.clip(ratio, 1 - epsilon, 1 + epsilon) * advantages
+
+    policy_loss = -jnp.mean(jnp.minimum(ratio * advantages, clipped))
+    value_loss = jnp.mean((value.squeeze(-1) - returns) ** 2)
+    entropy_loss = -jnp.mean(entropy)
+
+    return policy_loss + value_coef * value_loss + entropy_coef * entropy_loss
+
+
+def make_step(
+    optimizer,
+    model,
+    opt_state,
+    obs,
+    actions,
+    old_log_prob,
+    advantages,
+    returns,
+    keys,
+):
+    loss_value, grads = eqx.filter_value_and_grad(ppo_loss)(
+        model, obs, actions, old_log_prob, advantages, returns, keys
+    )
+    updates, opt_state = optimizer.update(
+        grads, opt_state, eqx.filter(model, eqx.is_array)
+    )
+    model = eqx.apply_updates(model, updates)
+    return model, opt_state, loss_value
+
+
+def eval_step(
+    env: FunctionalEnv,
+    model: A2C,
+    state_input: list,
+    tmp: tuple[()],
+) -> tuple[list, jax.Array]:
+    obs, state, key = state_input
+    key, key_step = jax.random.split(key)
+    action = model.deterministic_action(obs)
+    next_obs, next_state, reward, _, _ = env.step(key_step, state, action)
+    carry = [next_obs, next_state, key]
+    return carry, reward
+
+
+def eval_rollout(
+    env: FunctionalEnv,
+    key_input: jax.Array,
+    model: A2C,
+    steps: int,
+) -> jax.Array:
+    key_reset, key_episode = jax.random.split(key_input)
+    obs, state = env.reset(key_reset)
+    step_fn = functools.partial(
+        eval_step,
+        env,
+        model,
+    )
+    _, rewards = jax.lax.scan(step_fn, [obs, state, key_episode], (), steps)
+    return rewards
+
+
+def eval(
+    env: FunctionalEnv,
+    model: A2C,
+    key: jax.Array,
+    envs_num: int,
+    steps: int,
+) -> jax.Array:
+    keys = jax.random.split(key, envs_num)
+    rollout_fn = functools.partial(eval_rollout, env)
+    rewards = jax.vmap(
+        rollout_fn,
+        in_axes=(0, None, None),
+    )(keys, model, steps)
+    return rewards.sum(axis=1).mean()

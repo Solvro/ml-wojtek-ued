@@ -11,6 +11,7 @@ artifacts/
 outputs/
 multirun/
 logs/
+hive.yml
 .env
 
 # generated MJX model + terrain arenas (build_model.py / build_terrain.py outputs)
