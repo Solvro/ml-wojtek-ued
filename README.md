@@ -8,7 +8,7 @@ ACCEL). Env only — no PPO trainer, no ROS, no deployment stack.
 src/wojtek_env/
   envs/        the MJX env (envs.make_env)
   terrain/     procedural terrain generator + curriculum wrapper
-  gymnasium/   WojtekGymEnv, WojtekVectorGymEnv
+  gymnasium/   WojtekGymEnv
   tools/       build/check CLIs
   paths.py
 ```
@@ -16,21 +16,26 @@ src/wojtek_env/
 ## Setup
 
 ```bash
-uv sync
-./run.sh build       # wojtek.xml -> wojtek_mjx.xml + scene_mjx.xml
-./run.sh check-gym   # sanity-check both Gymnasium wrappers
+just sync            # uv sync --extra dev
+just build           # wojtek.xml -> wojtek_mjx.xml + scene_mjx.xml
+```
+
+Other recipes (`just` to list all):
+
+```bash
+just install         # relock + sync
+just fmt             # ruff format + check --fix
+just lint            # ruff check + format --check
+just train [args]    # PPO training (hydra overrides, e.g. just train training_params.epochs=8)
 ```
 
 ## Usage
 
 ```python
-from wojtek_env.gymnasium import WojtekGymEnv, WojtekVectorGymEnv
+from wojtek_env.gymnasium import WojtekGymEnv
 
 env = WojtekGymEnv(task="joystick")
 obs, info = env.reset(seed=0)
-
-envs = WojtekVectorGymEnv(num_envs=2048, task="joystick")
-obs, infos = envs.reset(seed=0)
 ```
 
 See `main.py` for a random-agent MuJoCo-viewer preview.

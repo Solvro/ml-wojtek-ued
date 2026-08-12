@@ -1,4 +1,4 @@
-"""Sanity-check the Gymnasium adapters: build, reset, a few random steps,
+"""Sanity-check the Gymnasium adapter: build, reset, a few random steps,
 one full episode to exercise reset-on-done. Mirrors check_model_mjx.py's
 gate pattern -- prints PASS/FAIL, exits nonzero on failure."""
 
@@ -7,7 +7,7 @@ import sys
 
 import numpy as np
 
-from wojtek_env.gymnasium import WojtekGymEnv, WojtekVectorGymEnv
+from wojtek_env.gymnasium import WojtekGymEnv
 
 
 def check_single(task: str, steps: int) -> None:
@@ -21,7 +21,7 @@ def check_single(task: str, steps: int) -> None:
         assert env.observation_space.contains(obs), "step obs outside observation_space"
         assert np.isfinite(reward), "non-finite reward"
         if terminated or truncated:
-            obs, info = env.reset()
+            obs, _ = env.reset()
 
     # Drive one episode to its truncation deterministically (no resets in
     # between), then confirm step() refuses to continue without reset().
@@ -40,27 +40,13 @@ def check_single(task: str, steps: int) -> None:
     print(f"single [{task}]: obs {obs.shape}, action {env.action_space.shape}  ok")
 
 
-def check_vector(task: str, num_envs: int, steps: int) -> None:
-    envs = WojtekVectorGymEnv(num_envs=num_envs, task=task, episode_length=20, seed=0)
-    obs, infos = envs.reset(seed=0)
-    assert obs.shape == (num_envs, *envs.single_observation_space.shape)
-    for _ in range(steps):
-        actions = envs.action_space.sample()
-        obs, rewards, terminations, truncations, infos = envs.step(actions)
-        assert obs.shape == (num_envs, *envs.single_observation_space.shape)
-        assert np.all(np.isfinite(rewards))
-    print(f"vector [{task}] x{num_envs}: obs {obs.shape}  ok")
-
-
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--task", default="joystick", choices=["joystick", "getup", "jump"])
-    p.add_argument("--num-envs", type=int, default=8)
     p.add_argument("--steps", type=int, default=60)
     args = p.parse_args()
     try:
         check_single(args.task, args.steps)
-        check_vector(args.task, args.num_envs, args.steps)
     except Exception as e:  # noqa: BLE001
         print(f"GATE FAIL: {e}")
         sys.exit(1)

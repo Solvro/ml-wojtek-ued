@@ -24,7 +24,8 @@ class WojtekGymEnv(gym.Env):
     ):
         self._env = registry.make_env(task, env_overrides)
         length = episode_length or self._env._config.episode_length
-        wrapped = brax_training.EpisodeWrapper(self._env, length, action_repeat=1)
+        wrapped = brax_training.EpisodeWrapper(
+            self._env, length, action_repeat=1)
         self._reset_fn = jax.jit(wrapped.reset)
         self._step_fn = jax.jit(wrapped.step)
 
@@ -33,7 +34,8 @@ class WojtekGymEnv(gym.Env):
         obs_dim = int(probe.obs["state"].shape[-1])
         act_dim = self._env.action_size
 
-        self.observation_space = spaces.Box(-np.inf, np.inf, (obs_dim,), np.float32)
+        self.observation_space = spaces.Box(-np.inf,
+                                            np.inf, (obs_dim,), np.float32)
         self.action_space = spaces.Box(-1.0, 1.0, (act_dim,), np.float32)
         self._state = None
         self._needs_reset = True
