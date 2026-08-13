@@ -18,9 +18,7 @@ from utils.logging import Logger, quiet_dependencies
 from utils.ppo_helpers import (
     batch_rollout,
     calculate_episode_advantage,
-    clip_log_std,
     eval,
-    is_finite,
     make_step,
 )
 
@@ -51,6 +49,13 @@ def train(cfg: Config) -> None:
     env = FunctionalEnv(
         task=cfg.environment_params.name,
         seed=cfg.environment_params.seed,
+        env_overrides={"sim": {"num_envs": cfg.environment_params.envs_num}},
+    )
+
+    eval_env = FunctionalEnv(
+        task=cfg.environment_params.name,
+        seed=cfg.environment_params.seed,
+        env_overrides={"sim": {"num_envs": cfg.evaluation_params.envs_num}},
     )
 
     action_dim = env.action_size
@@ -116,7 +121,7 @@ def train(cfg: Config) -> None:
     jit_eval = eqx.filter_jit(
         functools.partial(
             eval,
-            env,
+            eval_env,
             envs_num=cfg.evaluation_params.envs_num,
             steps=cfg.evaluation_params.steps,
         )
@@ -148,7 +153,7 @@ def train(cfg: Config) -> None:
 
             for start in range(0, batch_size, minibatch_size):
                 idx = perm[start : start + minibatch_size]
-                new_a2c, new_opt_state, loss = jit_make_step(
+                a2c, opt_state, loss = jit_make_step(
                     a2c,
                     opt_state,
                     jax.tree.map(lambda x, idx=idx: x[idx], obs),
@@ -158,14 +163,6 @@ def train(cfg: Config) -> None:
                     returns_flat[idx],
                     minibatch_keys[idx],
                 )
-                # A single saturated tanh sample can turn a step's loss (and
-                # thus its gradients and the Adam moments) into NaN, which
-                # never recovers on its own. Drop the step instead of
-                # applying it, and keep actor_log_std out of the regime that
-                # produces those saturated samples in the first place.
-                if is_finite(new_a2c):
-                    a2c = clip_log_std(new_a2c)
-                    opt_state = new_opt_state
 
         mean_reward = episode.reward.sum(axis=1).mean()
 
@@ -174,20 +171,26 @@ def train(cfg: Config) -> None:
         )
         lr = linear_scheduler(real_step)
 
+        metrics = {
+            "iteration": iteration,
+            "loss": loss,
+            "mean_reward": mean_reward,
+            "learning_rate": lr,
+        }
+
         if iteration % cfg.training_params.eval_every == 0:
             key, eval_key = jax.random.split(key)
-            mean_return = jit_eval(a2c, eval_key)
-            run.log({"mean_return": mean_return})
+            metrics["mean_return"] = jit_eval(a2c, eval_key)
 
-        run.log(
-            {
-                "iteration": iteration,
-                "loss": loss,
-                "mean_reward": mean_reward,
-                "learning_rate": lr,
-            }
-        )
-        save_checkpoint(ckptr, iteration, a2c, opt_state)
+        run.log(metrics, step=iteration)
+
+        if save_checkpoint(ckptr, iteration, a2c, opt_state):
+            ckptr.wait_until_finished()
+            artifact = wandb.Artifact(
+                name=f"{cfg.environment_params.name}-checkpoints", type="model"
+            )
+            artifact.add_dir(str(directory))
+            run.log_artifact(artifact, aliases=["latest"])
 
     ckptr.wait_until_finished()
 

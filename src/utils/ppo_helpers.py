@@ -13,11 +13,9 @@ def clip_log_std(model, low=-5.0, high=0.5):
     return eqx.tree_at(lambda m: m.actor_log_std, model, clipped)
 
 
-def is_finite(model):
+def is_finite_array(model):
     leaves = jax.tree_util.tree_leaves(eqx.filter(model, eqx.is_array))
-    return bool(
-        jnp.all(jnp.array([jnp.all(jnp.isfinite(leave)) for leave in leaves])),
-    )
+    return jnp.all(jnp.array([jnp.all(jnp.isfinite(leave)) for leave in leaves]))
 
 
 def compute_gae(rewards, values, dones, next_value, gamma=0.99, lam=0.95):
@@ -62,24 +60,6 @@ def policy_step(
     return carry, step_out
 
 
-def rollout(
-    env: FunctionalEnv,
-    key_input: jax.Array,
-    model: A2C,
-    steps_in_episode: int,
-) -> Episode:
-    key_reset, key_episode = jax.random.split(key_input)
-    obs, state = env.reset(key_reset)
-    step_fn = functools.partial(policy_step, env, model)
-    _, episode = jax.lax.scan(
-        step_fn,
-        [obs, state, key_episode],
-        (),
-        steps_in_episode,
-    )
-    return episode
-
-
 def batch_rollout(
     env: FunctionalEnv,
     key_input: jax.Array,
@@ -87,13 +67,24 @@ def batch_rollout(
     envs_num: int,
     steps_in_episode: int,
 ) -> Episode:
-    keys = jax.random.split(key_input, envs_num)
-    rollout_fn = functools.partial(rollout, env)
-    return jax.vmap(rollout_fn, in_axes=(0, None, None))(
-        keys,
-        model,
+    key_reset, key_episode = jax.random.split(key_input)
+    reset_keys = jax.random.split(key_reset, envs_num)
+    episode_keys = jax.random.split(key_episode, envs_num)
+
+    obs, state = jax.vmap(env.reset)(reset_keys)
+    step_fn = jax.vmap(functools.partial(policy_step, env, model))
+    _, episode = jax.lax.scan(
+        step_fn,
+        [obs, state, episode_keys],
+        (),
         steps_in_episode,
     )
+    # scan stacks steps on axis 0 and vmap adds envs on axis 1, giving
+    # (steps, envs, ...). Callers (calculate_episode_advantage's GAE scan,
+    # the reshape in ppo.py) expect envs-major (envs, steps, ...), so swap
+    # back right here rather than pushing the time-major convention
+    # through every downstream consumer.
+    return jax.tree.map(lambda x: jnp.swapaxes(x, 0, 1), episode)
 
 
 def calculate_episode_advantage(model, episode, gamma=0.99, lam=0.95):
@@ -156,10 +147,25 @@ def make_step(
     loss_value, grads = eqx.filter_value_and_grad(ppo_loss)(
         model, obs, actions, old_log_prob, advantages, returns, keys
     )
-    updates, opt_state = optimizer.update(
+    updates, new_opt_state = optimizer.update(
         grads, opt_state, eqx.filter(model, eqx.is_array)
     )
-    model = eqx.apply_updates(model, updates)
+    new_model = clip_log_std(eqx.apply_updates(model, updates))
+    # A single saturated tanh sample can turn a step's loss (and thus its
+    # gradients and the Adam moments) into NaN, which never recovers on its
+    # own. Select the old model/opt_state for such a step instead of applying
+    # it, inside jit so the finite check never forces a device->host sync in
+    # the training loop.
+    finite = is_finite_array(new_model)
+    new_arr, _ = eqx.partition(new_model, eqx.is_array)
+    old_arr, static = eqx.partition(model, eqx.is_array)
+    model = eqx.combine(
+        jax.tree.map(lambda n, o: jnp.where(finite, n, o), new_arr, old_arr),
+        static,
+    )
+    opt_state = jax.tree.map(
+        lambda n, o: jnp.where(finite, n, o), new_opt_state, opt_state
+    )
     return model, opt_state, loss_value
 
 
@@ -177,23 +183,6 @@ def eval_step(
     return carry, reward
 
 
-def eval_rollout(
-    env: FunctionalEnv,
-    key_input: jax.Array,
-    model: A2C,
-    steps: int,
-) -> jax.Array:
-    key_reset, key_episode = jax.random.split(key_input)
-    obs, state = env.reset(key_reset)
-    step_fn = functools.partial(
-        eval_step,
-        env,
-        model,
-    )
-    _, rewards = jax.lax.scan(step_fn, [obs, state, key_episode], (), steps)
-    return rewards
-
-
 def eval(
     env: FunctionalEnv,
     model: A2C,
@@ -201,10 +190,13 @@ def eval(
     envs_num: int,
     steps: int,
 ) -> jax.Array:
-    keys = jax.random.split(key, envs_num)
-    rollout_fn = functools.partial(eval_rollout, env)
-    rewards = jax.vmap(
-        rollout_fn,
-        in_axes=(0, None, None),
-    )(keys, model, steps)
-    return rewards.sum(axis=1).mean()
+    key_reset, key_episode = jax.random.split(key)
+    reset_keys = jax.random.split(key_reset, envs_num)
+    episode_keys = jax.random.split(key_episode, envs_num)
+
+    obs, state = jax.vmap(env.reset)(reset_keys)
+    step_fn = jax.vmap(functools.partial(eval_step, env, model))
+    _, rewards = jax.lax.scan(step_fn, [obs, state, episode_keys], (), steps)
+    # scan(vmap(step)) stacks as (steps, envs) -- sum over steps (axis 0)
+    # for per-env return, then mean over envs.
+    return rewards.sum(axis=0).mean()
