@@ -2,9 +2,9 @@ import equinox as eqx
 import orbax.checkpoint as ocp
 
 
-def save_checkpoint(ckptr, step, model, opt_state):
+def save_checkpoint(ckptr, step, model, opt_state) -> bool:
     array_model, _ = eqx.partition(model, eqx.is_array)
-    ckptr.save(
+    return ckptr.save(
         step,
         args=ocp.args.Composite(
             model=ocp.args.StandardSave(array_model),

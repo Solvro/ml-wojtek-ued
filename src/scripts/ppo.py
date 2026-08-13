@@ -51,6 +51,13 @@ def train(cfg: Config) -> None:
     env = FunctionalEnv(
         task=cfg.environment_params.name,
         seed=cfg.environment_params.seed,
+        env_overrides={"sim": {"num_envs": cfg.environment_params.envs_num}},
+    )
+
+    eval_env = FunctionalEnv(
+        task=cfg.environment_params.name,
+        seed=cfg.environment_params.seed,
+        env_overrides={"sim": {"num_envs": cfg.evaluation_params.envs_num}},
     )
 
     action_dim = env.action_size
@@ -116,7 +123,7 @@ def train(cfg: Config) -> None:
     jit_eval = eqx.filter_jit(
         functools.partial(
             eval,
-            env,
+            eval_env,
             envs_num=cfg.evaluation_params.envs_num,
             steps=cfg.evaluation_params.steps,
         )
@@ -174,20 +181,26 @@ def train(cfg: Config) -> None:
         )
         lr = linear_scheduler(real_step)
 
+        metrics = {
+            "iteration": iteration,
+            "loss": loss,
+            "mean_reward": mean_reward,
+            "learning_rate": lr,
+        }
+
         if iteration % cfg.training_params.eval_every == 0:
             key, eval_key = jax.random.split(key)
-            mean_return = jit_eval(a2c, eval_key)
-            run.log({"mean_return": mean_return})
+            metrics["mean_return"] = jit_eval(a2c, eval_key)
 
-        run.log(
-            {
-                "iteration": iteration,
-                "loss": loss,
-                "mean_reward": mean_reward,
-                "learning_rate": lr,
-            }
-        )
-        save_checkpoint(ckptr, iteration, a2c, opt_state)
+        run.log(metrics, step=iteration)
+        
+        if save_checkpoint(ckptr, iteration, a2c, opt_state):
+            ckptr.wait_until_finished()
+            artifact = wandb.Artifact(
+                name=f"{cfg.environment_params.name}-checkpoints", type="model"
+            )
+            artifact.add_dir(str(directory))
+            run.log_artifact(artifact, aliases=["latest"])
 
     ckptr.wait_until_finished()
 

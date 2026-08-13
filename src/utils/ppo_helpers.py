@@ -62,24 +62,6 @@ def policy_step(
     return carry, step_out
 
 
-def rollout(
-    env: FunctionalEnv,
-    key_input: jax.Array,
-    model: A2C,
-    steps_in_episode: int,
-) -> Episode:
-    key_reset, key_episode = jax.random.split(key_input)
-    obs, state = env.reset(key_reset)
-    step_fn = functools.partial(policy_step, env, model)
-    _, episode = jax.lax.scan(
-        step_fn,
-        [obs, state, key_episode],
-        (),
-        steps_in_episode,
-    )
-    return episode
-
-
 def batch_rollout(
     env: FunctionalEnv,
     key_input: jax.Array,
@@ -87,13 +69,19 @@ def batch_rollout(
     envs_num: int,
     steps_in_episode: int,
 ) -> Episode:
-    keys = jax.random.split(key_input, envs_num)
-    rollout_fn = functools.partial(rollout, env)
-    return jax.vmap(rollout_fn, in_axes=(0, None, None))(
-        keys,
-        model,
+    key_reset, key_episode = jax.random.split(key_input)
+    reset_keys = jax.random.split(key_reset, envs_num)
+    episode_keys = jax.random.split(key_episode, envs_num)
+
+    obs, state = jax.vmap(env.reset)(reset_keys)
+    step_fn = jax.vmap(functools.partial(policy_step, env, model))
+    _, episode = jax.lax.scan(
+        step_fn,
+        [obs, state, episode_keys],
+        (),
         steps_in_episode,
     )
+    return episode
 
 
 def calculate_episode_advantage(model, episode, gamma=0.99, lam=0.95):
@@ -177,23 +165,6 @@ def eval_step(
     return carry, reward
 
 
-def eval_rollout(
-    env: FunctionalEnv,
-    key_input: jax.Array,
-    model: A2C,
-    steps: int,
-) -> jax.Array:
-    key_reset, key_episode = jax.random.split(key_input)
-    obs, state = env.reset(key_reset)
-    step_fn = functools.partial(
-        eval_step,
-        env,
-        model,
-    )
-    _, rewards = jax.lax.scan(step_fn, [obs, state, key_episode], (), steps)
-    return rewards
-
-
 def eval(
     env: FunctionalEnv,
     model: A2C,
@@ -201,10 +172,11 @@ def eval(
     envs_num: int,
     steps: int,
 ) -> jax.Array:
-    keys = jax.random.split(key, envs_num)
-    rollout_fn = functools.partial(eval_rollout, env)
-    rewards = jax.vmap(
-        rollout_fn,
-        in_axes=(0, None, None),
-    )(keys, model, steps)
+    key_reset, key_episode = jax.random.split(key)
+    reset_keys = jax.random.split(key_reset, envs_num)
+    episode_keys = jax.random.split(key_episode, envs_num)
+
+    obs, state = jax.vmap(env.reset)(reset_keys)
+    step_fn = jax.vmap(functools.partial(eval_step, env, model))
+    _, rewards = jax.lax.scan(step_fn, [obs, state, episode_keys], (), steps)
     return rewards.sum(axis=1).mean()
