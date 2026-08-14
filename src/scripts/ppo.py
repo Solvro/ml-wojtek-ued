@@ -1,28 +1,34 @@
 import functools
-from pathlib import Path
+import time
 from typing import Any, cast
 
 import equinox as eqx
 import hydra
 import jax
 import optax
-import orbax.checkpoint as ocp
 import wandb
 from omegaconf import OmegaConf
 
 from config.ppo_config import Config
 from modules.ppo_modules import A2C
-from utils.checkpoint import save_checkpoint
+from utils.checkpoint import (
+    make_checkpoint_manager,
+    resolve_run_name,
+    run_dir,
+    save_checkpoint,
+    save_meta,
+)
 from utils.env import FunctionalEnv
 from utils.logging import Logger, quiet_dependencies
 from utils.ppo_helpers import (
     batch_rollout,
     calculate_episode_advantage,
-    clip_log_std,
     eval,
-    is_finite,
     make_step,
+    run_ppo_epochs,
 )
+
+ALGO = "ppo"
 
 
 @hydra.main(version_base=None, config_name="config")
@@ -30,12 +36,14 @@ def train(cfg: Config) -> None:
     jax.config.update("jax_platforms", "cuda,cpu")
     quiet_dependencies()
 
+    name = resolve_run_name(cfg.wandb_params.name)
+
     run = (
         wandb.init(
             entity=cfg.wandb_params.entity,
             project=cfg.wandb_params.project,
             tags=cfg.wandb_params.tags,
-            name=cfg.wandb_params.name,
+            name=name,
             config=cast(
                 dict[str, Any],
                 OmegaConf.to_container(
@@ -45,7 +53,7 @@ def train(cfg: Config) -> None:
             ),
         )
         if cfg.wandb_params.enable
-        else Logger(name=cfg.wandb_params.name)
+        else Logger(name=name)
     )
 
     env = FunctionalEnv(
@@ -61,13 +69,11 @@ def train(cfg: Config) -> None:
     key = jax.random.key(cfg.environment_params.seed)
     model_key, key = jax.random.split(key)
 
-    options = ocp.CheckpointManagerOptions(
+    directory = run_dir(cfg.training_params.artifacts_dir, ALGO, name)
+    ckptr = make_checkpoint_manager(
+        directory,
         max_to_keep=cfg.training_params.max_to_keep,
         save_interval_steps=cfg.training_params.save_every,
-    )
-    directory = Path(cfg.training_params.artifacts_dir).resolve()
-    ckptr = ocp.CheckpointManager(
-        directory, item_names=("model", "opt_state"), options=options
     )
 
     a2c = A2C(
@@ -78,6 +84,23 @@ def train(cfg: Config) -> None:
         action_high=action_high,
         key=model_key,
         activation=cfg.model_params.activation,
+    )
+
+    save_meta(
+        directory,
+        {
+            "algo": ALGO,
+            "created_at": time.time(),
+            "env_task": cfg.environment_params.name,
+            "env_overrides": None,
+            "env_seed": cfg.environment_params.seed,
+            "dense_dim": cfg.model_params.dense_dim,
+            "activation": cfg.model_params.activation,
+            "action_dim": action_dim,
+            "actor_obs_dim": obs_size.actor,
+            "critic_obs_dim": obs_size.critic,
+            "action_high": action_high,
+        },
     )
 
     linear_scheduler = optax.linear_schedule(
@@ -122,11 +145,6 @@ def train(cfg: Config) -> None:
         )
     )
 
-    batch_size = (
-        cfg.environment_params.envs_num * cfg.environment_params.steps_in_episode
-    )
-    minibatch_size = batch_size // cfg.training_params.minibatches
-
     loss = 0
 
     for iteration in range(cfg.training_params.iterations):
@@ -135,37 +153,17 @@ def train(cfg: Config) -> None:
         episode = jit_batch_rollout(rollout_key, a2c)
         advantages, returns = jit_advantage(a2c, episode)
 
-        obs = jax.tree.map(lambda x: x.reshape(batch_size, -1), episode.obs)
-        actions = episode.action.reshape(batch_size, -1)
-        old_log_prob = episode.log_prob.reshape(batch_size)
-        advantages_flat = advantages.reshape(batch_size)
-        returns_flat = returns.reshape(batch_size)
-
-        for _ in range(cfg.training_params.epochs):
-            update_key, perm_key, batch_key = jax.random.split(update_key, 3)
-            perm = jax.random.permutation(perm_key, batch_size)
-            minibatch_keys = jax.random.split(batch_key, batch_size)
-
-            for start in range(0, batch_size, minibatch_size):
-                idx = perm[start : start + minibatch_size]
-                new_a2c, new_opt_state, loss = jit_make_step(
-                    a2c,
-                    opt_state,
-                    jax.tree.map(lambda x, idx=idx: x[idx], obs),
-                    actions[idx],
-                    old_log_prob[idx],
-                    advantages_flat[idx],
-                    returns_flat[idx],
-                    minibatch_keys[idx],
-                )
-                # A single saturated tanh sample can turn a step's loss (and
-                # thus its gradients and the Adam moments) into NaN, which
-                # never recovers on its own. Drop the step instead of
-                # applying it, and keep actor_log_std out of the regime that
-                # produces those saturated samples in the first place.
-                if is_finite(new_a2c):
-                    a2c = clip_log_std(new_a2c)
-                    opt_state = new_opt_state
+        a2c, opt_state, loss = run_ppo_epochs(
+            jit_make_step,
+            a2c,
+            opt_state,
+            episode,
+            advantages,
+            returns,
+            update_key,
+            epochs=cfg.training_params.epochs,
+            minibatches=cfg.training_params.minibatches,
+        )
 
         mean_reward = episode.reward.sum(axis=1).mean()
 

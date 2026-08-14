@@ -16,7 +16,7 @@ SCENE_XML = MUJOCO_DIR / "scene_mjx.xml"
 # XML, because the scene includes the robot by relative path and MuJoCo
 # resolves <hfield file=> against the robot's mesh directory -- an arena
 # written to a temporary directory does not compile.
-TERRAIN_KINDS = ("train", "eval", "eval_deep", "test")
+TERRAIN_KINDS = ("train", "eval", "eval_deep", "test", "accel")
 
 
 def terrain_paths(kind: str = "train") -> dict[str, Path]:

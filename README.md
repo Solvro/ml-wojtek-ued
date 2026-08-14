@@ -1,35 +1,58 @@
 # Wojtek UED Research
 
-Wojtek quadruped: MJX/MJWarp simulation env + procedural terrain generator +
-a Gymnasium interface. Extracted from w01-tek for UED research (PAIRED,
-ACCEL). Env only — no PPO trainer, no ROS, no deployment stack.
+Unsupervised Environment Design (PAIRED/ACCEL) on the Wojtek quadruped: a PPO
+student trained against an adversarial curriculum of procedurally generated
+heightfield levels. Built on `wojtek_env`, an extracted MJX simulation env +
+procedural terrain generator + Gymnasium interface (env only — no ROS, no
+deployment).
 
-```
-src/wojtek_env/
-  envs/        the MJX env (envs.make_env)
-  terrain/     procedural terrain generator + curriculum wrapper
-  gymnasium/   WojtekGymEnv
-  tools/       build/check CLIs
-  paths.py
-```
+## Documentation
 
-## Setup
+Full docs live in [`docs/`](docs/):
+
+| Doc | Read it for |
+|---|---|
+| [overview.md](docs/overview.md) | architecture, repo map, end-to-end data flow, glossary |
+| [setup.md](docs/setup.md) | install, dependency pins, building assets, running |
+| [environment.md](docs/environment.md) | `wojtek_env` tasks/terrain/gym, `FunctionalEnv`, hfield swapping |
+| [ppo.md](docs/ppo.md) | A2C model, rollout, GAE, PPO loss/step, checkpoints, logging |
+| [ued-accel.md](docs/ued-accel.md) | heightfield levels + the ACCEL curriculum + convergence |
+| [configuration.md](docs/configuration.md) | every Hydra config field + override examples |
+| [development.md](docs/development.md) | layout rules, tooling, conventions, gotchas |
+
+Start with [overview.md](docs/overview.md).
+
+## Quickstart
 
 ```bash
-just sync            # uv sync --extra dev
-just build           # wojtek.xml -> wojtek_mjx.xml + scene_mjx.xml
+just sync                # uv sync --extra dev
+just build               # wojtek.xml -> wojtek_mjx.xml + scene_mjx.xml
+just build-accel-arena   # write the "accel" terrain arena (needed for ACCEL)
+just train               # plain PPO
+just train-dr            # plain PPO + baseline domain randomization
+just accel               # ACCEL curriculum
+just eval --algo ppo     # evaluate the latest checkpoint of an algo
 ```
 
-Other recipes (`just` to list all):
+## Justfile recipes
 
-```bash
-just install         # relock + sync
-just fmt             # ruff format + check --fix
-just lint            # ruff check + format --check
-just train [args]    # PPO training (hydra overrides, e.g. just train training_params.epochs=8)
-```
+`PYTHONPATH=src` is exported for every recipe. `just` lists them all.
 
-## Usage
+| recipe | does |
+|---|---|
+| `just sync` | `uv sync --extra dev` |
+| `just install` | `uv lock && uv sync --extra dev` (relock, then sync) |
+| `just fmt` | `ruff format` + `ruff check --fix` on `src` |
+| `just lint` | `ruff check` + `ruff format --check` on `src` |
+| `just build` | build the MJX model (`wojtek_mjx.xml` + `scene_mjx.xml`) |
+| `just build-accel-arena` | write the `accel` arena (scene/hfield/spec/lookup) |
+| `just train *args` | PPO training; args are Hydra overrides (e.g. `just train training_params.epochs=8`) |
+| `just train-dr *args` | PPO training with baseline domain randomization (`scripts/ppo_dr.py`) |
+| `just accel *args` | ACCEL training, single-level-per-iteration variant; needs `build-accel-arena` first |
+| `just accel-top-k *args` | ACCEL training, batched-lanes/top-k variant; needs `build-accel-arena` first |
+| `just eval *args` | evaluate a checkpoint (`--algo` required; `--run`/`--step` default to latest) |
+
+## Env usage
 
 ```python
 from wojtek_env.gymnasium import WojtekGymEnv
@@ -38,4 +61,4 @@ env = WojtekGymEnv(task="joystick")
 obs, info = env.reset(seed=0)
 ```
 
-See `main.py` for a random-agent MuJoCo-viewer preview.
+`main.py` is a random-agent MuJoCo-viewer preview.
