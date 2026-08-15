@@ -21,4 +21,5 @@ assets/wojtek_description/mujoco/scene_terrain*.xml
 assets/wojtek_description/mujoco/terrain*_hfield.bin
 assets/wojtek_description/mujoco/terrain*_spec.json
 assets/wojtek_description/mujoco/terrain*_lookup.npz
+assets/wojtek_description/mujoco/hfield_playground_*
 train.log
