@@ -91,7 +91,12 @@ def main(cfg: EvalLevelsConfig) -> None:
         }
     }
     env = FunctionalEnv(
-        task=meta["env_task"], env_overrides=env_overrides, seed=cfg.seed
+        task=meta["env_task"],
+        env_overrides={
+            **env_overrides,
+            "sim": {"num_envs": cfg.chunk_size * cfg.episodes_per_level},
+        },
+        seed=cfg.seed,
     )
 
     template = A2C(

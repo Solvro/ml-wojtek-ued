@@ -49,7 +49,10 @@ def main(cfg: EvalConfig) -> None:
 
     env = FunctionalEnv(
         task=meta["env_task"],
-        env_overrides=meta["env_overrides"],
+        env_overrides={
+            **(meta["env_overrides"] or {}),
+            "sim": {"num_envs": cfg.envs_num},
+        },
         seed=meta["env_seed"],
     )
 

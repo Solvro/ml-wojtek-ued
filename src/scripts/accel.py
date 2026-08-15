@@ -72,7 +72,19 @@ def train(cfg: AccelConfig) -> None:
     }
     env = FunctionalEnv(
         task=cfg.environment_params.name,
-        env_overrides=env_overrides,
+        env_overrides={
+            **env_overrides,
+            "sim": {"num_envs": cfg.environment_params.envs_num},
+        },
+        seed=cfg.environment_params.seed,
+    )
+
+    eval_env = FunctionalEnv(
+        task=cfg.environment_params.name,
+        env_overrides={
+            **env_overrides,
+            "sim": {"num_envs": cfg.evaluation_params.envs_num},
+        },
         seed=cfg.environment_params.seed,
     )
 
@@ -154,7 +166,7 @@ def train(cfg: AccelConfig) -> None:
     jit_eval = eqx.filter_jit(
         functools.partial(
             eval,
-            env,
+            eval_env,
             envs_num=cfg.evaluation_params.envs_num,
             steps=cfg.evaluation_params.steps,
         )
