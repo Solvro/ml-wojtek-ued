@@ -22,6 +22,7 @@ from utils.checkpoint import (
     run_dir,
 )
 from utils.env import FunctionalEnv
+from utils.env_overrides import merge_overrides
 from utils.logging import Logger, quiet_dependencies
 from utils.ppo_helpers import eval_levels
 
@@ -83,13 +84,14 @@ def main(cfg: EvalLevelsConfig) -> None:
 
     hfield_config = HFieldConfig()
     hfield_manager = HFieldManager(hfield_config)
-    env_overrides = {
-        "terrain": {
-            "enable": True,
-            "arena": "accel",
-            "pad_radius": hfield_config.pad_radius,
-        }
-    }
+    meta_overrides = meta["env_overrides"] or {}
+    pad_radius = meta_overrides.get("terrain", {}).get(
+        "pad_radius", hfield_config.pad_radius
+    )
+    env_overrides = merge_overrides(
+        meta_overrides,
+        {"terrain": {"enable": True, "arena": "accel", "pad_radius": pad_radius}},
+    )
     env = FunctionalEnv(
         task=meta["env_task"],
         env_overrides={

@@ -109,7 +109,7 @@ def train(cfg: Config) -> None:
             "algo": ALGO,
             "created_at": time.time(),
             "env_task": cfg.environment_params.name,
-            "env_overrides": None,
+            "env_overrides": env_overrides,
             "env_seed": cfg.environment_params.seed,
             "dense_dim": cfg.model_params.dense_dim,
             "activation": cfg.model_params.activation,

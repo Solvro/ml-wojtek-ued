@@ -193,8 +193,11 @@ Same `pyrallis`/`EvalLevelsConfig` CLI shape and run-resolution as
 heightfield levels instead of one fixed course: `--algo
 {ppo,ppo_dr,accel,accel_top_k} [--run NAME] [--step N] [--num_levels N]
 [--episodes_per_level N] [--chunk_size N] [--steps N] [--seed N] [--output
-path.npz]`. Forces the `accel` terrain arena on regardless of the checkpoint's
-own training arena — needs `just build-accel-arena` first. Generates
+path.npz]`. Rebuilds the env from `meta.env_overrides` (so the observation
+shape matches what the checkpoint was trained with — `ppo`/`ppo_dr` don't
+train with `terrain`/`height_scan` obs terms, `accel`/`accel_top_k` do), then
+force-merges `terrain.enable`/`arena=accel` on top regardless of the
+checkpoint's own training arena — needs `just build-accel-arena` first. Generates
 `num_levels` levels in `chunk_size`-sized batches (one `jit` compile, reused
 across chunks since every chunk is the same shape), evaluates
 `episodes_per_level` episodes each via `utils/ppo_helpers.eval_levels`, prints
