@@ -81,9 +81,9 @@ def load_meta(directory: Path) -> RunMeta:
 
 def save_checkpoint(
     ckptr: ocp.CheckpointManager, step: int, model: Any, opt_state: Any
-) -> None:
+) -> bool:
     array_model, _ = eqx.partition(model, eqx.is_array)
-    ckptr.save(
+    return ckptr.save(
         step,
         args=ocp.args.Composite(
             model=ocp.args.StandardSave(array_model),

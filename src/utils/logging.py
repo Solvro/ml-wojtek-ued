@@ -29,5 +29,8 @@ class Logger:
         with self._path.open("a") as f:
             f.write(json.dumps(record, default=_to_serializable) + "\n")
 
+    def log_artifact(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
     def finish(self) -> None:
         pass

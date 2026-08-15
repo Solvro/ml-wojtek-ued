@@ -59,7 +59,14 @@ def train(cfg: Config) -> None:
     env = FunctionalEnv(
         task=cfg.environment_params.name,
         seed=cfg.environment_params.seed,
+        env_overrides={"sim": {"num_envs": cfg.environment_params.envs_num}},
         domain_randomize=True,
+    )
+
+    eval_env = FunctionalEnv(
+        task=cfg.environment_params.name,
+        seed=cfg.environment_params.seed,
+        env_overrides={"sim": {"num_envs": cfg.evaluation_params.envs_num}},
     )
 
     action_dim = env.action_size
@@ -144,7 +151,7 @@ def train(cfg: Config) -> None:
     jit_eval = eqx.filter_jit(
         functools.partial(
             eval,
-            env,
+            eval_env,
             envs_num=cfg.evaluation_params.envs_num,
             steps=cfg.evaluation_params.steps,
         )

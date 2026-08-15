@@ -14,11 +14,9 @@ def clip_log_std(model, low=-5.0, high=0.5):
     return eqx.tree_at(lambda m: m.actor_log_std, model, clipped)
 
 
-def is_finite(model):
+def is_finite_array(model):
     leaves = jax.tree_util.tree_leaves(eqx.filter(model, eqx.is_array))
-    return bool(
-        jnp.all(jnp.array([jnp.all(jnp.isfinite(leave)) for leave in leaves])),
-    )
+    return jnp.all(jnp.array([jnp.all(jnp.isfinite(leave)) for leave in leaves]))
 
 
 def compute_gae(rewards, values, dones, next_value, gamma=0.99, lam=0.95):
@@ -67,28 +65,6 @@ def policy_step(
     return carry, step_out
 
 
-def rollout(
-    env: FunctionalEnv,
-    key_input: jax.Array,
-    model: A2C,
-    steps_in_episode: int,
-    hfield_data: jax.Array | None = None,
-    dr_model: mjx.Model | None = None,
-) -> Episode:
-    key_reset, key_episode = jax.random.split(key_input)
-    obs, state = env.reset(key_reset, hfield_data, dr_model)
-    step_fn = functools.partial(
-        policy_step, env, model, hfield_data=hfield_data, dr_model=dr_model
-    )
-    _, episode = jax.lax.scan(
-        step_fn,
-        [obs, state, key_episode],
-        (),
-        steps_in_episode,
-    )
-    return episode
-
-
 def batch_rollout(
     env: FunctionalEnv,
     key_input: jax.Array,
@@ -99,19 +75,27 @@ def batch_rollout(
     dr_model: mjx.Model | None = None,
     dr_in_axes: mjx.Model | None = None,
 ) -> Episode:
-    """`dr_model` is a per-env-batched randomized model from
-    `FunctionalEnv.sample_dr` (one physics draw per env in the batch);
-    `dr_in_axes` is its matching `jax.vmap` axis spec, fixed for the training
-    run -- bind it with `functools.partial` before jitting, not per call."""
-    keys = jax.random.split(key_input, envs_num)
-    rollout_fn = functools.partial(rollout, env)
-    return jax.vmap(rollout_fn, in_axes=(0, None, None, None, dr_in_axes))(
-        keys,
-        model,
-        steps_in_episode,
-        hfield_data,
-        dr_model,
+    key_reset, key_episode = jax.random.split(key_input)
+    reset_keys = jax.random.split(key_reset, envs_num)
+    episode_keys = jax.random.split(key_episode, envs_num)
+
+    obs, state = jax.vmap(
+        lambda k, dr: env.reset(k, hfield_data, dr),
+        in_axes=(0, dr_in_axes),
+    )(reset_keys, dr_model)
+    step_fn = jax.vmap(
+        lambda state_input, tmp, dr: policy_step(
+            env, model, state_input, tmp, hfield_data=hfield_data, dr_model=dr
+        ),
+        in_axes=(0, None, dr_in_axes),
     )
+    _, episode = jax.lax.scan(
+        lambda carry, x: step_fn(carry, x, dr_model),
+        [obs, state, episode_keys],
+        (),
+        steps_in_episode,
+    )
+    return jax.tree.map(lambda x: jnp.swapaxes(x, 0, 1), episode)
 
 
 def lanes_rollout(
@@ -193,10 +177,20 @@ def make_step(
     loss_value, grads = eqx.filter_value_and_grad(ppo_loss)(
         model, obs, actions, old_log_prob, advantages, returns, keys
     )
-    updates, opt_state = optimizer.update(
+    updates, new_opt_state = optimizer.update(
         grads, opt_state, eqx.filter(model, eqx.is_array)
     )
-    model = eqx.apply_updates(model, updates)
+    new_model = clip_log_std(eqx.apply_updates(model, updates))
+    finite = is_finite_array(new_model)
+    new_arr, _ = eqx.partition(new_model, eqx.is_array)
+    old_arr, static = eqx.partition(model, eqx.is_array)
+    model = eqx.combine(
+        jax.tree.map(lambda n, o: jnp.where(finite, n, o), new_arr, old_arr),
+        static,
+    )
+    opt_state = jax.tree.map(
+        lambda n, o: jnp.where(finite, n, o), new_opt_state, opt_state
+    )
     return model, opt_state, loss_value
 
 
@@ -228,7 +222,7 @@ def run_ppo_epochs(
 
         for start in range(0, batch_size, minibatch_size):
             idx = perm[start : start + minibatch_size]
-            new_model, new_opt_state, loss = jit_make_step(
+            model, opt_state, loss = jit_make_step(
                 model,
                 opt_state,
                 jax.tree.map(lambda x, idx=idx: x[idx], obs),
@@ -238,10 +232,6 @@ def run_ppo_epochs(
                 returns_flat[idx],
                 minibatch_keys[idx],
             )
-
-            if is_finite(new_model):
-                model = clip_log_std(new_model)
-                opt_state = new_opt_state
 
     return model, opt_state, loss
 
@@ -260,23 +250,6 @@ def eval_step(
     return carry, reward
 
 
-def eval_rollout(
-    env: FunctionalEnv,
-    key_input: jax.Array,
-    model: A2C,
-    steps: int,
-) -> jax.Array:
-    key_reset, key_episode = jax.random.split(key_input)
-    obs, state = env.reset(key_reset)
-    step_fn = functools.partial(
-        eval_step,
-        env,
-        model,
-    )
-    _, rewards = jax.lax.scan(step_fn, [obs, state, key_episode], (), steps)
-    return rewards
-
-
 def eval(
     env: FunctionalEnv,
     model: A2C,
@@ -284,13 +257,14 @@ def eval(
     envs_num: int,
     steps: int,
 ) -> jax.Array:
-    keys = jax.random.split(key, envs_num)
-    rollout_fn = functools.partial(eval_rollout, env)
-    rewards = jax.vmap(
-        rollout_fn,
-        in_axes=(0, None, None),
-    )(keys, model, steps)
-    return rewards.sum(axis=1).mean()
+    key_reset, key_episode = jax.random.split(key)
+    reset_keys = jax.random.split(key_reset, envs_num)
+    episode_keys = jax.random.split(key_episode, envs_num)
+
+    obs, state = jax.vmap(env.reset)(reset_keys)
+    step_fn = jax.vmap(functools.partial(eval_step, env, model))
+    _, rewards = jax.lax.scan(step_fn, [obs, state, episode_keys], (), steps)
+    return rewards.sum(axis=0).mean()
 
 
 def level_eval_step(

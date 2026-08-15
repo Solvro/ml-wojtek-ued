@@ -98,16 +98,22 @@ class FunctionalEnv:
             state = cast(Any, self._env.step(state, action))
 
         done = state.done
-        data = jax.tree.map(
-            lambda first, cur: jnp.where(done, first, cur),
-            state.info["first_data"],
-            state.data,
-        )
-        obs = jax.tree.map(
-            lambda first, cur: jnp.where(done, first, cur),
-            state.info["first_obs"],
-            state.obs,
-        )
+
+        def where_done(first, cur):
+            d = done
+            if d.shape and d.shape[0] != first.shape[0]:
+                return cur
+            if d.shape:
+                d = jnp.reshape(d, [first.shape[0]] + [1] * (len(first.shape) - 1))
+            return jnp.where(d, first, cur)
+
+        def reset_leaf(path, first, cur):
+            if any(getattr(p, "name", None) == "_impl" for p in path):
+                return cur
+            return where_done(first, cur)
+
+        data = jax.tree.map_with_path(reset_leaf, state.info["first_data"], state.data)
+        obs = jax.tree.map(where_done, state.info["first_obs"], state.obs)
         state = state.replace(data=data, obs=obs)
         return self._obs(state), state, state.reward, state.done, state.info
 
