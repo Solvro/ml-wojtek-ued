@@ -98,6 +98,46 @@ and a per-iteration `dr_model` fed into `batch_rollout`.
 - Eval (`eval`/`eval_rollout`/`eval_step`) does not take a `dr_model`, so
   `mean_return` is always measured on the nominal (non-randomized) physics.
 
+## Shared env overrides — `utils/env_overrides.py`
+
+`registry.py`'s task defaults leave most locomotion-quality and sim2real
+robustness features off (`enable=False`/`scale=0.0`) — see
+[environment.md](environment.md#task-config-knobs-off-by-default) for the
+full inventory. `scripts/ppo_dr.py`, `scripts/accel.py`, and
+`scripts/accel_top_k.py` all turn the same set on rather than repeating one
+large dict three times:
+
+- `merge_overrides(*dicts)` — deep-merges nested override dicts (a plain
+  `{**a, **b}` would clobber a whole nested key, e.g. `command`, if two
+  sources both touch it).
+- `movement_overrides()` — task-independent: `latency`/`encoder` noise,
+  `symmetry` mirror augmentation, `real_pose_ref`, `action_filter`, the
+  `command.pure_*_prob` clean-command modes, `no_progress`,
+  `gait.air_time_cap`, `fall.max_toggle_deg`, and the `reward` scale/gate
+  fields that were `0.0`/`False` in `registry.py`. Used by all three
+  scripts.
+- `terrain_overrides()` — terrain-only (`height_scan`, `reward.terrain_gate`,
+  `reward.scales.flat_pitch`, `command.terrain_bias`, `fall.on_base_contact`,
+  and the `obs.state`/`obs.privileged` lists extended with
+  `height_scan`/`height_scan_clean`). Used by `scripts/accel.py` and
+  `scripts/accel_top_k.py` only — `scripts/ppo_dr.py` trains on the flat
+  scene, where `terrain_gate`/`height_scan` read zero anyway (see
+  [environment.md](environment.md#terrain-only-knobs)).
+- Enabling `height_scan` changes `actor_obs_dim`/`critic_obs_dim` (+25 each,
+  `NX*NY`); this needs no wiring because `FunctionalEnv.observation_size` and
+  the `A2C` construction in each script both read the size off a live env
+  probe, not a hardcoded constant. `symmetry` + `height_scan` compose
+  correctly out of the box — `wojtek_env.envs.symmetry.obs_mirror` already
+  has a registered mirror map for the `height_scan`/`height_scan_clean`
+  catalog entries.
+- Most of the `movement_overrides()`/`terrain_overrides()` magnitudes
+  (`action_filter`, `tracking_far_weight`, `orientation_tol_deg`, the new
+  `reward.scales` values, the `command.pure_*_prob` values,
+  `fall.max_toggle_deg`, `gait.air_time_cap`) are **untuned estimates**
+  reasoned by analogy to sibling terms already set in `registry.py` — grep
+  turns up no prior tuning history for these fields in this repo. Treat them
+  as a starting point, not a validated config.
+
 ## Checkpoints — `utils/checkpoint.py`
 
 `orbax` `CheckpointManager` with a `Composite` of `model` + `opt_state`.
@@ -160,6 +200,33 @@ across chunks since every chunk is the same shape), evaluates
 `episodes_per_level` episodes each via `utils/ppo_helpers.eval_levels`, prints
 `mean_reward`/`success_rate`, and optionally dumps the per-level
 reward/terminated arrays to `--output`.
+
+## Visual eval — `scripts/eval_sim.py`
+
+A standalone argparse tool (no hydra/pyrallis, no `meta.json`) that opens a
+MuJoCo viewer and watches a checkpoint walk freshly generated ACCEL levels:
+`just eval-sim [--checkpoint DIR] [--task {joystick,getup,jump}]
+[--dense_dim N] [--activation {relu,tanh}] [--seed N] [--episodes N]
+[--steps_in_episode N]`. `--episodes 0` (default) runs forever, generating a
+new random level each episode. Needs `just build-accel-arena` first.
+
+Exists because `artifacts/accel_checkpoint` (and any checkpoint copied
+straight out of a step directory, e.g. from a remote run) is a bare orbax
+item dir — `model/`, `opt_state/`, no `<algo>/<run>/<step>/` nesting and no
+`meta.json` sidecar — so it doesn't fit `utils/checkpoint.py`'s
+`open_checkpoint_manager`/`restore_checkpoint`/`load_meta` convention that
+`scripts/eval.py`/`scripts/eval_levels.py` rely on. Instead it rebuilds the
+model/env from CLI flags (the same shapes `scripts/accel.py` trains with,
+`--dense_dim`/`--activation` defaulting to `ModelParams`'s) and restores the
+checkpoint directly via `orbax.checkpoint.StandardCheckpointer().restore(
+model_dir, target=array_template)` against the `model/` item dir.
+
+Mirrors `wojtek_env/tools/check_model_mjx.py`'s `mujoco.viewer.launch_passive`
+loop: steps the jitted `FunctionalEnv`/`A2C.deterministic_action` pair, then
+copies `state.data.qpos`/`qvel` into a plain `mujoco.MjData` and `mj_forward`s
+it for rendering. Each episode's `HFieldManager.generate` level is also
+written into `mj_model.hfield_data` so the viewer's static terrain visually
+matches the level the policy is actually stepping on.
 
 ## Logging — `utils/logging.py`
 

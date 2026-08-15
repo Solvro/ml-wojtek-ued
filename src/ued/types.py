@@ -20,7 +20,6 @@ class Curator(NamedTuple):
     hfield_manager: HFieldManager
     rng: np.random.Generator
     replay_prob: float
-    regret_threshold: float
 
 
 class BatchCurator(NamedTuple):

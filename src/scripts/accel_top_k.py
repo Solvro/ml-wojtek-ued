@@ -27,6 +27,7 @@ from utils.checkpoint import (
     save_meta,
 )
 from utils.env import FunctionalEnv
+from utils.env_overrides import merge_overrides, movement_overrides, terrain_overrides
 from utils.logging import Logger, quiet_dependencies
 from utils.ppo_helpers import (
     calculate_episode_advantage,
@@ -63,13 +64,17 @@ def train(cfg: AccelConfig) -> None:
         else Logger(name=name)
     )
 
-    env_overrides = {
-        "terrain": {
-            "enable": True,
-            "arena": "accel",
-            "pad_radius": cfg.hfield_params.pad_radius,
-        }
-    }
+    env_overrides = merge_overrides(
+        {
+            "terrain": {
+                "enable": True,
+                "arena": "accel",
+                "pad_radius": cfg.hfield_params.pad_radius,
+            }
+        },
+        movement_overrides(),
+        terrain_overrides(),
+    )
     env = FunctionalEnv(
         task=cfg.environment_params.name,
         env_overrides={
@@ -215,7 +220,9 @@ def train(cfg: AccelConfig) -> None:
         else:
             key, step_log = generate_branch_top_k(key, a2c, curator, trainer)
 
-        plateaued = stopper.update(step_log["regret_score"], iteration)
+        plateaued = stopper.update(
+            step_log["regret_score"], step_log["mean_reward"], iteration
+        )
 
         real_step = (
             iteration * cfg.training_params.epochs * cfg.training_params.minibatches
@@ -233,6 +240,7 @@ def train(cfg: AccelConfig) -> None:
                 "learning_rate": lr,
                 "buffer_fill_ratio": len(level_buffer.get()) / level_buffer.size,
                 "smoothed_regret": stopper.smoothed_regret,
+                "smoothed_reward": stopper.smoothed_reward,
                 **step_log,
             }
         )

@@ -16,6 +16,7 @@ it when the code changes.**
 | ACCEL curriculum, heightfield levels, convergence | [docs/ued-accel.md](docs/ued-accel.md) |
 | Config fields, Hydra overrides | [docs/configuration.md](docs/configuration.md) |
 | Layout rules, tooling, adding features, gotchas | [docs/development.md](docs/development.md) |
+| Running training/eval on the cluster | [docs/slurm_recommended.md](docs/slurm_recommended.md) |
 
 ## Where code lives
 

@@ -39,8 +39,7 @@ def score_and_curate(
     episode = trainer.rollout(key, a2c, hfield_data=hfield_data)
     advantages, _ = trainer.advantage(a2c, episode)
     score = float(positive_value_loss(advantages))
-    if score >= curator.regret_threshold:
-        curator.buffer.add(level)
+    curator.buffer.add(level, score)
     return score, episode
 
 

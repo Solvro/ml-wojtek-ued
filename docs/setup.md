@@ -42,6 +42,20 @@ just build-accel-arena   # write the "accel" arena (scene/hfield/spec/lookup)
 `accel` terrain arena. See [environment.md](environment.md#assets) for what each
 file is and why they must sit next to the robot XML.
 
+## mjpython on macOS
+
+`mujoco.viewer.launch_passive` (used by `just eval-sim` and
+`wojtek_env/tools/check_model_mjx.py`) requires running under `mjpython` on
+macOS, not plain `python` — its launcher dlopens `.venv/bin/python` to hop
+the interpreter onto the main thread for Cocoa. `uv`'s relocatable CPython
+isn't a framework build, so out of the box that dlopen fails with `Library
+not loaded: @rpath/libpython3.12.dylib`. `just sync`/`just install` run
+`just fix-mjpython-macos` (no-op on non-macOS) to symlink the real
+`libpythonX.Y.dylib` into `.venv/` and the `mujoco` package's
+`MuJoCo_(mjpython).app` bundle, which resolves it. Re-run `just
+fix-mjpython-macos` manually if `.venv` was rebuilt outside `just
+sync`/`install`.
+
 ## Run
 
 ```bash

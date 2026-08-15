@@ -82,7 +82,7 @@ Frozen dataclass (`config/hfield_config.py`); the level genome envelope. See
 
 | field | default | meaning |
 |---|---|---|
-| `patch_radius` | `6.0` | m, half-width of the square patch |
+| `patch_radius` | `3.0` | m, half-width of the square patch |
 | `cell_size` | `0.05` | m, fine hfield resolution |
 | `coarse_n` | `9` | control points per axis (genome size) |
 | `amplitude` | `0.12` | m, peak height/depth off the neutral plane |
@@ -90,13 +90,22 @@ Frozen dataclass (`config/hfield_config.py`); the level genome envelope. See
 | `pad_radius` | `0.6` | m, flat spawn disc at the centre |
 | `pad_taper` | `0.3` | m, ramp width pad → full terrain |
 | `n_edits` | `4` | control points touched per mutation |
-| `edit_scale` | `0.5` | max ± change to an edited control point |
+| `edit_scale` | `0.1` | max ± change to an edited control point |
 | `grid_size` | *(property)* | `round(2·patch_radius/cell_size)+1`, fine node count |
 
 `patch_radius`, `cell_size`, `amplitude`, `base_z` set the compile-time envelope
 (static `hfield_size`); changing them needs a fresh arena
 (`just build-accel-arena`). `coarse_n`/`n_edits`/`edit_scale` shape the genome
 and mutations and can vary freely between runs.
+
+`patch_radius=3.0` (was `6.0`): at `ctrl_dt=0.02`/`steps_in_episode=200` a
+rollout is 4s, so even a fast-command robot covers only a few metres —
+most of a 12m-diameter patch was never reached, let alone scored by regret.
+`edit_scale=0.1` (was `0.5`): `HFieldManager.mutate`'s intent is a *small*
+nudge from an already-curated parent (see the `to_hfield_data` docstring in
+[ued-accel.md](ued-accel.md#level-representation)); `0.5` was half the
+entire `[0,1]` genome range per edited point, closer to a fresh `generate()`
+than an incremental edit.
 
 ## AccelParams {#accel}
 
@@ -105,20 +114,24 @@ and mutations and can vary freely between runs.
 | `buffer_size` | `100` | level buffer capacity (K) |
 | `initial_fill_ratio` | `0.9` | fraction seeded with random levels at start |
 | `replay_prob` | `0.5` | P(replay) vs generate each iteration |
-| `regret_threshold` | `0.0` | *(`scripts/accel.py`)* min positive value loss to enter the buffer |
 | `num_lanes` | `64` | *(`scripts/accel_top_k.py`)* independently generated/mutated levels scored per iteration |
 | `envs_per_lane` | `64` | *(`scripts/accel_top_k.py`)* envs per lane; `num_lanes * envs_per_lane` is the rollout batch |
 | `top_k` | `16` | *(`scripts/accel_top_k.py`)* highest-regret lanes (of `num_lanes`) curated into the buffer |
 | `max_iterations` | `10000` | hard cap on the loop |
 | `min_iterations` | `1000` | curation warmup before the plateau check arms |
-| `plateau_window` | `100` | iterations averaged into the smoothed regret |
-| `plateau_patience` | `200` | iterations without improvement → converge |
-| `plateau_rel_tol` | `0.01` | relative drop that counts as an improvement |
+| `plateau_window` | `100` | iterations averaged into the smoothed regret/reward |
+| `plateau_patience` | `200` | iterations without improvement on *either* signal → converge |
+| `plateau_rel_tol` | `0.01` | relative regret drop / scaled reward rise that counts as an improvement |
 
-`regret_threshold` gates buffer entry for `scripts/accel.py`
-(paper-faithful); `top_k` does the same rank-based for `scripts/accel_top_k.py`
+Buffer entry (both scripts) is score-based, not threshold-based:
+`utils/buffer.py`'s `LevelBuffer.add(level, score)` accepts unconditionally
+below `buffer_size`, then displaces the buffer's current weakest entry only
+if the new score beats it — `top_k` layers a per-iteration rank cut on top
+of that for `scripts/accel_top_k.py`
 (see [ued-accel.md](ued-accel.md#the-two-branches-algorithm-1-vanilla-scriptsaccelpy)).
 The `plateau_*` group is the convergence criterion, shared by both scripts
-([ued-accel.md](ued-accel.md#convergence--plateaustopper)). Tune convergence
-with `plateau_patience`/`plateau_rel_tol` (scale-free), not an absolute
-regret number.
+([ued-accel.md](ued-accel.md#convergence--plateaustopper)) — convergence now
+requires both `regret_score` and `mean_reward` to have stopped improving for
+`plateau_patience` iterations, not regret alone. Tune convergence with
+`plateau_patience`/`plateau_rel_tol` (scale-free), not an absolute regret
+number.

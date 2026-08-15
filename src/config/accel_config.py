@@ -17,7 +17,6 @@ class AccelParams:
     buffer_size: int = 100  # K: level buffer capacity
     initial_fill_ratio: float = 0.9
     replay_prob: float = 0.5
-    regret_threshold: float = 0.0
     num_lanes: int = 64
     envs_per_lane: int = 64
     top_k: int = 16

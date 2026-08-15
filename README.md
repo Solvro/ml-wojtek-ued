@@ -19,6 +19,7 @@ Full docs live in [`docs/`](docs/):
 | [ued-accel.md](docs/ued-accel.md) | heightfield levels + the ACCEL curriculum + convergence |
 | [configuration.md](docs/configuration.md) | every Hydra config field + override examples |
 | [development.md](docs/development.md) | layout rules, tooling, conventions, gotchas |
+| [slurm_recommended.md](docs/slurm_recommended.md) | recommended `sbatch` commands for training + eval |
 
 Start with [overview.md](docs/overview.md).
 
@@ -51,6 +52,8 @@ just eval --algo ppo     # evaluate the latest checkpoint of an algo
 | `just accel *args` | ACCEL training, single-level-per-iteration variant; needs `build-accel-arena` first |
 | `just accel-top-k *args` | ACCEL training, batched-lanes/top-k variant; needs `build-accel-arena` first |
 | `just eval *args` | evaluate a checkpoint (`--algo` required; `--run`/`--step` default to latest) |
+| `just eval-levels *args` | evaluate a checkpoint's generalization across generated levels; needs `build-accel-arena` first |
+| `just eval-sim *args` | watch a checkpoint walk random ACCEL levels in the MuJoCo viewer; needs `build-accel-arena` first |
 
 ## Env usage
 

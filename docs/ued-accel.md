@@ -79,9 +79,9 @@ Dependency direction is a DAG: `types`/`regret`/`levels`/`stopper` are leaves;
 `curriculum` composes them plus `utils.ppo_helpers.run_ppo_epochs`.
 
 - **`Curator`** (NamedTuple, vanilla) — the level `buffer` (`utils/buffer.py`,
-  a deque), `hfield_manager`, `rng`, `replay_prob`, `regret_threshold`.
+  a capacity-bounded priority list), `hfield_manager`, `rng`, `replay_prob`.
 - **`BatchCurator`** (NamedTuple, batched top-k) — same buffer/hfield_manager/
-  rng/replay_prob, plus `num_lanes`, `top_k` instead of `regret_threshold`.
+  rng/replay_prob, plus `num_lanes`, `top_k`.
 - **`PPOTrainer`** (NamedTuple, shared) — the jitted `rollout` / `advantage` /
   `make_step` callables plus `epochs`/`minibatches`. Built once per script.
 - **Regret** = `positive_value_loss(advantages)` = `mean(max(advantage, 0))`
@@ -97,15 +97,23 @@ Paper-faithful: one level per iteration. `decide_replay` flips a
 **generate** (`generate_branch`) — no policy update:
 1. `hfield_manager.generate` a fresh level.
 2. `score_and_curate`: roll out the student on it, score regret, add to the
-   buffer if `score >= regret_threshold`.
+   buffer.
 
 **replay** (`replay_branch`) — the only branch that trains the student:
 1. `sample_from_buffer` a stored level `θ`.
 2. Roll out, GAE, **`run_ppo_epochs`** (the PPO update).
 3. `mutate` θ → θ′, `score_and_curate` θ′ (score the edit, curate it).
 
-`score_and_curate` is the shared "roll out → regret → threshold-add" step both
-branches use, keeping the regret threshold in one place.
+`score_and_curate` is the shared "roll out → regret → curate" step both
+branches use. `LevelBuffer.add(level, score)` (`utils/buffer.py`) does the
+curation: below capacity it always accepts; once full, a new level replaces
+the buffer's current *weakest* (lowest-score) entry only if it beats that
+score, otherwise it's rejected. There is no absolute regret threshold — a
+fixed threshold is scale-dependent (same problem the stopper's rel-tol
+design avoids, below) and, at `0.0`, was a no-op: `positive_value_loss` is
+`>= 0` by construction, so every scored level passed. Freshly seeded levels
+from `fill_buffer` carry a placeholder score of `-inf`, so real scored
+levels always displace unscored ones first.
 
 ### The two branches — batched lanes + top-k (`scripts/accel_top_k.py`)
 
@@ -137,10 +145,11 @@ to the whole batch:
    `top_k`).
 
 `score_and_curate_top_k` is the shared "roll out → per-lane regret → top-k
-add" step both branches use — there is no fixed regret threshold; entry into
-the buffer is purely rank-based within each iteration's batch. See `todo.md`
-for a deferred follow-up (evolving multiple mutations of the same parent and
-keeping the best one).
+add" step both branches use — entry into the buffer is rank-based within each
+iteration's batch (`np.argsort(scores)[-top_k:]`), then each of those `top_k`
+levels goes through the same `LevelBuffer.add` weakest-entry eviction as
+vanilla. See `todo.md` for a deferred follow-up (evolving multiple mutations
+of the same parent and keeping the best one).
 
 ### Stop-gradient / rollout is off-tape {#stop-gradient}
 
@@ -163,26 +172,47 @@ into `ppo_loss`, so GAE targets are detached by construction.
 ## Convergence — `PlateauStopper`
 
 An absolute regret threshold is scale-dependent and ambiguous (low regret can
-mean "solved everything" or "generator stuck"), so convergence is **relative**:
+mean "solved everything" or "generator stuck"), so convergence is **relative**
+— and it now requires **both** the regret and the reward signal to plateau,
+not regret alone:
 
-- Tracks a rolling mean of each iteration's `regret_score` over `plateau_window`.
-- Converges when the smoothed regret fails to drop by `> plateau_rel_tol` for
-  `plateau_patience` iterations.
+- Tracks a rolling mean of each iteration's `regret_score` **and**
+  `mean_reward` over `plateau_window`.
+- An iteration counts as "improved" if the smoothed regret dropped by
+  `> plateau_rel_tol`, OR the smoothed reward rose by more than
+  `plateau_rel_tol * max(1.0, |best_reward_so_far|)` (the reward margin
+  scales with the best reward seen, floored at `1.0`, since reward can be
+  negative or near zero where a plain relative check is unstable).
+- `_stale` resets to `0` whenever *either* signal improves; convergence
+  triggers only once `_stale >= plateau_patience` — i.e. neither signal has
+  improved for that many iterations in a row.
 - Arms only after `min_iterations` (curation warmup — early regret is not yet
   meaningful).
 - `max_iterations` remains a hard cap.
 
-Fed the `regret_score` from **both** branches — the regret of a freshly
-proposed level for the current student (vanilla: that one level's score;
-top-k: the mean across `num_lanes` lanes, with `max_regret_score` also logged
-for visibility but not fed to the stopper) — the signal for "generator can no
-longer challenge the student", i.e. curriculum saturation. `smoothed_regret`
-is logged each iteration.
+This closes a real failure mode: `positive_value_loss` (regret) can plateau
+near zero either because the student mastered the curriculum, or because the
+critic simply learned to predict a *consistently bad* policy just as
+accurately — regret alone can't tell the two apart. Replaying a real
+`accel.py` run's logged history through the old (regret-only) stopper showed
+it converging at iteration ~1233 while `mean_reward` was still climbing
+(-14.5 → +14.6, still rising, not flattened); replaying the same history
+through the dual-signal stopper does not converge at all — it correctly
+keeps training alive as long as either signal is still moving.
+
+Fed the `regret_score`/`mean_reward` from **both** branches — the regret of a
+freshly proposed level for the current student (vanilla: that one level's
+score; top-k: the mean across `num_lanes` lanes, with `max_regret_score` also
+logged for visibility but not fed to the stopper) — the signal for "generator
+can no longer challenge the student", i.e. curriculum saturation.
+`smoothed_regret`/`smoothed_reward` are logged each iteration.
 
 ## Trainer scripts — `scripts/accel.py` / `scripts/accel_top_k.py`
 
 Both build the same optax/jit/`FunctionalEnv` stack as `scripts/ppo.py` (with
-the `accel` terrain arena and an `hfield_data`-swapping env), plus:
+the `accel` terrain arena and an `hfield_data`-swapping env, plus
+`utils.env_overrides.movement_overrides()`/`terrain_overrides()` —
+[ppo.md](ppo.md#shared-env-overrides--utilsenv_overridespy)), plus:
 `LevelBuffer` seeded by `fill_buffer` (`initial_fill_ratio`), a `Curator`
 (`accel.py`) or `BatchCurator` (`accel_top_k.py`), a `PPOTrainer`, and a
 `PlateauStopper`. The `while not converged` loop dispatches generate/replay,

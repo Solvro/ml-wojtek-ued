@@ -19,6 +19,7 @@ from utils.checkpoint import (
     save_meta,
 )
 from utils.env import FunctionalEnv
+from utils.env_overrides import movement_overrides
 from utils.logging import Logger, quiet_dependencies
 from utils.ppo_helpers import (
     batch_rollout,
@@ -56,17 +57,25 @@ def train(cfg: Config) -> None:
         else Logger(name=name)
     )
 
+    env_overrides = movement_overrides()
+
     env = FunctionalEnv(
         task=cfg.environment_params.name,
         seed=cfg.environment_params.seed,
-        env_overrides={"sim": {"num_envs": cfg.environment_params.envs_num}},
+        env_overrides={
+            **env_overrides,
+            "sim": {"num_envs": cfg.environment_params.envs_num},
+        },
         domain_randomize=True,
     )
 
     eval_env = FunctionalEnv(
         task=cfg.environment_params.name,
         seed=cfg.environment_params.seed,
-        env_overrides={"sim": {"num_envs": cfg.evaluation_params.envs_num}},
+        env_overrides={
+            **env_overrides,
+            "sim": {"num_envs": cfg.evaluation_params.envs_num},
+        },
     )
 
     action_dim = env.action_size

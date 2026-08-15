@@ -24,6 +24,63 @@ tuple/float coercion — e.g. yaml `vx: [-0.8, 1.8]` lands on a tuple field, and
 a scalar default like `action_scale` can be overridden with a per-element
 vector.
 
+## Task config knobs off by default {#task-config-knobs-off-by-default}
+
+`WojtekJoystick.default_config()` (`envs/env.py`) defines several
+locomotion-quality and sim2real-robustness features that ship
+`enable=False`/`scale=0.0`; the config value itself already documents each
+one inline. `utils/env_overrides.py`'s `movement_overrides()`
+([ppo.md](ppo.md#shared-env-overrides--utilsenv_overridespy)) turns on the
+task-independent ones for `scripts/ppo_dr.py`/`accel.py`/`accel_top_k.py`:
+
+- `latency`, `encoder` — substep control latency and joint-encoder
+  miscalibration randomization (sim2real robustness; `action_delay=1` is a
+  separate always-on fixed delay).
+- `symmetry` — left/right mirror augmentation.
+- `real_pose_ref` — judge pose/height against the kinematic standing family
+  instead of commanded ctrl targets (removes a PD-sag-dependent penalty
+  floor; sim2real correctness fix, not just a shaping knob).
+- `action_filter` — EMA smoothing on actions before the PD targets.
+- `command.pure_wz_prob`/`pure_vy_prob`/`arc_prob`/`pure_slow_prob`/
+  `pure_fast_prob`/`pure_back_prob` — dedicated clean-command training
+  modes; the uniform command box under-samples these (spin-in-place,
+  strafe, arc-following, slow/fast/backward walking), and the inline
+  comments cite measured deadlocks from training without them.
+- `no_progress` — probabilistic episode cut when the robot ignores the
+  commanded velocity, instead of letting a stalled episode run out the
+  clock.
+- `gait.air_time_cap`, `fall.max_toggle_deg` — anti-runaway swing-time cap
+  and four-bar toggle-angle termination.
+- `reward.tracking_relative`/`tracking_product`/`shaping_tracking_gate`/
+  `tracking_far_weight`/`orientation_tol_deg` and
+  `reward.scales.torque_rate`/`feet_landing`/`stand_feet_down`/
+  `torque_limit`/`toggle_flat` — see the inline comments in `env.py` for
+  what exploit or dead-gradient region each one closes.
+
+## Terrain-only knobs {#terrain-only-knobs}
+
+These read zero / never fire on the flat scene (`terrain.enable=False`), so
+they only make sense once terrain is on. `terrain_overrides()` turns them on
+for `scripts/accel.py`/`accel_top_k.py`; `scripts/ppo_dr.py` trains flat and
+skips them:
+
+- `height_scan` — body-frame grid of terrain heights ahead of the robot; the
+  critic gets a clean copy, the actor a masked/stale/optionally-corrupted
+  one (`height_scan.corrupt`, off by default, simulates real depth-sensor
+  noise — also a sim2real feature). Enabling it requires listing
+  `"height_scan"`/`"height_scan_clean"` in `obs.state`/`obs.privileged`
+  (`env.py` raises if the obs lists name it without `height_scan.enable`);
+  `terrain_overrides()` does both together.
+- `reward.terrain_gate`, `reward.scales.flat_pitch` — scale gait shaping and
+  a nose-down pitch penalty by local terrain roughness.
+- `command.terrain_bias` — bias the resampled command toward steady forward
+  walking; the base command distribution is tuned for the flat scene, where
+  standing/spinning happens on the spawn's local ground and never meets a
+  terrain feature.
+- `fall.on_base_contact` — analytic base-on-terrain contact ends the
+  episode; without it a robot lying on rough ground can dodge the flat
+  `min_height`/tilt fall check.
+
 ## Terrain generator
 
 `wojtek_env/terrain/terrain.py` builds one deterministic arena from a seed: a
