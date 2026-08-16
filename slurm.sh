@@ -39,6 +39,16 @@ esac
 TRAIN_ARGS="${TRAIN_ARGS:-$DEFAULT_TRAIN_ARGS}"
 EVAL_ARGS="${EVAL_ARGS:-}"
 
+# hfield_params.* overrides (e.g. hfield_params.amplitude=0.30), shared by the
+# arena build and every script that reads terrain difficulty, so the compiled
+# arena's physical envelope can never drift out of sync with what the
+# training/eval script thinks it's using.
+HFIELD_ARGS="${HFIELD_ARGS:-}"
+EVAL_ARGS="$EVAL_ARGS $HFIELD_ARGS"
+case "$ALGO" in
+    accel|accel_top_k) TRAIN_ARGS="$TRAIN_ARGS $HFIELD_ARGS" ;;
+esac
+
 NEED_ARENA=0
 [ "$MODE" = "eval" ] && NEED_ARENA=1
 case "$ALGO" in accel|accel_top_k) NEED_ARENA=1 ;; esac
@@ -72,7 +82,7 @@ pip install --upgrade pip
 pip install -e .
 
 python3 -m wojtek_env.tools.build_model
-[ "$NEED_ARENA" = "1" ] && python3 -m hfield.arena
+[ "$NEED_ARENA" = "1" ] && python3 -m hfield.arena $HFIELD_ARGS
 
 if [ "$MODE" = "eval" ]; then
     python3 src/scripts/eval_levels.py algo="$ALGO" $EVAL_ARGS

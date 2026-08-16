@@ -55,8 +55,13 @@ global convention. `pytest` is available via the `dev` extra; there is no
 - New env task → register it in `wojtek_env/envs/registry.py` (that is the one
   library file you edit, since it is the extension point).
 - Changing the level envelope (`patch_radius`/`cell_size`/`amplitude`/`base_z`)
-  → rebuild the arena (`just build-accel-arena`); genome-only fields
-  (`coarse_n`/`n_edits`/`edit_scale`) need no rebuild.
+  → rebuild the arena with the same override, e.g.
+  `uv run python -m hfield.arena hfield_params.amplitude=0.30` (`just
+  build-accel-arena` takes no args, so it only rebuilds at `HFieldConfig`
+  defaults); genome-only fields (`coarse_n`/`n_edits`/`edit_scale`) need no
+  rebuild — they're read purely at runtime by `HFieldManager`. On `slurm.sh`,
+  set `HFIELD_ARGS` once instead — see
+  [slurm_recommended.md](slurm_recommended.md).
 
 ## Gotchas
 
