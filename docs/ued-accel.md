@@ -22,7 +22,9 @@ is required to keep the fixed elevation envelope (below) valid.
 
 ### `HFieldConfig` — the envelope (`config/hfield_config.py`)
 
-Frozen dataclass; one place for every knob. `patch_radius`, `cell_size` (fine
+Plain dataclass (not frozen — `frozen=True` marks the Hydra structured-config
+node read-only and blocks CLI overrides like `hfield_params.amplitude=...`);
+one place for every knob. `patch_radius`, `cell_size` (fine
 resolution), `coarse_n` (genome size), `amplitude` (peak height off the neutral
 plane), `base_z`, `pad_radius`/`pad_taper` (flat spawn disc + ramp),
 `n_edits`/`edit_scale` (mutation strength). `grid_size` (property) is the fine

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 
-@dataclass(frozen=True)
+@dataclass
 class HFieldConfig:
     patch_radius: float = 3.0  # m, half-width of the square patch
     cell_size: float = 0.05  # m, fine hfield resolution

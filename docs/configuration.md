@@ -77,7 +77,7 @@ uses `accel_params.max_iterations` in that product instead).
 
 ## HFieldConfig {#hfield}
 
-Frozen dataclass (`config/hfield_config.py`); the level genome envelope. See
+Plain dataclass (`config/hfield_config.py`); the level genome envelope. See
 [ued-accel.md](ued-accel.md#level-representation).
 
 | field | default | meaning |
