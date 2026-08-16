@@ -82,7 +82,7 @@ def main(cfg: EvalLevelsConfig) -> None:
     )
     meta = load_meta(directory)
 
-    hfield_config = HFieldConfig()
+    hfield_config = cast(HFieldConfig, OmegaConf.to_object(cfg.hfield_params))
     hfield_manager = HFieldManager(hfield_config)
     meta_overrides = meta["env_overrides"] or {}
     pad_radius = meta_overrides.get("terrain", {}).get(

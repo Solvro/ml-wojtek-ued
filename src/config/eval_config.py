@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING
 
+from config.hfield_config import HFieldConfig
 from config.ppo_config import WandbParams
 from utils.checkpoint import Algo
 
@@ -32,6 +33,7 @@ class EvalLevelsConfig:
     steps: int = 200
     cvar_alpha: float = 0.25
     seed: int = 0
+    hfield_params: HFieldConfig = field(default_factory=HFieldConfig)
     wandb_params: WandbParams = field(default_factory=WandbParams)
 
 
