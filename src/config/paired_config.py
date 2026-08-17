@@ -10,6 +10,7 @@ from config.ppo_config import (
     TrainingParams,
     WandbParams,
 )
+from utils.checkpoint import Algo
 
 
 @dataclass
@@ -48,6 +49,9 @@ class PairedConfig:
     hfield_params: HFieldConfig = field(default_factory=HFieldConfig)
     paired_params: PairedParams = field(default_factory=PairedParams)
     wandb_params: WandbParams = field(default_factory=WandbParams)
+    # warm-start both students' actors from another run (e.g. ppo_dr)
+    warm_start_algo: Algo | None = None
+    warm_start_run: str | None = None
 
 
 @dataclass
@@ -78,6 +82,9 @@ class PairedEvoConfig:
     hfield_params: HFieldConfig = field(default_factory=HFieldConfig)
     paired_evo_params: PairedEvoParams = field(default_factory=PairedEvoParams)
     wandb_params: WandbParams = field(default_factory=WandbParams)
+    # warm-start both students' actors from another run (e.g. ppo_dr)
+    warm_start_algo: Algo | None = None
+    warm_start_run: str | None = None
 
 
 cs = ConfigStore.instance()

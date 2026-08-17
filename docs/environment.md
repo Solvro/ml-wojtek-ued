@@ -64,13 +64,15 @@ they only make sense once terrain is on. `terrain_overrides()` turns them on
 for `scripts/accel.py`/`accel_top_k.py`; `scripts/ppo_dr.py` trains flat and
 skips them:
 
-- `height_scan` — body-frame grid of terrain heights ahead of the robot; the
-  critic gets a clean copy, the actor a masked/stale/optionally-corrupted
-  one (`height_scan.corrupt`, off by default, simulates real depth-sensor
-  noise — also a sim2real feature). Enabling it requires listing
-  `"height_scan"`/`"height_scan_clean"` in `obs.state`/`obs.privileged`
-  (`env.py` raises if the obs lists name it without `height_scan.enable`);
-  `terrain_overrides()` does both together.
+- `height_scan` — body-frame grid of terrain heights ahead of the robot;
+  **privileged-only** (`"height_scan_clean"` in `obs.privileged`, i.e. the
+  critic) — wojtek has no lidar/depth sensor, so the actor (`obs.state`)
+  never gets a `height_scan` reading, corrupted or not. This is the
+  asymmetric actor-critic split (see `FunctionalEnv` below): the critic's
+  terrain knowledge shapes the advantage/regret signal during training, but
+  the deployed actor stays proprioceptive-only, matching real hardware.
+  `env.py` raises if `obs.privileged` names `"height_scan_clean"` without
+  `height_scan.enable`; `terrain_overrides()` sets both together.
 - `reward.terrain_gate`, `reward.scales.flat_pitch` — scale gait shaping and
   a nose-down pitch penalty by local terrain roughness.
 - `command.terrain_bias` — bias the resampled command toward steady forward

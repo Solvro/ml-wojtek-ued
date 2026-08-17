@@ -34,6 +34,7 @@ from utils.ppo_helpers import (
     calculate_episode_advantage,
     eval,
     make_step,
+    warm_start_actor,
 )
 
 ALGO = "accel"
@@ -117,6 +118,16 @@ def train(cfg: AccelConfig) -> None:
         key=model_key,
         activation=cfg.model_params.activation,
     )
+    if cfg.warm_start_run is not None:
+        assert cfg.warm_start_algo is not None, (
+            "warm_start_algo is required when warm_start_run is set"
+        )
+        a2c = warm_start_actor(
+            cfg.training_params.artifacts_dir,
+            cfg.warm_start_algo,
+            cfg.warm_start_run,
+            a2c,
+        )
 
     save_meta(
         directory,

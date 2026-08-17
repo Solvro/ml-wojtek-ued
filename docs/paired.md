@@ -78,12 +78,6 @@ policy gradient, never by differentiating through the environment.
 The paper proposes three modifications for its two problems; all three are
 implemented here:
 
-| Paper section | Targets | Where |
-|---|---|---|
-| 4.1 Entropy bonus (HiEnt) | P1 (entropy collapse / limited exploration) | `gen_entropy_coef` + `student_entropy_coef` below |
-| 4.2 Optimizer (Evo) | P1 (blackbox exploration) | separate variant, `scripts/paired_evo.py` (below) |
-| 4.3 Behavioural cloning (UniBC/BiBC) | P2 ("fall behind") | `bc_mode` below |
-
 ### HiEnt — high entropy bonus
 
 Fights the teacher's entropy collapse (Problem P1). `gen_entropy_coef`
@@ -124,9 +118,9 @@ callables + hyperparameters), and a `PlateauStopper` fed `regret_score` +
 Run with `just paired` (needs `just build-accel-arena` first). All knobs
 (`PairedParams` + reused PPO params): [configuration.md](configuration.md).
 
-## PAIRED+Evo (Section 4.2) — `scripts/paired_evo.py`
+## PAIRED+Evo — `scripts/paired_evo.py`
 
-The paper's Section 4.2 argues *"RL may not be the best fit for this blackbox
+The paper's argues *"RL may not be the best fit for this blackbox
 optimization problem"* and replaces the learned adversary with a **search-based
 editor**: ACCEL's random generate + mutate + regret-curated buffer, but scored
 by the **PAIRED two-agent regret** instead of ACCEL's single-agent

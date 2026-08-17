@@ -97,7 +97,7 @@ generator's reward (it maximises it via single-step PPO) and the stopper's
 signal. Adds the *Stabilizing UED* fixes — a high entropy bonus (HiEnt) and
 protagonist/antagonist behavioural cloning (UniBC/BiBC).
 
-**PAIRED+Evo** (`scripts/paired_evo.py`) is the *Stabilizing UED* Section 4.2
+**PAIRED+Evo** (`scripts/paired_evo.py`) is the *Stabilizing UED* 4.2
 variant: same two students + PAIRED regret, but the learned adversary is
 replaced by ACCEL's search-based editor (random generate + mutate + buffer)
 scored by that regret — no generator network. Both are walked through in

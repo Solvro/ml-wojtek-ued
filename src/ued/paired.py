@@ -75,15 +75,15 @@ def paired_regret(
 
 def paired_regret_single(
     prot_episode: Episode, antag_episode: Episode
-) -> tuple[jax.Array, jax.Array]:
+) -> tuple[jax.Array, jax.Array, jax.Array]:
     """PAIRED regret for a single level rolled out over ``envs_num`` episodes
     (the ``batch_rollout`` shape ``(envs, steps, ...)``). Returns
-    ``(regret, prot_mean)`` scalars. Used by the Evo variant."""
+    ``(regret, prot_mean, antag_mean)`` scalars. Used by the Evo variant."""
     prot_return = prot_episode.reward.sum(axis=1)  # (envs,)
     antag_return = antag_episode.reward.sum(axis=1)
     prot_mean = prot_return.mean()
     antag_max = antag_return.max()
-    return jnp.maximum(antag_max - prot_mean, 0.0), prot_mean
+    return jnp.maximum(antag_max - prot_mean, 0.0), prot_mean, antag_return.mean()
 
 
 def _policy_kl(model: A2C, ref_model: A2C, obs) -> jax.Array:
@@ -410,15 +410,15 @@ def score_regret_evo(
     level: np.ndarray,
     curator: Curator,
     trainer: PairedEvoTrainer,
-) -> tuple[float, float]:
+) -> tuple[float, float, float]:
     hfield_data = level_to_hfield_data(curator.hfield_manager, level)
     prot_key, antag_key = jax.random.split(key)
     prot_episode = trainer.rollout(prot_key, prot, hfield_data=hfield_data)
     antag_episode = trainer.rollout(antag_key, antag, hfield_data=hfield_data)
-    regret, prot_mean = paired_regret_single(prot_episode, antag_episode)
+    regret, prot_mean, antag_mean = paired_regret_single(prot_episode, antag_episode)
     regret = float(regret)
     curator.buffer.add(level, regret)
-    return regret, float(prot_mean)
+    return regret, float(prot_mean), float(antag_mean)
 
 
 def paired_evo_generate_branch(
@@ -430,10 +430,16 @@ def paired_evo_generate_branch(
 ) -> tuple[jax.Array, dict[str, Any]]:
     key, rollout_key = jax.random.split(key)
     level = curator.hfield_manager.generate(curator.rng)
-    regret, prot_mean = score_regret_evo(
+    regret, prot_mean, antag_mean = score_regret_evo(
         rollout_key, prot, antag, level, curator, trainer
     )
-    log = {"branch": 0, "regret_score": regret, "mean_reward": prot_mean}
+    log = {
+        "branch": 0,
+        "regret_score": regret,
+        "mean_reward": prot_mean,
+        "prot_return": prot_mean,
+        "antag_return": antag_mean,
+    }
     return key, log
 
 
@@ -490,7 +496,7 @@ def paired_evo_replay_branch(
     )
 
     theta_prime = curator.hfield_manager.mutate(theta, curator.rng)
-    regret, prot_mean = score_regret_evo(
+    regret, prot_mean, antag_mean = score_regret_evo(
         edit_key, prot, antag, theta_prime, curator, trainer
     )
 
@@ -498,6 +504,8 @@ def paired_evo_replay_branch(
         "branch": 1,
         "regret_score": regret,
         "mean_reward": prot_mean,
+        "prot_return": prot_mean,
+        "antag_return": antag_mean,
         "prot_loss": float(prot_loss),
         "antag_loss": float(antag_loss),
         "bc_coef": float(prot_bc),

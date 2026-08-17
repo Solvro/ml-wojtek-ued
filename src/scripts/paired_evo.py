@@ -35,7 +35,12 @@ from utils.checkpoint import (
 from utils.env import FunctionalEnv
 from utils.env_overrides import merge_overrides, movement_overrides, terrain_overrides
 from utils.logging import Logger, quiet_dependencies
-from utils.ppo_helpers import batch_rollout, calculate_episode_advantage, eval
+from utils.ppo_helpers import (
+    batch_rollout,
+    calculate_episode_advantage,
+    eval,
+    warm_start_actor,
+)
 
 ALGO = "paired_evo"
 
@@ -117,6 +122,23 @@ def train(cfg: PairedEvoConfig) -> None:
 
     prot = make_student(prot_key)
     antag = make_student(antag_key)
+    if cfg.warm_start_run is not None:
+        assert cfg.warm_start_algo is not None, (
+            "warm_start_algo is required when warm_start_run is set"
+        )
+        # both students inherit the donor actor (e.g. a ppo_dr policy that walks)
+        prot = warm_start_actor(
+            cfg.training_params.artifacts_dir,
+            cfg.warm_start_algo,
+            cfg.warm_start_run,
+            prot,
+        )
+        antag = warm_start_actor(
+            cfg.training_params.artifacts_dir,
+            cfg.warm_start_algo,
+            cfg.warm_start_run,
+            antag,
+        )
 
     save_meta(
         directory,

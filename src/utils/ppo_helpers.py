@@ -6,12 +6,48 @@ import jax.numpy as jnp
 from mujoco import mjx
 
 from modules.ppo_modules import A2C, Episode
+from utils.checkpoint import (
+    Algo,
+    load_meta,
+    open_checkpoint_manager,
+    restore_checkpoint,
+    run_dir,
+)
 from utils.env import FunctionalEnv
 
 
 def clip_log_std(model, low=-5.0, high=0.5):
     clipped = jnp.clip(model.actor_log_std, low, high)
     return eqx.tree_at(lambda m: m.actor_log_std, model, clipped)
+
+
+def warm_start_actor(artifacts_dir: str, algo: Algo, run: str, target: A2C) -> A2C:
+    directory = run_dir(artifacts_dir, algo.value, run)
+    meta = load_meta(directory)
+    target_actor_dim = target.actor_mean.layers[0].in_features
+    if meta["actor_obs_dim"] != target_actor_dim:
+        raise ValueError(
+            f"warm start actor_obs_dim mismatch: donor {run!r} ({algo.value}) "
+            f"has {meta['actor_obs_dim']}, target has {target_actor_dim} — "
+            "obs.state must match between the two runs"
+        )
+    donor_template = A2C(
+        dense_dim=meta["dense_dim"],
+        actor_obs_dim=meta["actor_obs_dim"],
+        critic_obs_dim=meta["critic_obs_dim"],
+        action_dim=meta["action_dim"],
+        action_high=meta["action_high"],
+        key=jax.random.key(0),
+        activation=meta["activation"],
+    )
+    donor, _ = restore_checkpoint(
+        open_checkpoint_manager(directory), None, donor_template
+    )
+    return eqx.tree_at(
+        lambda m: (m.actor_mean, m.actor_log_std),
+        target,
+        (donor.actor_mean, donor.actor_log_std),
+    )
 
 
 def is_finite_array(model):

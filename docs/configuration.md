@@ -17,9 +17,17 @@ just accel accel_params.replay_prob=0.7 hfield_params.coarse_n=11 wandb_params.e
 
 `AccelConfig` reuses the PPO param groups (`EnvironmentParams`, `ModelParams`,
 `TrainingParams`, `EvaluationParams`, `WandbParams`) and adds `HFieldConfig` +
-`AccelParams`. `Config` uses the first four plus `WandbParams`. `PairedConfig`
-mirrors `AccelConfig` but swaps `AccelParams` for `PairedParams`
-([#paired](#paired)).
+`AccelParams`, plus `warm_start_algo`/`warm_start_run` (both `None` by
+default): if set, restores the actor's weights from that run's latest
+checkpoint before training starts, leaving the critic freshly initialized
+(`utils/ppo_helpers.py:warm_start_actor`) — e.g. warm-starting ACCEL from a
+`ppo_dr` run that already walks. Requires the donor's `actor_obs_dim` to
+match (same `obs.state`); raises otherwise. `Config` uses the first four plus
+`WandbParams`. `PairedConfig` mirrors `AccelConfig` but swaps `AccelParams`
+for `PairedParams` ([#paired](#paired)); `PairedEvoConfig` swaps in
+`PairedEvoParams` ([#paired_evo](#paired_evo)). Both also expose
+`warm_start_algo`/`warm_start_run`, applied to **both** the protagonist and
+antagonist.
 
 ## EnvironmentParams
 

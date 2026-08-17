@@ -10,6 +10,7 @@ from config.ppo_config import (
     TrainingParams,
     WandbParams,
 )
+from utils.checkpoint import Algo
 
 
 @dataclass
@@ -40,6 +41,8 @@ class AccelConfig:
     hfield_params: HFieldConfig = field(default_factory=HFieldConfig)
     accel_params: AccelParams = field(default_factory=AccelParams)
     wandb_params: WandbParams = field(default_factory=WandbParams)
+    warm_start_algo: Algo | None = None
+    warm_start_run: str | None = None
 
 
 cs = ConfigStore.instance()
