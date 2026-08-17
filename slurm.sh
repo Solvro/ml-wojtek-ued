@@ -22,19 +22,23 @@ cd "$ROOT_DIR"
 #   sbatch --export=ALL,ALGO=accel slurm.sh
 #   sbatch --export=ALL,MODE=eval,ALGO=accel slurm.sh
 MODE="${MODE:-train}"   # train | eval
-ALGO="${ALGO:-ppo}"     # ppo | ppo_dr | accel | accel_top_k
+ALGO="${ALGO:-ppo}"     # ppo | ppo_dr | accel | accel_top_k | paired | paired_evo
 
 case "$ALGO" in
     ppo)          TRAIN_SCRIPT="src/scripts/ppo.py" ;;
     ppo_dr)       TRAIN_SCRIPT="src/scripts/ppo_dr.py" ;;
     accel)        TRAIN_SCRIPT="src/scripts/accel.py" ;;
     accel_top_k)  TRAIN_SCRIPT="src/scripts/accel_top_k.py" ;;
-    *) echo "Unknown ALGO: $ALGO (ppo|ppo_dr|accel|accel_top_k)" >&2; exit 1 ;;
+    paired)       TRAIN_SCRIPT="src/scripts/paired.py" ;;
+    paired_evo)   TRAIN_SCRIPT="src/scripts/paired_evo.py" ;;
+    *) echo "Unknown ALGO: $ALGO (ppo|ppo_dr|accel|accel_top_k|paired|paired_evo)" >&2; exit 1 ;;
 esac
 
 case "$ALGO" in
     ppo|ppo_dr)        DEFAULT_TRAIN_ARGS="environment_params.envs_num=4096 training_params.iterations=5000000" ;;
     accel|accel_top_k) DEFAULT_TRAIN_ARGS="environment_params.envs_num=4096" ;;
+    paired_evo)        DEFAULT_TRAIN_ARGS="environment_params.envs_num=4096" ;;
+    paired)            DEFAULT_TRAIN_ARGS="" ;;  # rollout sized by num_lanes*envs_per_lane
 esac
 TRAIN_ARGS="${TRAIN_ARGS:-$DEFAULT_TRAIN_ARGS}"
 EVAL_ARGS="${EVAL_ARGS:-}"
@@ -46,12 +50,12 @@ EVAL_ARGS="${EVAL_ARGS:-}"
 HFIELD_ARGS="${HFIELD_ARGS:-}"
 EVAL_ARGS="$EVAL_ARGS $HFIELD_ARGS"
 case "$ALGO" in
-    accel|accel_top_k) TRAIN_ARGS="$TRAIN_ARGS $HFIELD_ARGS" ;;
+    accel|accel_top_k|paired|paired_evo) TRAIN_ARGS="$TRAIN_ARGS $HFIELD_ARGS" ;;
 esac
 
 NEED_ARENA=0
 [ "$MODE" = "eval" ] && NEED_ARENA=1
-case "$ALGO" in accel|accel_top_k) NEED_ARENA=1 ;; esac
+case "$ALGO" in accel|accel_top_k|paired|paired_evo) NEED_ARENA=1 ;; esac
 
 DONE_MARKER="$ROOT_DIR/artifacts/DONE"
 

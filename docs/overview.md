@@ -35,6 +35,7 @@ src/
     hfield_config.py HFieldConfig (level genome envelope)
   modules/
     ppo_modules.py   A2C equinox model, Obs / Episode pytrees
+    generator.py     LevelGenerator: PAIRED learned adversary (see paired.md)
   utils/
     env.py           FunctionalEnv: bridges wojtek_env into jit/vmap training
     ppo_helpers.py   rollout, GAE, PPO loss/step, eval  (see ppo.md)
@@ -51,11 +52,14 @@ src/
     levels.py        buffer/level plumbing
     stopper.py       PlateauStopper (convergence)
     curriculum.py    generate/replay branches (Algorithm 1)
+    paired.py        PAIRED: regret, BC-aware student/generator steps + Evo branches (see paired.md)
   scripts/
     ppo.py           plain PPO on one task            (`just train`)
     ppo_dr.py        PPO + baseline domain randomization (`just train-dr`)
     accel.py         ACCEL curriculum, vanilla         (`just accel`)
     accel_top_k.py   ACCEL curriculum, batched-lanes/top-k (`just accel-top-k`)
+    paired.py        PAIRED w/ learned adversary        (`just paired`)
+    paired_evo.py    PAIRED+Evo: search editor + regret  (`just paired-evo`)
     eval.py          evaluate a saved checkpoint       (`just eval --algo <algo>`)
     eval_levels.py   evaluate across generated levels  (`uv run python src/scripts/eval_levels.py --algo <algo>`)
 main.py              random-agent MuJoCo-viewer preview
@@ -84,6 +88,21 @@ Levels are `coarse_n × coarse_n` control-point grids upsampled to the MJX
 heightfield; the buffer keeps the high-regret ones. Convergence is a **regret
 plateau**, not a fixed step count. Full walkthrough in [ued-accel.md](ued-accel.md).
 
+**PAIRED** (`scripts/paired.py`): the same heightfield genome, but a **learned
+adversary** (`LevelGenerator`) designs the levels instead of a random
+generator + buffer. Each iteration the generator turns latent seeds into a
+batch of levels; a **protagonist** and an **antagonist** (two `A2C` students)
+roll out on them; the PAIRED regret `max(antag_max − prot_mean, 0)` is both the
+generator's reward (it maximises it via single-step PPO) and the stopper's
+signal. Adds the *Stabilizing UED* fixes — a high entropy bonus (HiEnt) and
+protagonist/antagonist behavioural cloning (UniBC/BiBC).
+
+**PAIRED+Evo** (`scripts/paired_evo.py`) is the *Stabilizing UED* Section 4.2
+variant: same two students + PAIRED regret, but the learned adversary is
+replaced by ACCEL's search-based editor (random generate + mutate + buffer)
+scored by that regret — no generator network. Both are walked through in
+[paired.md](paired.md).
+
 **Eval** (`scripts/eval.py`): each trainer checkpoints under
 `artifacts/<algo>/<run>/` (`<algo>` is one of `ppo`/`ppo_dr`/`accel`/
 `accel_top_k`) and writes a `meta.json` sidecar recording the model shape and
@@ -107,5 +126,6 @@ selected) checkpoint — no Hydra config needed at eval time. Details in
 - The env, tasks, terrain, hfield-swap trick → [environment.md](environment.md)
 - PPO model, rollout, loss, checkpoints → [ppo.md](ppo.md)
 - The ACCEL curriculum + heightfield levels → [ued-accel.md](ued-accel.md)
+- PAIRED with a learned adversary → [paired.md](paired.md)
 - Every config field and Hydra overrides → [configuration.md](configuration.md)
 - Tooling, imports, conventions → [development.md](development.md)

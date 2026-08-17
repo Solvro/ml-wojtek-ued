@@ -17,6 +17,7 @@ Full docs live in [`docs/`](docs/):
 | [environment.md](docs/environment.md) | `wojtek_env` tasks/terrain/gym, `FunctionalEnv`, hfield swapping |
 | [ppo.md](docs/ppo.md) | A2C model, rollout, GAE, PPO loss/step, checkpoints, logging |
 | [ued-accel.md](docs/ued-accel.md) | heightfield levels + the ACCEL curriculum + convergence |
+| [paired.md](docs/paired.md) | PAIRED with a learned adversary (HiEnt, UniBC/BiBC) |
 | [configuration.md](docs/configuration.md) | every Hydra config field + override examples |
 | [development.md](docs/development.md) | layout rules, tooling, conventions, gotchas |
 | [slurm_recommended.md](docs/slurm_recommended.md) | recommended `sbatch` commands for training + eval |
@@ -32,6 +33,8 @@ just build-accel-arena   # write the "accel" terrain arena (needed for ACCEL)
 just train               # plain PPO
 just train-dr            # plain PPO + baseline domain randomization
 just accel               # ACCEL curriculum
+just paired              # PAIRED with a learned adversary
+just paired-evo          # PAIRED+Evo: search-based editor + PAIRED regret
 just eval --algo ppo     # evaluate the latest checkpoint of an algo
 ```
 
@@ -51,6 +54,8 @@ just eval --algo ppo     # evaluate the latest checkpoint of an algo
 | `just train-dr *args` | PPO training with baseline domain randomization (`scripts/ppo_dr.py`) |
 | `just accel *args` | ACCEL training, single-level-per-iteration variant; needs `build-accel-arena` first |
 | `just accel-top-k *args` | ACCEL training, batched-lanes/top-k variant; needs `build-accel-arena` first |
+| `just paired *args` | PAIRED training with a learned adversary (`scripts/paired.py`); needs `build-accel-arena` first |
+| `just paired-evo *args` | PAIRED+Evo: search-based editor scored by PAIRED regret (`scripts/paired_evo.py`); needs `build-accel-arena` first |
 | `just eval *args` | evaluate a checkpoint (`--algo` required; `--run`/`--step` default to latest) |
 | `just eval-levels *args` | evaluate a checkpoint's generalization across generated levels; needs `build-accel-arena` first |
 | `just eval-sim *args` | watch a checkpoint walk random ACCEL levels in the MuJoCo viewer; needs `build-accel-arena` first |

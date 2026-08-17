@@ -14,6 +14,7 @@ it when the code changes.**
 | The env, tasks, terrain, `FunctionalEnv`, hfield swapping | [docs/environment.md](docs/environment.md) |
 | PPO model / rollout / loss / checkpoints / logging | [docs/ppo.md](docs/ppo.md) |
 | ACCEL curriculum, heightfield levels, convergence | [docs/ued-accel.md](docs/ued-accel.md) |
+| PAIRED, the learned adversary, HiEnt/UniBC/BiBC | [docs/paired.md](docs/paired.md) |
 | Config fields, Hydra overrides | [docs/configuration.md](docs/configuration.md) |
 | Layout rules, tooling, adding features, gotchas | [docs/development.md](docs/development.md) |
 | Running training/eval on the cluster | [docs/slurm_recommended.md](docs/slurm_recommended.md) |
@@ -25,8 +26,9 @@ it when the code changes.**
   `envs/registry.py` (register a task).
 - `src/{config,modules,utils,hfield,ued}/`, `src/scripts/` — research code.
   Add new work here as sibling packages.
-- `src/ued/` — the ACCEL algorithm, split by role (`types`, `regret`, `levels`,
-  `stopper`, `curriculum`). Keep the split; don't recreate a `helpers` grab-bag.
+- `src/ued/` — the UED algorithms, split by role (`types`, `regret`, `levels`,
+  `stopper`, `curriculum` for ACCEL; `paired` for PAIRED). Keep the split;
+  don't recreate a `helpers` grab-bag.
 
 ## Project-specific rules (override / complement the global)
 

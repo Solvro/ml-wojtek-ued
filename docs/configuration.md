@@ -5,6 +5,8 @@ selected by name in each script's `@hydra.main`:
 
 - `scripts/ppo.py` → `Config` (name `"config"`, `config/ppo_config.py`)
 - `scripts/accel.py` → `AccelConfig` (name `"accel_config"`, `config/accel_config.py`)
+- `scripts/paired.py` → `PairedConfig` (name `"paired_config"`, `config/paired_config.py`)
+- `scripts/paired_evo.py` → `PairedEvoConfig` (name `"paired_evo_config"`, `config/paired_config.py`)
 
 Override any field on the CLI with a dotted path:
 
@@ -15,7 +17,9 @@ just accel accel_params.replay_prob=0.7 hfield_params.coarse_n=11 wandb_params.e
 
 `AccelConfig` reuses the PPO param groups (`EnvironmentParams`, `ModelParams`,
 `TrainingParams`, `EvaluationParams`, `WandbParams`) and adds `HFieldConfig` +
-`AccelParams`. `Config` uses the first four plus `WandbParams`.
+`AccelParams`. `Config` uses the first four plus `WandbParams`. `PairedConfig`
+mirrors `AccelConfig` but swaps `AccelParams` for `PairedParams`
+([#paired](#paired)).
 
 ## EnvironmentParams
 
@@ -135,3 +139,66 @@ requires both `regret_score` and `mean_reward` to have stopped improving for
 `plateau_patience` iterations, not regret alone. Tune convergence with
 `plateau_patience`/`plateau_rel_tol` (scale-free), not an absolute regret
 number.
+
+## PairedParams {#paired}
+
+`scripts/paired.py` (PAIRED, [paired.md](paired.md)) reuses `EnvironmentParams`,
+`ModelParams`, `TrainingParams`, `EvaluationParams`, `HFieldConfig`, and
+`WandbParams`, plus `PairedParams`:
+
+| field | default | meaning |
+|---|---|---|
+| `num_lanes` | `32` | levels the generator proposes and scores per iteration |
+| `envs_per_lane` | `32` | episodes per level per student; `num_lanes * envs_per_lane` is each student's rollout batch |
+| `latent_dim` | `16` | dimension of the `z ~ N(0,I)` seed fed to the generator |
+| `gen_dense_dim` | `128` | generator MLP width |
+| `gen_activation` | `tanh` | generator MLP activation (`relu`/`tanh`) |
+| `gen_learning_rate` | `1e-4` | generator Adam LR (constant) |
+| `gen_epochs` | `5` | single-step PPO epochs for the generator per iteration |
+| `gen_epsilon` | `0.2` | generator PPO clip range |
+| `gen_entropy_coef` | `0.1` | **HiEnt** entropy bonus on the generator (high, fights teacher entropy collapse) |
+| `gen_max_grad_norm` | `0.5` | generator gradient clip |
+| `student_entropy_coef` | `0.05` | HiEnt entropy bonus on both students (5× PPO's `0.01`) |
+| `bc_mode` | `none` | policy distillation: `none` / `uni` (UniBC) / `bi` (BiBC) |
+| `bc_coef` | `0.5` | `KL(teacher‖student)` distillation weight |
+| `kl_update_step` | `1` | apply BC every N iterations (periodic distillation) |
+| `max_iterations` | `10000` | hard cap on the loop |
+| `min_iterations` | `1000` | warmup before the plateau check arms |
+| `plateau_window` | `100` | iterations averaged into the smoothed regret/reward |
+| `plateau_patience` | `200` | iterations without improvement on *either* signal → converge |
+| `plateau_rel_tol` | `0.01` | relative regret drop / scaled reward rise that counts as an improvement |
+
+Students reuse `TrainingParams` for their optimizer (LR schedule, `epochs`,
+`minibatches`, `epsilon`, `value_coef`, `max_grad_norm`, …) — `entropy_coef`
+there is *not* used by the students (they take `student_entropy_coef` instead).
+The `plateau_*`/`max_iterations`/`min_iterations` group is the same
+`PlateauStopper` convergence criterion as ACCEL, fed the PAIRED `regret_score`
+and the protagonist's `mean_reward`. The `gen_*`/`bc_*`/`*_entropy_coef`
+defaults are untuned starting points (see [paired.md](paired.md#untuned-defaults)).
+
+## PairedEvoParams {#paired_evo}
+
+`scripts/paired_evo.py` (PAIRED+Evo, [paired.md](paired.md#paired-evo-section-42--scriptspaired_evopy)):
+ACCEL's search-based editor scored by PAIRED regret, so it drops the generator
+knobs and picks up the ACCEL buffer knobs. Reuses `EnvironmentParams`
+(`envs_num` is the per-level rollout batch), `ModelParams`, `TrainingParams`,
+`EvaluationParams`, `HFieldConfig`, `WandbParams`, plus `PairedEvoParams`:
+
+| field | default | meaning |
+|---|---|---|
+| `buffer_size` | `100` | level buffer capacity (K) |
+| `initial_fill_ratio` | `0.9` | fraction seeded with random levels at start |
+| `replay_prob` | `0.5` | P(replay) vs generate each iteration |
+| `student_entropy_coef` | `0.05` | HiEnt entropy bonus on both students |
+| `bc_mode` | `none` | policy distillation: `none` / `uni` / `bi` |
+| `bc_coef` | `0.5` | `KL(teacher‖student)` distillation weight |
+| `kl_update_step` | `1` | apply BC every N iterations |
+| `max_iterations` | `10000` | hard cap on the loop |
+| `min_iterations` | `1000` | warmup before the plateau check arms |
+| `plateau_window` | `100` | iterations averaged into the smoothed regret/reward |
+| `plateau_patience` | `200` | iterations without improvement on *either* signal → converge |
+| `plateau_rel_tol` | `0.01` | relative regret drop / scaled reward rise that counts as an improvement |
+
+Buffer entry is the same score-based `LevelBuffer.add` as ACCEL, but keyed on
+PAIRED regret. Students reuse `TrainingParams` for their optimizer (as with
+`PairedParams`, `entropy_coef` there is unused — `student_entropy_coef` wins).

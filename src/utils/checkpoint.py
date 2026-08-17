@@ -13,6 +13,8 @@ class Algo(str, Enum):
     ppo_dr = "ppo_dr"
     accel = "accel"
     accel_top_k = "accel_top_k"
+    paired = "paired"
+    paired_evo = "paired_evo"
 
 
 class RunMeta(TypedDict):

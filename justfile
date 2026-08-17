@@ -97,6 +97,16 @@ accel *args:
 accel-top-k *args:
     uv run python src/scripts/accel_top_k.py {{ args }}
 
+# Run PAIRED with a learned adversary (pass hydra overrides); needs build-accel-arena first
+[group('train')]
+paired *args:
+    uv run python src/scripts/paired.py {{ args }}
+
+# Run PAIRED+Evo (search-based editor scored by PAIRED regret); needs build-accel-arena first
+[group('train')]
+paired-evo *args:
+    uv run python src/scripts/paired_evo.py {{ args }}
+
 # --- evaluation ---
 
 # Evaluate a checkpoint (pass hydra overrides, e.g. `just eval algo=ppo run=my_run step=5000`)
