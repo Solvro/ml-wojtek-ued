@@ -61,7 +61,6 @@ def terrain_overrides() -> dict[str, Any]:
                 "last_act",
                 "command",
                 "phase",
-                "height_scan",
             ),
             "privileged": (
                 "gyro",
