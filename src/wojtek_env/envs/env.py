@@ -1221,6 +1221,10 @@ class WojtekJoystick(WojtekEnv):
             # on a flat pad and no episode has run yet.
             metrics["base_contact_alive_per_step"] = jp.zeros(())
             metrics["base_contact_at_done"] = jp.zeros(())
+            metrics["fall_min_height_at_done"] = jp.zeros(())
+            metrics["fall_tilt_at_done"] = jp.zeros(())
+            metrics["fall_toggle_at_done"] = jp.zeros(())
+            metrics["fall_base_contact_at_done"] = jp.zeros(())
             if self._backend == "warp":
                 # Running fleet-wide constraint-row peak, written by the
                 # terrain wrapper (the raw warp buffer is only readable on
@@ -1323,7 +1327,7 @@ class WojtekJoystick(WojtekEnv):
             jp.maximum(info["swing_apex"], step_clearance),
             info["swing_apex"],
         )
-        rewards, done = self._get_reward(
+        rewards, done, fall_causes = self._get_reward(
             data, info, action, motor_targets, first_contact, contact
         )
         # Spawn grace: a fall this early is the spawn's fault, not the
@@ -1479,6 +1483,18 @@ class WojtekJoystick(WojtekEnv):
             terminated = done.astype(jp.float32)
             metrics["base_contact_alive_per_step"] = base_down * (1.0 - terminated)
             metrics["base_contact_at_done"] = base_down * terminated
+            metrics["fall_min_height_at_done"] = (
+                fall_causes["min_height"].astype(jp.float32) * terminated
+            )
+            metrics["fall_tilt_at_done"] = (
+                fall_causes["tilt"].astype(jp.float32) * terminated
+            )
+            metrics["fall_toggle_at_done"] = (
+                fall_causes["toggle"].astype(jp.float32) * terminated
+            )
+            metrics["fall_base_contact_at_done"] = (
+                fall_causes["base_contact"].astype(jp.float32) * terminated
+            )
         if self._scan_live:
             self._step_scan(data, info)
         obs = self._get_obs(data, info, r_noise)
@@ -1551,9 +1567,11 @@ class WojtekJoystick(WojtekEnv):
         # Terrain: measured from the surface. Flat: the old expressions,
         # unchanged.
         base_height = self._base_height(data)
-        fall = (base_height < self._config.fall.min_height) | (
-            gravity[2] > self._config.fall.max_tilt_gz
-        )
+        low = base_height < self._config.fall.min_height
+        tilt_fall = gravity[2] > self._config.fall.max_tilt_gz
+        fall = low | tilt_fall
+        toggle_fall = jp.zeros((), dtype=bool)
+        base_contact_fall = jp.zeros((), dtype=bool)
         max_toggle = self._config.fall.get("max_toggle_deg", 0.0)
         toggle_on = max_toggle or self._config.reward.scales.get("toggle_flat", 0.0)
         toggle_ramp = jp.zeros(())
@@ -1576,9 +1594,17 @@ class WojtekJoystick(WojtekEnv):
             )
             if max_toggle:
                 # angle > max_toggle_deg <=> cos(angle) < cos(max_toggle_deg)
-                fall = fall | jp.any(cosang < jp.cos(jp.deg2rad(max_toggle)))
+                toggle_fall = jp.any(cosang < jp.cos(jp.deg2rad(max_toggle)))
+                fall = fall | toggle_fall
         if self._terrain_enabled and self._config.fall.on_base_contact:
-            fall = fall | self._base_terrain_contact(data)
+            base_contact_fall = self._base_terrain_contact(data)
+            fall = fall | base_contact_fall
+        fall_causes = {
+            "min_height": low,
+            "tilt": tilt_fall,
+            "toggle": toggle_fall,
+            "base_contact": base_contact_fall,
+        }
 
         # Foot clearance above the local ground vs the duty-aware swing profile,
         # plus explicit contact/stance schedule matching.
@@ -1790,4 +1816,4 @@ class WojtekJoystick(WojtekEnv):
                 )
             ),
         }
-        return rewards, fall
+        return rewards, fall, fall_causes

@@ -303,13 +303,16 @@ def eval(
     return rewards.sum(axis=0).mean()
 
 
+FALL_CAUSES = ("min_height", "tilt", "toggle", "base_contact")
+
+
 def level_eval_step(
     env: FunctionalEnv,
     model: A2C,
     state_input: list,
     tmp: tuple[()],
     hfield_data: jax.Array,
-) -> tuple[list, tuple[jax.Array, jax.Array, jax.Array, jax.Array]]:
+) -> tuple[list, tuple[jax.Array, jax.Array, jax.Array, dict[str, jax.Array]]]:
     obs, state, key = state_input
     key, key_step = jax.random.split(key)
     action = model.deterministic_action(obs)
@@ -317,12 +320,14 @@ def level_eval_step(
         key_step, state, action, hfield_data
     )
     carry = [next_obs, next_state, key]
-    fell = done * (1.0 - info["truncation"])
-    base_contact_death = next_state.metrics["base_contact_at_done"] * (
-        1.0 - info["truncation"]
-    )
+    alive = 1.0 - info["truncation"]
+    fell = done * alive
+    cause_at_done = {
+        cause: next_state.metrics[f"fall_{cause}_at_done"] * alive
+        for cause in FALL_CAUSES
+    }
     base_contact_alive = next_state.metrics["base_contact_alive_per_step"]
-    return carry, (reward, fell, base_contact_death, base_contact_alive)
+    return carry, (reward, fell, base_contact_alive, cause_at_done)
 
 
 def level_eval_rollout(
@@ -331,19 +336,15 @@ def level_eval_rollout(
     model: A2C,
     steps: int,
     hfield_data: jax.Array,
-) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+) -> tuple[jax.Array, jax.Array, jax.Array, dict[str, jax.Array]]:
     key_reset, key_episode = jax.random.split(key_input)
     obs, state = env.reset(key_reset, hfield_data)
     step_fn = functools.partial(level_eval_step, env, model, hfield_data=hfield_data)
-    _, (rewards, fell, base_contact_death, base_contact_alive) = jax.lax.scan(
+    _, (rewards, fell, base_contact_alive, cause_at_done) = jax.lax.scan(
         step_fn, [obs, state, key_episode], (), steps
     )
-    return (
-        rewards.sum(),
-        jnp.any(fell > 0),
-        jnp.any(base_contact_death > 0),
-        base_contact_alive.mean(),
-    )
+    causes = {cause: jnp.any(cause_at_done[cause] > 0) for cause in FALL_CAUSES}
+    return rewards.sum(), jnp.any(fell > 0), base_contact_alive.mean(), causes
 
 
 def eval_levels(
@@ -353,7 +354,7 @@ def eval_levels(
     hfield_data: jax.Array,
     episodes_per_level: int,
     steps: int,
-) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+) -> tuple[jax.Array, jax.Array, jax.Array, dict[str, jax.Array]]:
     num_levels = hfield_data.shape[0]
     level_keys = jax.random.split(key_input, num_levels)
 
