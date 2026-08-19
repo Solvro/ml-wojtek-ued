@@ -309,7 +309,7 @@ def level_eval_step(
     state_input: list,
     tmp: tuple[()],
     hfield_data: jax.Array,
-) -> tuple[list, tuple[jax.Array, jax.Array]]:
+) -> tuple[list, tuple[jax.Array, jax.Array, jax.Array, jax.Array]]:
     obs, state, key = state_input
     key, key_step = jax.random.split(key)
     action = model.deterministic_action(obs)
@@ -318,7 +318,11 @@ def level_eval_step(
     )
     carry = [next_obs, next_state, key]
     fell = done * (1.0 - info["truncation"])
-    return carry, (reward, fell)
+    base_contact_death = next_state.metrics["base_contact_at_done"] * (
+        1.0 - info["truncation"]
+    )
+    base_contact_alive = next_state.metrics["base_contact_alive_per_step"]
+    return carry, (reward, fell, base_contact_death, base_contact_alive)
 
 
 def level_eval_rollout(
@@ -327,12 +331,19 @@ def level_eval_rollout(
     model: A2C,
     steps: int,
     hfield_data: jax.Array,
-) -> tuple[jax.Array, jax.Array]:
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     key_reset, key_episode = jax.random.split(key_input)
     obs, state = env.reset(key_reset, hfield_data)
     step_fn = functools.partial(level_eval_step, env, model, hfield_data=hfield_data)
-    _, (rewards, fell) = jax.lax.scan(step_fn, [obs, state, key_episode], (), steps)
-    return rewards.sum(), jnp.any(fell > 0)
+    _, (rewards, fell, base_contact_death, base_contact_alive) = jax.lax.scan(
+        step_fn, [obs, state, key_episode], (), steps
+    )
+    return (
+        rewards.sum(),
+        jnp.any(fell > 0),
+        jnp.any(base_contact_death > 0),
+        base_contact_alive.mean(),
+    )
 
 
 def eval_levels(
@@ -342,7 +353,7 @@ def eval_levels(
     hfield_data: jax.Array,
     episodes_per_level: int,
     steps: int,
-) -> tuple[jax.Array, jax.Array]:
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     num_levels = hfield_data.shape[0]
     level_keys = jax.random.split(key_input, num_levels)
 

@@ -34,25 +34,33 @@ def rollout_levels(
     levels: np.ndarray,
     chunk_size: int,
     key: jax.Array,
-) -> tuple[jax.Array, jax.Array, jax.Array]:
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
     n = levels.shape[0]
     num_chunks = -(-n // chunk_size)
     padded = np.resize(levels, (num_chunks * chunk_size, *levels.shape[1:]))
 
     rewards = []
     terminated = []
+    base_contact_deaths = []
+    base_contact_alives = []
     for start in range(0, padded.shape[0], chunk_size):
         hfield_data = level_to_hfield_data_batch(
             hfield_manager, padded[start : start + chunk_size]
         )
         key, chunk_key = jax.random.split(key)
-        reward, fell = jit_eval_levels(chunk_key, model, hfield_data)
+        reward, fell, base_contact_death, base_contact_alive = jit_eval_levels(
+            chunk_key, model, hfield_data
+        )
         rewards.append(reward)
         terminated.append(fell)
+        base_contact_deaths.append(base_contact_death)
+        base_contact_alives.append(base_contact_alive)
 
     reward = jnp.concatenate(rewards)[:n]
     fell = jnp.concatenate(terminated)[:n]
-    return key, reward, fell
+    base_contact_death = jnp.concatenate(base_contact_deaths)[:n]
+    base_contact_alive = jnp.concatenate(base_contact_alives)[:n]
+    return key, reward, fell, base_contact_death, base_contact_alive
 
 
 @hydra.main(version_base=None, config_name="eval_levels_config")
@@ -127,21 +135,41 @@ def main(cfg: EvalLevelsConfig) -> None:
     key = jax.random.key(cfg.seed)
 
     levels = generate_batch(hfield_manager, rng, cfg.num_levels)
-    key, reward, terminated = rollout_levels(
+    key, reward, terminated, base_contact_death, base_contact_alive = rollout_levels(
         jit_eval_levels, model, hfield_manager, levels, cfg.chunk_size, key
     )
 
     mean_reward = float(reward.mean())
     success_rate = float((1.0 - terminated).mean())
+    num_terminated = float(terminated.sum())
+    base_contact_death_rate = (
+        float(base_contact_death.sum() / num_terminated)
+        if num_terminated > 0
+        else float("nan")
+    )
+    base_contact_alive_frac = float(base_contact_alive.mean())
 
     success_per_level = np.asarray((1.0 - terminated).mean(axis=1))
     num_worst = max(1, int(np.ceil(cfg.cvar_alpha * cfg.num_levels)))
     worst_idx = np.argsort(success_per_level)[:num_worst]
-    key, cvar_reward, cvar_terminated = rollout_levels(
+    (
+        key,
+        cvar_reward,
+        cvar_terminated,
+        cvar_base_contact_death,
+        cvar_base_contact_alive,
+    ) = rollout_levels(
         jit_eval_levels, model, hfield_manager, levels[worst_idx], cfg.chunk_size, key
     )
     cvar_mean_reward = float(cvar_reward.mean())
     cvar_success_rate = float((1.0 - cvar_terminated).mean())
+    num_cvar_terminated = float(cvar_terminated.sum())
+    cvar_base_contact_death_rate = (
+        float(cvar_base_contact_death.sum() / num_cvar_terminated)
+        if num_cvar_terminated > 0
+        else float("nan")
+    )
+    cvar_base_contact_alive_frac = float(cvar_base_contact_alive.mean())
 
     run.log(
         {
@@ -152,10 +180,14 @@ def main(cfg: EvalLevelsConfig) -> None:
             "episodes_per_level": cfg.episodes_per_level,
             "mean_reward": mean_reward,
             "success_rate": success_rate,
+            "base_contact_death_rate": base_contact_death_rate,
+            "base_contact_alive_frac": base_contact_alive_frac,
             "cvar_alpha": cfg.cvar_alpha,
             "num_worst_levels": num_worst,
             "cvar_mean_reward": cvar_mean_reward,
             "cvar_success_rate": cvar_success_rate,
+            "cvar_base_contact_death_rate": cvar_base_contact_death_rate,
+            "cvar_base_contact_alive_frac": cvar_base_contact_alive_frac,
         }
     )
     run.finish()
