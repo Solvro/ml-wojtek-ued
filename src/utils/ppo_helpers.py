@@ -132,23 +132,24 @@ def batch_rollout(
     hfield_data: jax.Array | None = None,
     dr_model: mjx.Model | None = None,
     dr_in_axes: mjx.Model | None = None,
+    hfield_in_axes: int | None = None,
 ) -> Episode:
     key_reset, key_episode = jax.random.split(key_input)
     reset_keys = jax.random.split(key_reset, envs_num)
     episode_keys = jax.random.split(key_episode, envs_num)
 
     obs, state = jax.vmap(
-        lambda k, dr: env.reset(k, hfield_data, dr),
-        in_axes=(0, dr_in_axes),
-    )(reset_keys, dr_model)
+        lambda k, hf, dr: env.reset(k, hf, dr),
+        in_axes=(0, hfield_in_axes, dr_in_axes),
+    )(reset_keys, hfield_data, dr_model)
     step_fn = jax.vmap(
-        lambda state_input, tmp, dr: policy_step(
-            env, model, state_input, tmp, hfield_data=hfield_data, dr_model=dr
+        lambda state_input, tmp, hf, dr: policy_step(
+            env, model, state_input, tmp, hfield_data=hf, dr_model=dr
         ),
-        in_axes=(0, None, dr_in_axes),
+        in_axes=(0, None, hfield_in_axes, dr_in_axes),
     )
     _, episode = jax.lax.scan(
-        lambda carry, x: step_fn(carry, x, dr_model),
+        lambda carry, x: step_fn(carry, x, hfield_data, dr_model),
         [obs, state, episode_keys],
         (),
         steps_in_episode,

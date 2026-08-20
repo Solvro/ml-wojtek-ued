@@ -165,6 +165,7 @@ def train(cfg: PpoDrTerrainConfig) -> None:
             envs_num=cfg.environment_params.envs_num,
             steps_in_episode=cfg.environment_params.steps_in_episode,
             dr_in_axes=dr_in_axes,
+            hfield_in_axes=0,
         )
     )
     jit_advantage = eqx.filter_jit(
