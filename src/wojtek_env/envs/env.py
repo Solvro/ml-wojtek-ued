@@ -1186,6 +1186,10 @@ class WojtekJoystick(WojtekEnv):
             flat_pitch_down_deg_per_step=jp.zeros(()),
             flat_pitch_on_flat_per_step=jp.zeros(()),
             cmd_spin_per_step=jp.zeros(()),
+            fall_min_height_at_done=jp.zeros(()),
+            fall_tilt_at_done=jp.zeros(()),
+            fall_toggle_at_done=jp.zeros(()),
+            fall_base_contact_at_done=jp.zeros(()),
         )
         if self._config.no_progress.enable:
             # Optimistic seed: a fresh episode starts at progress ratio 1,
@@ -1221,10 +1225,6 @@ class WojtekJoystick(WojtekEnv):
             # on a flat pad and no episode has run yet.
             metrics["base_contact_alive_per_step"] = jp.zeros(())
             metrics["base_contact_at_done"] = jp.zeros(())
-            metrics["fall_min_height_at_done"] = jp.zeros(())
-            metrics["fall_tilt_at_done"] = jp.zeros(())
-            metrics["fall_toggle_at_done"] = jp.zeros(())
-            metrics["fall_base_contact_at_done"] = jp.zeros(())
             if self._backend == "warp":
                 # Running fleet-wide constraint-row peak, written by the
                 # terrain wrapper (the raw warp buffer is only readable on
@@ -1470,6 +1470,19 @@ class WojtekJoystick(WojtekEnv):
             & (cmd_stepped[1] == 0.0)
         ).astype(jp.float32)
         # The `_per_step` suffix makes brax report the mean, not the sum.
+        terminated = done.astype(jp.float32)
+        metrics["fall_min_height_at_done"] = (
+            fall_causes["min_height"].astype(jp.float32) * terminated
+        )
+        metrics["fall_tilt_at_done"] = (
+            fall_causes["tilt"].astype(jp.float32) * terminated
+        )
+        metrics["fall_toggle_at_done"] = (
+            fall_causes["toggle"].astype(jp.float32) * terminated
+        )
+        metrics["fall_base_contact_at_done"] = (
+            fall_causes["base_contact"].astype(jp.float32) * terminated
+        )
         if self._terrain_enabled:
             metrics["terrain_level_per_step"] = info["terrain_level"].astype(jp.float32)
             # Which states put the base on the terrain, which is where the
@@ -1480,21 +1493,8 @@ class WojtekJoystick(WojtekEnv):
             # suffix on purpose: brax reports its episode sum, which for this
             # indicator is 1 exactly when the episode ended with the base down.
             base_down = self._base_terrain_contact(data).astype(jp.float32)
-            terminated = done.astype(jp.float32)
             metrics["base_contact_alive_per_step"] = base_down * (1.0 - terminated)
             metrics["base_contact_at_done"] = base_down * terminated
-            metrics["fall_min_height_at_done"] = (
-                fall_causes["min_height"].astype(jp.float32) * terminated
-            )
-            metrics["fall_tilt_at_done"] = (
-                fall_causes["tilt"].astype(jp.float32) * terminated
-            )
-            metrics["fall_toggle_at_done"] = (
-                fall_causes["toggle"].astype(jp.float32) * terminated
-            )
-            metrics["fall_base_contact_at_done"] = (
-                fall_causes["base_contact"].astype(jp.float32) * terminated
-            )
         if self._scan_live:
             self._step_scan(data, info)
         obs = self._get_obs(data, info, r_noise)

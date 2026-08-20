@@ -21,6 +21,7 @@ class Episode(NamedTuple):
     entropy: jnp.ndarray
     reward: jnp.ndarray
     done: jnp.ndarray
+    metrics: dict[str, jnp.ndarray]
 
 
 class A2C(eqx.Module):

@@ -15,6 +15,8 @@ from utils.checkpoint import (
 )
 from utils.env import FunctionalEnv
 
+FALL_CAUSES = ("min_height", "tilt", "toggle", "base_contact")
+
 
 def clip_log_std(model, low=-5.0, high=0.5):
     clipped = jnp.clip(model.actor_log_std, low, high)
@@ -84,10 +86,17 @@ def policy_step(
     obs, state, key = state_input
     key, key_step, key_act = jax.random.split(key, 3)
     action, log_prob, value, entropy = model(obs, key_act)
-    next_obs, next_state, reward, done, _ = env.step(
+    next_obs, next_state, reward, done, info = env.step(
         key_step, state, action, hfield_data, dr_model
     )
     carry = [next_obs, next_state, key]
+    step_metrics = {
+        "terminated": done * (1.0 - info["truncation"]),
+        **{
+            f"fall_{cause}_at_done": next_state.metrics[f"fall_{cause}_at_done"]
+            for cause in FALL_CAUSES
+        },
+    }
     step_out = Episode(
         obs=obs,
         action=action,
@@ -97,8 +106,21 @@ def policy_step(
         reward=reward,
         next_obs=next_obs,
         done=done,
+        metrics=step_metrics,
     )
     return carry, step_out
+
+
+def fall_cause_rates(episode: Episode) -> dict[str, float]:
+    num_terminated = float(episode.metrics["terminated"].sum())
+    return {
+        f"fall_{cause}_rate": (
+            float(episode.metrics[f"fall_{cause}_at_done"].sum() / num_terminated)
+            if num_terminated > 0
+            else float("nan")
+        )
+        for cause in FALL_CAUSES
+    }
 
 
 def batch_rollout(
@@ -301,9 +323,6 @@ def eval(
     step_fn = jax.vmap(functools.partial(eval_step, env, model))
     _, rewards = jax.lax.scan(step_fn, [obs, state, episode_keys], (), steps)
     return rewards.sum(axis=0).mean()
-
-
-FALL_CAUSES = ("min_height", "tilt", "toggle", "base_contact")
 
 
 def level_eval_step(

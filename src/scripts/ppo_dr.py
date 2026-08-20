@@ -25,6 +25,7 @@ from utils.ppo_helpers import (
     batch_rollout,
     calculate_episode_advantage,
     eval,
+    fall_cause_rates,
     make_step,
     run_ppo_epochs,
 )
@@ -205,6 +206,7 @@ def train(cfg: Config) -> None:
                 "loss": loss,
                 "mean_reward": mean_reward,
                 "learning_rate": lr,
+                **fall_cause_rates(episode),
             }
         )
         save_checkpoint(ckptr, iteration, a2c, opt_state)
