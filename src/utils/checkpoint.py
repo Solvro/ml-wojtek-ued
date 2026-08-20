@@ -11,6 +11,7 @@ import orbax.checkpoint as ocp
 class Algo(str, Enum):
     ppo = "ppo"
     ppo_dr = "ppo_dr"
+    ppo_dr_terrain = "ppo_dr_terrain"
     accel = "accel"
     accel_top_k = "accel_top_k"
 
