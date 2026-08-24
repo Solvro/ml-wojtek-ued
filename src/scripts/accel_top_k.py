@@ -14,7 +14,12 @@ from config.accel_config import AccelConfig
 from config.hfield_config import HFieldConfig
 from hfield.manager import HFieldManager
 from modules.ppo_modules import A2C
-from ued.curriculum import decide_replay, generate_branch_top_k, replay_branch_top_k
+from ued.curriculum import (
+    decide_replay,
+    generate_branch_top_k,
+    replay_branch_top_k,
+    terrain_curriculum_step,
+)
 from ued.levels import fill_buffer
 from ued.stopper import PlateauStopper
 from ued.types import BatchCurator, PPOTrainer
@@ -224,6 +229,16 @@ def train(cfg: AccelConfig) -> None:
     converged = False
 
     while not converged:
+        curriculum_log = terrain_curriculum_step(
+            iteration,
+            curator,
+            coarse_n_start=cfg.accel_params.terrain_coarse_n_start,
+            coarse_n_end=cfg.hfield_params.coarse_n,
+            coarse_n_stages=cfg.accel_params.terrain_coarse_n_stages,
+            ramp_iterations=cfg.accel_params.min_iterations,
+            fill_ratio=cfg.accel_params.initial_fill_ratio,
+        )
+
         if decide_replay(curator):
             key, a2c, opt_state, step_log = replay_branch_top_k(
                 key, a2c, opt_state, curator, trainer
@@ -252,6 +267,7 @@ def train(cfg: AccelConfig) -> None:
                 "buffer_fill_ratio": len(level_buffer.get()) / level_buffer.size,
                 "smoothed_regret": stopper.smoothed_regret,
                 "smoothed_reward": stopper.smoothed_reward,
+                **curriculum_log,
                 **step_log,
             }
         )

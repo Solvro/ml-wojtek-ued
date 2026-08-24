@@ -5,6 +5,7 @@ import numpy as np
 
 from modules.ppo_modules import A2C, Episode
 from ued.levels import (
+    fill_buffer,
     generate_batch,
     level_to_hfield_data,
     level_to_hfield_data_batch,
@@ -23,6 +24,32 @@ def mean_episode_reward(episode: Episode) -> float:
 
 def decide_replay(curator: Curator | BatchCurator) -> bool:
     return bool(curator.buffer.get()) and curator.rng.random() < curator.replay_prob
+
+
+def terrain_curriculum_step(
+    iteration: int,
+    curator: BatchCurator,
+    *,
+    coarse_n_start: int,
+    coarse_n_end: int,
+    coarse_n_stages: int,
+    ramp_iterations: int,
+    fill_ratio: float,
+) -> dict[str, Any]:
+    progress = min(1.0, iteration / max(1, ramp_iterations))
+    config = curator.hfield_manager.config
+    config.difficulty = progress
+
+    stage = min(coarse_n_stages - 1, int(progress * coarse_n_stages))
+    stage_frac = stage / max(1, coarse_n_stages - 1)
+    coarse_n = round(coarse_n_start + stage_frac * (coarse_n_end - coarse_n_start))
+
+    if coarse_n != config.coarse_n:
+        config.coarse_n = coarse_n
+        curator.buffer.clear()
+        fill_buffer(curator.buffer, curator.hfield_manager, curator.rng, fill_ratio)
+
+    return {"terrain_difficulty": progress, "terrain_coarse_n": config.coarse_n}
 
 
 # --- single-level variant (scripts/accel.py) ---------------------------

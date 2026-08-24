@@ -92,6 +92,7 @@ Plain dataclass (`config/hfield_config.py`); the level genome envelope. See
 | `cell_size` | `0.05` | m, fine hfield resolution |
 | `coarse_n` | `9` | control points per axis (genome size) |
 | `amplitude` | `0.12` | m, peak height/depth off the neutral plane |
+| `difficulty` | `1.0` | runtime terrain-intensity scale in `[0,1]`, applied at render time within the fixed `amplitude` envelope; driven by `scripts/accel_top_k.py`'s terrain curriculum, see [ued-accel.md](ued-accel.md#terrain-curriculum) |
 | `base_z` | `1.0` | m, solid base under the hfield (MJCF needs > 0) |
 | `pad_radius` | `0.6` | m, flat spawn disc at the centre |
 | `pad_taper` | `0.3` | m, ramp width pad → full terrain |
@@ -124,7 +125,9 @@ than an incremental edit.
 | `envs_per_lane` | `64` | *(`scripts/accel_top_k.py`)* envs per lane; `num_lanes * envs_per_lane` is the rollout batch |
 | `top_k` | `16` | *(`scripts/accel_top_k.py`)* highest-regret lanes (of `num_lanes`) curated into the buffer |
 | `max_iterations` | `10000` | hard cap on the loop |
-| `min_iterations` | `1000` | curation warmup before the plateau check arms |
+| `min_iterations` | `1000` | curation warmup before the plateau check arms; also the terrain curriculum's ramp length, see [ued-accel.md](ued-accel.md#terrain-curriculum) |
+| `terrain_coarse_n_start` | `3` | *(`scripts/accel_top_k.py`)* `coarse_n` at the flattest curriculum stage |
+| `terrain_coarse_n_stages` | `4` | *(`scripts/accel_top_k.py`)* discrete `coarse_n` steps up to `hfield_params.coarse_n` |
 | `plateau_window` | `100` | iterations averaged into the smoothed regret/reward |
 | `plateau_patience` | `200` | iterations without improvement on *either* signal → converge |
 | `plateau_rel_tol` | `0.01` | relative regret drop / scaled reward rise that counts as an improvement |

@@ -42,12 +42,6 @@ class FunctionalEnv:
     def sample_dr(
         self, rng: jax.Array, envs_num: int
     ) -> tuple[mjx.Model, mjx.Model] | tuple[None, None]:
-        """One randomized physics draw per env, `wojtek_env`'s baseline DR
-        (floor friction, base/link mass, gain/kd scale). Returns
-        `(dr_model, dr_in_axes)`: `dr_model` is a per-call traced argument for
-        `batch_rollout`, `dr_in_axes` is the matching (call-independent)
-        `jax.vmap` axis spec -- bind it once via `functools.partial`, not per
-        iteration. `(None, None)` when the env was built without DR."""
         if self._domain_randomize is None:
             return None, None
         base = cast(Any, self._env.unwrapped)

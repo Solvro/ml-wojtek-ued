@@ -75,7 +75,7 @@ Split by role so the file is not one grab-bag:
 | `regret.py` | `positive_value_loss`, `positive_value_loss_per_lane` | the regret metric (Eq. 5), single-level and per-lane |
 | `levels.py` | `level_to_hfield_data(_batch)`, `sample_(batch_)from_buffer`, `generate_batch`, `mutate_batch`, `fill_buffer` | buffer/level plumbing |
 | `stopper.py` | `PlateauStopper` | convergence |
-| `curriculum.py` | `decide_replay`, `score_and_curate`/`generate_branch`/`replay_branch` (vanilla) + `score_and_curate_top_k`/`generate_branch_top_k`/`replay_branch_top_k` (batched) | Algorithm 1, two variants |
+| `curriculum.py` | `decide_replay`, `terrain_curriculum_step`, `score_and_curate`/`generate_branch`/`replay_branch` (vanilla) + `score_and_curate_top_k`/`generate_branch_top_k`/`replay_branch_top_k` (batched) | Algorithm 1, two variants, plus the terrain curriculum |
 
 Dependency direction is a DAG: `types`/`regret`/`levels`/`stopper` are leaves;
 `curriculum` composes them plus `utils.ppo_helpers.run_ppo_epochs`.
@@ -170,6 +170,33 @@ and that is **only** `make_step` (`eqx.filter_value_and_grad`). So:
 
 Advantages/returns are materialised once and passed as constant array arguments
 into `ppo_loss`, so GAE targets are detached by construction.
+
+## Terrain curriculum (`scripts/accel_top_k.py`) {#terrain-curriculum}
+
+`amplitude` is baked into the compiled MJCF arena at `just build-accel-arena`
+time (`hfield/arena.py`'s `size`/`pos_z`), so it cannot change once the env is
+loaded. `terrain_curriculum_step` (`ued/curriculum.py`) instead ramps
+difficulty within that fixed envelope, driven by `iteration / min_iterations`
+(clamped to `[0,1]`) each loop iteration, called before `decide_replay`:
+
+- **`difficulty`** (`HFieldConfig`, default `1.0`) — a continuous `[0,1]`
+  scale `HFieldManager.to_hfield_data` applies to the level's deviation from
+  the neutral `0.5` plane, so `0` renders perfectly flat and `1` is the full
+  `amplitude`. Applied at render time, not generation time, so it needs no
+  buffer changes — even a level curated early at low difficulty re-renders at
+  the current difficulty when replayed later.
+- **`coarse_n`** — moves through `terrain_coarse_n_stages` discrete steps
+  from `terrain_coarse_n_start` up to `hfield_params.coarse_n`, instead of
+  continuously: `coarse_n` sets the shape of the buffered level arrays
+  (`LevelBuffer` entries are raw `coarse_n × coarse_n` genomes), and mixing
+  shapes breaks `np.stack` in `sample_batch_from_buffer`/`mutate_batch`. Each
+  stage transition clears the buffer (`LevelBuffer.clear`) and reseeds it
+  with `fill_buffer` at the new resolution.
+
+Both ramps reach their end value by `min_iterations` — the same point the
+`PlateauStopper` arms — so regret/reward trends the stopper measures are
+always read against the fully-difficult terrain, not a moving target. Logged
+each iteration as `terrain_difficulty`/`terrain_coarse_n`.
 
 ## Convergence — `PlateauStopper`
 
