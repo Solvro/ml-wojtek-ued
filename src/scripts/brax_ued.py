@@ -51,7 +51,13 @@ from brax.training.agents.ppo import losses as ppo_losses
 from brax.training.agents.ppo import networks as ppo_networks
 
 from config.hfield_config import HFieldConfig
-from hfield.level_space import make_level_space, mean_abs_height
+from hfield.level_space import (
+    PARAMS,
+    LevelSpace,
+    ParamSpace,
+    make_level_space,
+    mean_abs_height,
+)
 from modules.generator import LevelGenerator
 from robots.go1 import GO1_SCALE
 from utils.env import FunctionalEnv
@@ -378,6 +384,7 @@ def run_levels(
         "forward_vel": log["forward_vel"],
         "travel": float(travel.mean()),
         "lane_roughness": mean_abs_height(ctx["space"].config, rendered),
+        "levels": levels,
     }
 
 
@@ -409,6 +416,22 @@ def evaluate(ctx: dict[str, Any], rng: np.random.Generator) -> dict[str, float]:
         out[f"{tag}/mean_travel"] = float(travel.mean())
         out[f"{tag}/forward_vel"] = float(log["forward_vel"].mean())
         out[f"{tag}/cmd_vx"] = float(log["cmd_vx"].mean())
+    return out
+
+
+def level_composition(space: LevelSpace, levels: np.ndarray) -> dict[str, float]:
+    """Mean physical parameter values of the levels the student ran on."""
+    if not isinstance(space, ParamSpace):
+        return {}
+    physical = [space.physical(level) for level in levels]
+    out = {}
+    for p in PARAMS:
+        values = np.array([ph[p.name] for ph in physical])
+        out[f"level/{p.name}"] = float(values.mean())
+        if p.low < 0.0:
+            out[f"level/{p.name}_abs"] = float(np.abs(values).mean())
+    distance = np.abs(levels[:, : len(PARAMS)] - space.flat)
+    out["level/genome_dist"] = float(distance.mean())
     return out
 
 
@@ -639,6 +662,7 @@ def main() -> None:
             f"--level_steps={args.level_steps} must be a multiple of "
             f"unroll_length={PPO['unroll_length']}"
         )
+    launch = time.time()
     run = wandb.init(
         entity=args.entity or None,
         project=args.project,
@@ -649,7 +673,10 @@ def main() -> None:
     ctx = build(args)
     buffer = LevelBuffer(args.buffer_size)
     steps_per_iteration = args.num_lanes * args.envs_per_lane * args.level_steps
+    # the PAIRED antagonist simulates (and trains on) the same levels again
+    sims_per_iteration = 2 if args.mode == "paired" else 1
     env_steps, it, start = 0, 0, time.time()
+    sim_steps, student_train_steps = 0, 0
     while env_steps < args.num_timesteps:
         out: dict[str, Any]
         if args.mode in ("accel", "plr"):
@@ -660,8 +687,12 @@ def main() -> None:
             levels = dr_levels(ctx, args.mode)
             out = {**run_levels(ctx, levels, train=True), "replay": 1}
         env_steps += steps_per_iteration
+        sim_steps += sims_per_iteration * steps_per_iteration
+        # replay == 1 exactly when the student's PPO updated on this data
+        student_train_steps += out["replay"] * steps_per_iteration
         regret = np.asarray(out.pop("regret"))
         out["level_roughness_m"] = float(np.mean(out.pop("lane_roughness")))
+        out.update(level_composition(ctx["space"], out.pop("levels")))
         for key in ("lane_returns", "score"):
             out.pop(key)
         log = {
@@ -673,6 +704,9 @@ def main() -> None:
             "buffer_size": len(buffer),
             "buffer_score_mean": float(buffer.scores.mean()) if len(buffer) else 0.0,
             "steps_per_sec": env_steps / (time.time() - start),
+            "sim_steps": sim_steps,
+            "student_train_steps": student_train_steps,
+            "elapsed_s": time.time() - launch,
         }
         if it % args.eval_every == 0 or env_steps >= args.num_timesteps:
             log.update(evaluate(ctx, np.random.default_rng(1234)))
@@ -686,6 +720,9 @@ def main() -> None:
         path = Path(args.checkpoint_dir) / f"{args.name}.pkl"
         path.parent.mkdir(parents=True, exist_ok=True)
         brax_model.save_params(str(path), ctx["student"].inference_params())
+    run.summary["final/elapsed_h"] = (time.time() - launch) / 3600
+    run.summary["final/sim_steps"] = sim_steps
+    run.summary["final/student_train_steps"] = student_train_steps
     run.finish()
 
 

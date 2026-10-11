@@ -1,12 +1,14 @@
 """Final evaluation of a `brax_ued.py` checkpoint, built around CVaR.
 
-Two level sets, deterministic policy, no physics DR, no `no_progress` cut;
+Three level sets, deterministic policy, no physics DR, no `no_progress` cut;
 an episode succeeds when it never falls and ends at least `min_travel` m
 from spawn after `level_steps`:
 
 - `random/d<d>`: `num_levels` fresh levels per difficulty from
   `--level_space` (the training distribution of DR, shrunk toward flat by
   d; the same base levels at every d).
+- `flat`: `suite_instances` flat levels (`scaled(0)`) - the no-terrain
+  reference.
 - `suite/<terrain>_<k>`: a held-out structured suite no method trains on -
   radially symmetric stairs up/down, slopes up/down, trenches, waves and
   random blocks at four strengths, written straight into `hfield_data`.
@@ -230,9 +232,14 @@ def param_space_sets(
     args = ctx["args"]
     rng = np.random.default_rng(args.seed + 1)
     key, sub = jax.random.split(key)
-    passes = two_passes(ctx, space.render(space.uniform(rng, args.num_levels)), sub)
+    uniform = space.uniform(rng, args.num_levels)
+    passes = two_passes(ctx, space.render(uniform), sub)
     metrics = summarize("param/uniform", passes, args)
-    raw = {"param_uniform_fell": np.stack([p[0] for p in passes])}
+    raw = {
+        "param_uniform_fell": np.stack([p[0] for p in passes]),
+        "param_uniform_travel": np.stack([p[1] for p in passes]),
+        "param_uniform_levels": uniform,
+    }
     for name, index, end in AXES:
         param = PARAMS[index]
         steps = np.linspace(0.0, 1.0, AXIS_STEPS + 1)[1:]
@@ -270,6 +277,9 @@ def evaluate(ctx: dict[str, Any]) -> tuple[dict[str, float], dict[str, Any]]:
         n_edits=1,
         edit_scale=0.0,
         robot_scale=ROBOT_SCALE[args.robot],
+    )
+    raw["random_levels"] = space.scaled(
+        np.random.default_rng(args.seed), args.num_levels, 1.0
     )
     for difficulty in DIFFICULTIES:
         # same seed per difficulty: the same base levels, shrunk toward flat
@@ -312,6 +322,10 @@ def evaluate(ctx: dict[str, Any]) -> tuple[dict[str, float], dict[str, Any]]:
         param_metrics, param_raw = param_space_sets(ctx, space, key)
         metrics.update(param_metrics)
         raw.update(param_raw)
+    # own streams, so the sets above keep the levels and keys they had in v8
+    flat = space.scaled(np.random.default_rng(args.seed), args.suite_instances, 0.0)
+    passes = two_passes(ctx, space.render(flat), jax.random.fold_in(key, 1))
+    metrics.update(summarize("flat", passes, args))
     return metrics, raw
 
 

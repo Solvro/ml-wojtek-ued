@@ -318,7 +318,7 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   per level, clipped at 0, is the adversary's reward (single-step PPO, 5
   epochs, HiEnt `gen_entropy_coef=0.1`, no BC distillation yet).
   `env_steps`/`num_timesteps` count protagonist steps only; the antagonist
-  doubles the real simulation cost.
+  doubles the real simulation cost (`sim_steps` counts both).
 - `--mode plr`: robust PLR (PLR⊥) - ACCEL's buffer, rank/staleness replay
   and score refresh, but no mutation; explore iterations score fresh
   uniform (DR) levels.
@@ -328,6 +328,17 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   levels at difficulties 0.25/0.5/0.75/1.0 — `eval/d<d>/success_rate` (no
   fall and >= `min_travel` m from spawn), fall rate, travel, forward vs
   commanded speed.
+- Curriculum composition (`--level_space param` only), every iteration over
+  the levels the student ran on (replayed, explored or PAIRED-generated):
+  `level/<param>` = mean physical value (`ParamSpace.physical`, robot
+  units), `level/slope_deg_abs` / `level/step_height_m_abs` = mean |value|
+  of the signed parameters, `level/genome_dist` = mean |genome - `flat`|.
+- Compute accounting, every iteration: `sim_steps` (every training env step
+  simulated: PAIRED's antagonist and ACCEL/PLR explore iterations included,
+  eval rollouts not), `student_train_steps` (env steps whose data fed a
+  student PPO update), `elapsed_s` (wall clock since launch, compile
+  included). The run summary ends with `final/elapsed_h`, `final/sim_steps`,
+  `final/student_train_steps` (`paper_tables.py` compute table).
 - WCSS: `brax_ued.sbatch` array (tasks 0-2 dr, 3-5 accel, seeds 0-2); assets
   must be built beforehand since tasks start together.
 
@@ -415,9 +426,53 @@ policy, no physics DR, no `no_progress` cut. Success = no fall and >=
   off; `envelope` = largest |feature| passed at 50% success, `auc` = mean
   success over the ramp. Difficulty 0.25 is too easy to separate methods
   (~89% for anything trained near flat) and is not a headline number.
+- `flat/...`: `suite_instances` flat levels (`scaled(0)`), the no-terrain
+  reference (success, fall rate, travel, CVaR). Runs last on its own
+  rng/key, so every other set keeps its v8 levels and keys.
 - 95% bootstrap CIs over levels for mean and CVaR; `level_success_corr`
   between passes; suite CVaR is over the 28 terrain×strength cells.
-- Writes `<name>.json` (metrics) and `<name>.npz` (per-level fell/travel per
-  pass, for IQM / cross-seed aggregation) to `--out_dir`, and the metrics to
-  the wandb run summary. WCSS: `eval_brax.sbatch` (same `MODES` task layout
+- Writes `<name>.json` (metrics) and `<name>.npz` to `--out_dir`, and the
+  metrics to the wandb run summary. npz arrays (pass x level x episode
+  unless noted):
+  - `random_d<d>_fell`, `random_d<d>_travel`; `random_levels` (levels x
+    genome): the d=1 base genomes of the `random/d*` sets.
+  - `suite_success` (28 terrain x strength cells).
+  - `param` only: `param_uniform_fell`, `param_uniform_travel`,
+    `param_uniform_levels` (levels x genome). `_travel` and the genomes are
+    new in v10; v8 npz files lack them. WCSS: `eval_brax.sbatch` (same `MODES` task layout
   as `brax_ued.sbatch`).
+
+## Paper tables — `scripts/paper_tables.py` {#paper-tables}
+
+Builds the workshop paper's tables from `eval_brax.py` outputs
+(`<prefix>_<method>_seed<k>_final_eval.{json,npz}`); `\input`-able
+booktabs `table` environments, no preamble.
+
+```sh
+PYTHONPATH=src uv run python src/scripts/paper_tables.py \
+  --dump_wandb summaries.json --prefix wojtek=v10_wojtek go1=v10_go1
+PYTHONPATH=src uv run python src/scripts/paper_tables.py \
+  --eval_dir <evals> --prefix wojtek=v10_wojtek go1=v10_go1 \
+  --train_summaries summaries.json --out paper/tables
+```
+
+- `--prefix robot=prefix` (repeatable): one column group / row group per
+  robot. Known methods get paper names (DR, DR-easy, PLR⊥, ACCEL,
+  ACCEL-SFL, PAIRED) in that order; other methods follow under their own
+  name; missing ones are skipped.
+- `main.tex`: success (%) per method x robot: `param/uniform` mean, its
+  CVaR25, solvable subset, `suite/success_rate`, `flat/success_rate`;
+  mean ± std over seeds, best per column in bold, `--` if absent.
+- Solvable subset: `param/uniform` levels that at least one run of the robot
+  (any method) passes on >= 1 episode of pass A; each run is scored on pass
+  B on them and vice versa, averaged (cross-fitted, like CVaR). Needs
+  `param_uniform_travel`; pre-v10 evals warn and leave `--`.
+- `envelopes.tex`: the 7 `axis/<feature>/envelope` per robot x method, in
+  Wojtek units (cm, deg).
+- `compute.tex`: GPU-hours (`final/elapsed_h`), sim and student steps per
+  robot x method, from `--train_summaries` (training run name ->
+  wandb summary); not written without it.
+- `--dump_wandb FILE`: fetches the training-run summaries for the prefixes
+  from `dominikgalus9-wroc-aw-university-of-science-and-technology/wojtyla`
+  and writes that JSON.
+- `results.csv`: one row per run, every value the tables use.
