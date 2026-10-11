@@ -95,15 +95,17 @@ class Param(NamedTuple):
     flat: float  # genome value of "no feature"
 
 
-# Ranges sized to a ~0.10 m tall robot inside the arena's +-amplitude band.
+# Ranges for a ~0.10 m tall robot (v10). Uphill slope, step-up, gap and
+# block maxima sit at the 50%-success envelope of the best v8 policies;
+# features compound, so a uniform level is still hard (docs/ued-accel.md).
 PARAMS = (
     Param("rough_amp_m", 0.0, 0.10, 0.0),
     Param("rough_wavelength_m", 0.2, 1.0, 0.5),
-    Param("slope_deg", -20.0, 20.0, 0.5),
-    Param("step_height_m", -0.08, 0.08, 0.5),
+    Param("slope_deg", -20.0, 18.0, 20.0 / 38.0),
+    Param("step_height_m", -0.08, 0.05, 0.08 / 0.13),
     Param("step_width_m", 0.15, 0.60, 0.5),
-    Param("gap_width_m", 0.0, 0.25, 0.0),
-    Param("block_height_m", 0.0, 0.10, 0.0),
+    Param("gap_width_m", 0.0, 0.06, 0.0),
+    Param("block_height_m", 0.0, 0.06, 0.0),
     Param("block_size_m", 0.15, 0.60, 0.5),
 )
 GAP_DEPTH_M = 0.15

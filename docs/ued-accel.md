@@ -341,19 +341,29 @@ mode samples, mutates and renders levels through it.
   v7 final eval measured per-level success correlation between passes of
   only 0.02–0.17, and ACCEL landed within seed noise of DR on its own easy
   generator (DR-easy).
-- `param` (v8 runs): 8 terrain parameters in [0, 1] plus a noise seed (last
+- `param`: 8 terrain parameters in [0, 1] plus a noise seed (last
   entry, never mutated). `PARAMS` maps them to physical ranges sized to the
-  ~0.10 m robot: noise amplitude 0–0.10 m and wavelength 0.2–1.0 m, radial
-  slope ±20°, radial stairs ±0.08 m high and 0.15–0.60 m wide, gaps 0–0.25 m
-  wide (0.15 m deep, every 0.6 m), blocks 0–0.10 m high and 0.15–0.60 m
-  wide. Features are radial (or seeded fields) so heading does not matter.
+  ~0.10 m robot (v10): noise amplitude 0–0.10 m and wavelength 0.2–1.0 m,
+  radial slope −20…+18°, radial stairs −0.08…+0.05 m high and 0.15–0.60 m
+  wide, gaps 0–0.06 m wide (0.15 m deep, every 0.6 m), blocks 0–0.06 m high
+  and 0.15–0.60 m wide. Features are radial (or seeded fields) so heading
+  does not matter.
+  - v8 used slope ±20°, stairs ±0.08 m, gaps 0–0.25 m, blocks 0–0.10 m:
+    best methods solved ~8% of uniform levels. v10 caps uphill slope,
+    step-up, gap and block at the best v8 policies' 50% envelope
+    (`axis/*/envelope`); v8 policies solve ~39% of the v10 box (estimated
+    from v8 `random/d1.0` levels that fall inside it). Features compound,
+    so uniform levels still range from trivial to unsolved.
+  - `flat` = genome of zero slope/step, so it is off 0.5 on asymmetric ranges.
   - DR: uniform genome; `scaled(d)` shrinks it toward `flat` (no features)
     by d; `easy(s)` = `scaled(s)`; DR-mixed draws d per level.
   - ACCEL: `mutate` edits `--n_edits` (WCSS: 2) parameters by ±`--edit_scale`
     (0.1); `--mutation grow` also scales the genome away from `flat`.
   - PAIRED: the generator emits the 8 parameters; a random seed is appended.
-- WCSS: `brax_ued.sbatch` / `eval_brax.sbatch` take `SPACE=param` and
-  `PREFIX` (run-name prefix, `v8_param`).
+- WCSS: `slurm/brax_ued.sbatch` / `slurm/eval_brax.sbatch` take
+  `SPACE=param`, `PREFIX` (run-name prefix, `v10`), `ROBOT`,
+  `NUM_TIMESTEPS` (train) and `SRC` (a frozen copy of `src/` with built
+  assets, so queued jobs keep the submitted code).
 - `robot_scale` (`ParamSpace`, eval suite): every length range (amplitude,
   wavelength, stairs, gaps, blocks, gap depth/period) times the robot's size
   relative to Wojtek; slopes unchanged. Envelopes stay in Wojtek units.
