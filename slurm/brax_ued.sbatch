@@ -15,8 +15,8 @@
 set -euo pipefail
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1
-# SRC=<frozen copy of src/> keeps queued jobs on the code they were
-# submitted with (assets built inside it)
+# SRC=<dir>/src, a frozen copy with the built assets/ beside it (wojtek_env
+# resolves assets from src/..), keeps queued jobs on the submitted code
 SRC="${SRC:-$HOME/workspace/ml-wojtek-ued/src}"
 export PYTHONPATH="$SRC"
 PDW=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued
