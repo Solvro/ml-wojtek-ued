@@ -9,9 +9,11 @@
 #SBATCH --array=0-5
 #SBATCH --output=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued/logs/%x_%A_%a.out
 #SBATCH --error=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued/logs/%x_%A_%a.out
-# task = mode_index * 3 + seed over MODES (default "dr accel"); size the
-# array as 3 * number of modes. Assets (robot + accel
-# arena) must already be built; tasks start together and must not rebuild.
+# task = mode_index * NSEEDS + seed offset over MODES (default "dr accel");
+# seed = SEED0 + offset (NSEEDS 3, SEED0 0: seeds 0-2; NSEEDS 2, SEED0 3:
+# seeds 3-4). Size the array as NSEEDS * number of modes.
+# Assets (robot + accel arena) must already be built; tasks start
+# together and must not rebuild.
 set -euo pipefail
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1
@@ -23,7 +25,8 @@ PDW=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued
 cd "$HOME/workspace/ml-wojtek-ued" || exit 1
 
 read -ra MODES <<<"${MODES:-dr accel}"
-VARIANT="${MODES[$((SLURM_ARRAY_TASK_ID / 3))]}"
+NSEEDS="${NSEEDS:-3}"
+VARIANT="${MODES[$((SLURM_ARRAY_TASK_ID / NSEEDS))]}"
 # ACCEL variants share --mode accel and differ only in curriculum switches;
 # a "-s<scale>" suffix sets the easy generator's --generator_scale.
 # SPACE=param switches to the 8-parameter level space (2 edits of +-0.1
@@ -49,7 +52,7 @@ EXTRA=("${SPACE_ARGS[@]}" "${EXTRA[@]}")
 if [[ "$VARIANT" == *-s* ]]; then
   EXTRA+=(--generator_scale "${VARIANT##*-s}")
 fi
-SEED=$((SLURM_ARRAY_TASK_ID % 3))
+SEED=$((${SEED0:-0} + SLURM_ARRAY_TASK_ID % NSEEDS))
 RUN="${PREFIX}_${VARIANT}_seed${SEED}"
 echo "job ${SLURM_JOB_ID} task ${SLURM_ARRAY_TASK_ID} on ${SLURM_JOB_NODELIST}: $RUN"
 

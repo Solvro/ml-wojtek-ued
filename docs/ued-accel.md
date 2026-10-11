@@ -373,7 +373,9 @@ mode samples, mutates and renders levels through it.
   - PAIRED: the generator emits the 8 parameters; a random seed is appended.
 - WCSS: `slurm/brax_ued.sbatch` / `slurm/eval_brax.sbatch` take
   `SPACE=param`, `PREFIX` (run-name prefix, `v10`), `ROBOT`,
-  `NUM_TIMESTEPS` (train) and `SRC` (`<dir>/src` of a frozen copy with the
+  `NUM_TIMESTEPS` (train), `NSEEDS` / `SEED0` (array task = mode x
+  NSEEDS + seed offset; default seeds 0-2, extra seeds e.g. `NSEEDS=2
+  SEED0=3`) and `SRC` (`<dir>/src` of a frozen copy with the
   built `assets/` beside it - `wojtek_env.paths` resolves assets from
   `src/..` - so queued jobs keep the submitted code).
 - `robot_scale` (`ParamSpace`, eval suite): every length range (amplitude,
