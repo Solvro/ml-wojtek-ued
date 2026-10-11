@@ -442,6 +442,73 @@ policy, no physics DR, no `no_progress` cut. Success = no fall and >=
     new in v10; v8 npz files lack them. WCSS: `eval_brax.sbatch` (same `MODES` task layout
   as `brax_ued.sbatch`).
 
+## Sim2sim — `scripts/eval_sim2sim.py` {#sim2sim}
+
+Transfer test in place of sim2real: the MJX-trained policy, physics stepped
+by CPU MuJoCo under several model/solver variants. Same checkpoint loading,
+network and deterministic policy as eval_brax; no physics DR.
+
+- **Only the simulator changes.** Observations, termination, commands and
+  control latency are the env's jax code. While the unroll is traced,
+  `mjx_env.step` and `WojtekEnv._step_with_latency` are swapped for a
+  `jax.pure_callback` (`cpu_physics`); `mjx.step` raises inside it, so a
+  missed physics path fails loudly. Reset stays on MJX (it only places the
+  robot).
+- `CpuPhysics`: one `MjModel` copy + `MjData` per thread
+  (`sched_getaffinity` threads), contiguous env slices, `hfield_data`
+  reloaded when the next env is on another level. Per env and control
+  period it sets qpos/qvel/act/warmstart/time/applied forces, runs
+  `mj_step` (latency: `prev` ctrl for `delay` substeps, then `new`), and
+  writes back the state plus frames, sensors (mapped by sensor name) and
+  actuator forces. Geom frames are rebuilt from body frames with the
+  training model's offsets, so a variant may add/drop geoms.
+- Diverged env (MuJoCo bad qpos/qvel/qacc warning, or non-finite state):
+  base dropped to z = -100 m so both robots score a fall; counted as
+  `diverged_per_episode`.
+- Variants (`VARIANTS`, one table in code), all on the same levels and reset
+  keys:
+
+  | Variant | Change vs training model | Tests |
+  |---|---|---|
+  | `mjx_match` | none | CPU MuJoCo vs MJX implementation; must match eval_brax within noise |
+  | `newton_elliptic` | elliptic cones, 100 iterations / 50 line search (training: pyramidal, Wojtek 2 / Go1 1 iterations) | reliance on the unconverged training solver |
+  | `half_dt` | timestep 0.004 -> 0.002 s, 2 CPU steps per training substep (policy rate unchanged); solref time constants below the old 2·dt floor pinned at 0.008 s | integration-step sensitivity only |
+  | `full_collision` | Wojtek: the source model's per-link `*_collision` meshes collide with the terrain (`build_model` disables them; spec recompiled for convex hulls). Go1: Playground's `go1_mjx_fullcollisions.xml` | contacts the MJX model drops (shins, thighs, trunk) |
+  | `soft_contact` | all geoms solref (0.03 s, 1.0), solimp (0.7, 0.95, 0.005) (training: Wojtek 0.001 s -> 0.008 s floor, Go1 0.02 s; solimp (0.9, 0.95, 0.001)) | contact stiffness/impedance |
+
+- Levels: `flat` (`suite_instances`), `param/uniform` = first `num_levels`
+  (default 256) of eval_brax's 2048-level draw (same seed, rows line up
+  with eval_brax's npz), suite strengths 1-2 (`suite/<terrain>_<k>`, pooled
+  as `suite`); robot-scaled as in eval_brax.
+- Metrics per `<variant>/<set>`: `success_rate`, `fall_rate`, `mean_travel`
+  (95% bootstrap CIs over levels), `drop` = `mjx_match` - variant success
+  (paired bootstrap CI), `diverged_per_episode`; per suite cell
+  `success_rate`; `<variant>/elapsed_s`. One pass (`--episodes` per level),
+  no CVaR.
+- Sanity (2026-10-11, `v8_param_accel_seed0`, 16 flat / 64 uniform / 16
+  per suite cell, 4 episodes, same levels and keys): `mjx_match` vs MJX
+  (eval_brax rollout) success flat .922 / .922, suite 1-2 .778 / .777,
+  param/uniform drop +.02 (95% CI -.016….059). One control step from the
+  same state differs by up to 1.6 rad/s in qvel at the training solver
+  (2 iterations) but 0.01 at 50 iterations: the gap is the unconverged
+  solver, not the bridge.
+- Go1 does **not** match: `v9_go1_dr_easy_seed0` (same set sizes) flat
+  .52 vs MJX .73, suite 1-2 .41 vs .58, uniform .03 vs .13. Airborne steps
+  agree to 1e-6; after touchdown CPU's sphere-hfield collision reports
+  other contact counts per foot than MJX's (`*_floor_found` 2 vs 1), and
+  this policy is very contact-sensitive (flat success .60 / .38 / .11 / .01
+  at floor solref 0.020 / 0.022 / 0.025 / 0.030 s). For Go1, `mjx_match` is
+  itself a simulator shift; compare against eval_brax (its npz rows line up
+  with `param/uniform`).
+- Cost (10-core Apple M-series, default args): Wojtek ~18 min wall / 1.8
+  CPU-h for all five variants (160-290 s per variant, `full_collision`
+  slowest), Go1 ~7 min / 0.4 CPU-h.
+- Writes `<name>.json` and `<name>.npz` (`<variant>_<set>_fell/_travel`,
+  levels x episodes) to `--out_dir`; wandb tags `sim2sim`, robot.
+- WCSS: `slurm/eval_sim2sim.sbatch`, same `MODES`/seed array layout, `SRC`,
+  `ROBOT`, `PREFIX` as `eval_brax.sbatch`; `lem-cpu-short`, 16 cores (CPU
+  only; Lem CPU nodes share the GPU nodes' AlmaLinux 9, so the venv runs).
+
 ## Paper tables — `scripts/paper_tables.py` {#paper-tables}
 
 Builds the workshop paper's tables from `eval_brax.py` outputs
