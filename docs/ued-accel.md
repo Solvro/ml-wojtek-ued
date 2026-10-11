@@ -446,8 +446,8 @@ policy, no physics DR, no `no_progress` cut. Success = no fall and >=
 ## Paper tables — `scripts/paper_tables.py` {#paper-tables}
 
 Builds the workshop paper's tables from `eval_brax.py` outputs
-(`<prefix>_<method>_seed<k>_final_eval.{json,npz}`); `\input`-able
-booktabs `table` environments, no preamble.
+(`<prefix>_<method>_seed<k>_final_eval.{json,npz}`); bare booktabs
+`tabular`s; the paper owns float, caption and label (`paper/README.md`).
 
 ```sh
 PYTHONPATH=src uv run python src/scripts/paper_tables.py \

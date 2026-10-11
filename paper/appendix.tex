@@ -32,9 +32,8 @@ ACCEL-grow with the learnability score.
   \end{tabular}
 \end{table}
 
-\todo{Add seed standard deviations and the v8 capability envelopes from
-the pilot report; state the ACCEL-SFL vs.\ DR-easy \cvar{0.25} interval
-(pilot: $2.8\pm0.2$\% vs.\ $2.2\pm0.1$\%).}
+\todo{Add seed standard deviations and the v8 capability envelopes
+(\texttt{paper\_tables.py --prefix wojtek=v8\_param}).}
 
 \section{Arena and Level Rendering}
 \label{app:render}
@@ -105,11 +104,14 @@ multiplied by $s=2.5$.
 
 \begin{table}[ht]
   \centering\small
-  \caption{Compute per method and robot.}
+  \caption{Training compute per run, mean $\pm$ std over seeds. GPU-h: wall
+  clock on one GPU; sim steps count every simulated environment step
+  (PAIRED's antagonist, the non-training iterations of \plr\ and ACCEL);
+  student steps are those that fed a student PPO update.}
   \label{tab:compute}
   \resulttable{compute}{Compute table (\texttt{tables/compute.tex}):
-  rows = methods $\times$ robots; columns = env steps, simulated steps
-  (PAIRED counts the antagonist), gradient updates, GPU-hours, steps/s.}
+  rows = robots $\times$ methods; columns = GPU-h, sim steps, student
+  steps.}
 \end{table}
 \todo{State the hardware (WCSS Lem, one H100 per run) once the compute
 table confirms it for v10.}

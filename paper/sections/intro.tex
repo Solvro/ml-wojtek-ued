@@ -2,8 +2,8 @@
 \label{sec:intro}
 
 Learned locomotion controllers for legged robots are trained on
-distributions of terrain, and the choice of that distribution matters as
-much as the learning algorithm. Practical pipelines use hand-designed
+distributions of terrain, and the choice of that distribution shapes what
+the controller can do. Practical pipelines use hand-designed
 curricula: terrain types arranged by a difficulty parameter that a robot is
 promoted along once it walks far enough~\citep{rudin2022learning}, or
 adaptive samplers over a parameterised terrain
@@ -37,14 +37,20 @@ domains carry over. Our contributions are:
     (\S\ref{sec:benchmark}).
   \item \textbf{An interpretable, calibrated level space}: eight terrain
     parameters plus a seed, whose ranges are set from the capability
-    envelopes of pilot policies so that uniform sampling is neither
-    trivially hopeless nor trivially easy (\S\ref{sec:levelspace}).
+    envelopes of pilot policies, aiming for uniform sampling that is
+    neither hopeless nor trivially easy (\S\ref{sec:levelspace}).
   \item \textbf{Six methods on one student}: DR, DR-easy, \plr, ACCEL,
     ACCEL-SFL and PAIRED, all driving the same brax
     PPO~\citep{schulman2017ppo,freeman2021brax} student at matched
     environment-step budgets (\S\ref{sec:methods}).
-  \item \textbf{An evaluation protocol} with cross-fitted CVaR, per-level
-    reliability, capability envelopes, a held-out structured terrain
-    suite and a sim-to-sim transfer check (\S\ref{sec:protocol}), and a
-    pilot study whose outcome motivated the calibration (\S\ref{sec:results}, Appendix~\ref{app:pilot}).
+  \item \textbf{An evaluation protocol} with cross-fitted CVaR, a
+    cross-fitted solvable-subset success, per-level reliability,
+    capability envelopes, a held-out structured terrain suite and a
+    sim-to-sim transfer check (\S\ref{sec:protocol}), and a pilot study
+    whose outcome motivated the calibration (\S\ref{sec:results},
+    Appendix~\ref{app:pilot}).
 \end{itemize}
+A method interacts with the benchmark only through the level vectors it
+proposes and whether the student trains on them, so the level space,
+calibration and evaluation carry over unchanged to new methods.
+\todo{Code release statement (anonymised link) and licence.}

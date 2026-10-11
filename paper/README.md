@@ -25,11 +25,22 @@ cd paper && tectonic main.tex      # or: just paper (from the repo root)
 
 ## Generated tables
 
-`tables/{main,envelopes,compute,sim2sim}.tex` are written by the results
-generator, not by hand, and are not committed here. Each file holds a
-**bare `tabular`**; the paper owns the `table` float, caption and label
-(`tab:main`, `tab:envelopes`, `tab:compute`, `tab:sim2sim`). A missing
-file renders a placeholder box, so the paper builds before results exist.
+`tables/{main,envelopes,compute}.tex` are written by
+`src/scripts/paper_tables.py` (`docs/ued-accel.md#paper-tables`);
+`tables/sim2sim.tex` has no generator yet. `tables/` is gitignored.
+
+```sh
+PYTHONPATH=src uv run python src/scripts/paper_tables.py \
+  --eval_dir <evals> --prefix wojtek=v10_wojtek go1=v10_go1 \
+  --train_summaries summaries.json --out paper/tables
+```
+
+- Each file holds a **bare `tabular`**; the paper owns the `table` float,
+  caption and label (`tab:main`, `tab:envelopes`, `tab:compute`,
+  `tab:sim2sim`).
+- A table wider than the text is shrunk to `\linewidth`.
+- A missing file renders a placeholder box, so the paper builds before
+  results exist.
 
 ## Status
 
