@@ -1,0 +1,106 @@
+\section{Benchmark}
+\label{sec:benchmark}
+
+\subsection{Robots and task}
+\label{sec:robots}
+
+\paragraph{Wojtek} is a small quadruped built by the authors, with a
+standing height of about 0.10\,m and 12 actuated joints (three per leg).
+Each leg is a closed kinematic chain: the actuated joints drive the foot
+through a passive four-bar linkage, closed in MuJoCo by one
+\texttt{connect} equality constraint per leg. The closure adds constraint
+dynamics that serial legs do not have (the linkage can reach a toggle
+configuration, which the reward penalises), which is why we pair Wojtek
+with an open-chain robot.
+\todo{Add mass, link lengths and a photo of the physical robot.}
+
+\paragraph{Unitree Go1} is the open serial-chain quadruped of the MuJoCo
+Playground joystick task~\citep{zakka2025playground}, with Playground's
+reward, feet-only collisions and physics randomisation. Its standing trunk
+height is 0.258\,m. We change four things so it runs the same benchmark:
+the scene is our heightfield arena; commands are forward-walking;
+termination uses Wojtek's fall rule at Go1's size (trunk below
+$0.6\times0.258$\,m above the terrain under it, or gravity $z$-component in
+the body frame above $-0.4$); and the critic receives a terrain height scan.
+
+\paragraph{Task.}
+Both robots track a velocity command
+$(v_x, v_y, \omega_z)$ drawn per episode from
+$v_x\in[0.2,0.6]$, $v_y\in[-0.2,0.2]$\,m/s and
+$\omega_z\in[-0.4,0.4]$\,rad/s for Wojtek; Go1's linear ranges are scaled
+by $s=2.5$. The control step is 0.02\,s and an episode on a level lasts
+300 steps (6\,s). The actor is blind (no terrain perception); the
+critic additionally sees a clean $5\times5$ height scan ahead of the robot
+(asymmetric actor--critic), so value-based level scores can distinguish
+terrains. Training applies physics randomisation~\citep{tobin2017domain}
+per environment (Wojtek: terrain friction, base and link masses,
+actuator gain and damping scale; Go1: Playground's randomisation).
+
+\paragraph{Arena.}
+Levels are rendered into a square heightfield around a flat spawn disc.
+In MJX the heightfield data is an array leaf of the model, so each
+parallel environment can be reset onto a different level without
+recompilation, which makes per-environment level swapping feasible at RL
+scale (details in Appendix~\ref{app:render}).
+
+\paragraph{Scaling.}
+We set $s = 2.5$, approximately the ratio of Go1's standing height to
+Wojtek's ($0.258/0.10$).
+Every length in the benchmark (arena, terrain features, gap depth and
+period, commands, height-scan grid and success distance) is multiplied by
+$s$ for Go1; slope angles are unchanged. Capability envelopes are reported
+in Wojtek units so the two robots can be compared directly.
+
+\subsection{Level space}
+\label{sec:levelspace}
+
+A level is a vector $\theta\in[0,1]^8$ plus a noise seed. Each coordinate
+maps linearly to a physical range (Table~\ref{tab:levelspace}). Features are
+measured radially from the edge of the spawn disc, or are seeded random
+fields, so the level does not depend on the robot's heading. The rendered
+height is the sum of a radial slope, radial stairs, smooth noise, and
+piecewise-constant blocks, with gap trenches (0.15\,m deep, every 0.6\,m)
+cut in. Each parameter has a \emph{flat} value (zero slope, zero step,
+zero amplitude, zero gap, zero block height); because slope and step ranges
+are asymmetric, flat is not the centre of the cube.
+
+\begin{table}[t]
+  \centering\small
+  \caption{Level space (v10), Wojtek units; Go1 multiplies every length by
+  $s=2.5$. A level is $\theta\in[0,1]^8$ plus a noise seed.}
+  \label{tab:levelspace}
+  \begin{tabular}{lll}
+    \toprule
+    Parameter & Range & Pilot (v8) range \\
+    \midrule
+    Noise amplitude & 0--0.10\,m & same \\
+    Noise wavelength & 0.2--1.0\,m & same \\
+    Radial slope & $-20^\circ$ to $+18^\circ$ & $\pm20^\circ$ \\
+    Stair height & $-0.08$ to $+0.05$\,m & $\pm0.08$\,m \\
+    Stair width & 0.15--0.60\,m & same \\
+    Gap width & 0--0.06\,m & 0--0.25\,m \\
+    Block height & 0--0.06\,m & 0--0.10\,m \\
+    Block size & 0.15--0.60\,m & same \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Calibration.}
+A level space is only useful for comparing curricula if uniform sampling is
+neither trivially easy (nothing to curate) nor mostly unsolvable (curation
+and DR both train on impossible levels). Our pilot space (v8) was the
+latter: the best pilot policies solved about 8\% of uniform levels, and
+about 92\% of uniform levels were unsolved by every method. We recalibrate
+with the pilot policies themselves: for each feature we measure the best
+v8 policies' capability envelope, the largest feature value still passed
+with 50\% success when that feature alone is active
+(\S\ref{sec:protocol}), and cap the uphill slope, step-up height, gap width
+and block height at that envelope. Estimated from the subset of v8
+evaluation levels that fall inside the new box, v8 policies solve about
+39\% of uniform v10 levels. Because features compound, uniform levels still
+range from trivial to unsolved. We regard this procedure, sizing the space
+to the capability envelopes of a reference policy, as part of the protocol:
+it is cheap, uses only the evaluation tooling, and transfers to any
+parametric level space.
+\todo{Report the v10 uniform success of DR as a check that the calibration
+target was met, once results land.}

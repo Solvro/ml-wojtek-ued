@@ -1,0 +1,20 @@
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\todo}[1]{{\color{red}\textbf{[TODO:} #1\textbf{]}}}
+% stands in for a table or figure that is not produced yet
+\newcommand{\placeholder}[1]{%
+  \noindent\fbox{\parbox{0.95\linewidth}{\centering\small\color{gray}%
+  \textbf{PLACEHOLDER}\\#1}}}
+% tables/<name>.tex is a bare tabular written by the results generator
+\newcommand{\resulttable}[2]{%
+  \IfFileExists{tables/#1.tex}{\input{tables/#1.tex}}{\placeholder{#2}}}
+
+\newcommand{\plr}{PLR$^\perp$}
+\newcommand{\cvar}[1]{CVaR$_{#1}$}
