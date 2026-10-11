@@ -8,8 +8,13 @@ loop ([ued-accel.md](ued-accel.md)).
 
 `A2C` is an `equinox.Module` (asymmetric actor-critic):
 
-- `actor_mean` — MLP (`Linear → LayerNorm → act → Linear → LayerNorm → act →
-  Linear`), width `dense_dim`, activation `relu` or `tanh` (config).
+- `actor_mean` — MLP (`Linear → act` per entry of `hidden_dims`, then a linear
+  head), default `[512, 256, 128]` with `elu` (`relu`/`tanh` also accepted).
+- `actor_norm` / `critic_norm` — `RunningNorm`: running mean/var of each obs
+  stream, applied (clipped to ±5) before the MLPs. Statistics sit behind
+  `stop_gradient` and are refreshed from each rollout at the start of
+  `run_ppo_epochs` (`A2C.update_obs_norm`), so every trainer gets them.
+  They live in the model pytree, so checkpoints carry them.
 - `actor_log_std` — a free `action_dim` vector (state-independent std).
 - `critic` — same MLP shape, scalar output, reads the privileged obs.
 - Action distribution: `distrax.MultivariateNormalDiag` squashed through
@@ -21,6 +26,7 @@ Calls:
   Samples an action if none is passed (rollout) or scores a given one
   (PPO update). `entropy` is `-log_prob` (a per-sample proxy).
 - `deterministic_action(obs)` → `action_high * tanh(actor_mean)`, used at eval.
+- `value(critic_obs)` → normalized critic value (GAE bootstrap).
 
 Pytrees: `Obs(actor, critic)` and `Episode(obs, next_obs, action, log_prob,
 value, entropy, reward, done)`.
@@ -158,7 +164,7 @@ under `artifacts/<algo>/`) and `CheckpointManager.latest_step()`.
 
 Each script also writes a `meta.json` sidecar (`save_meta`/`load_meta`) next
 to the run's checkpoints, once, right after building the model: the `A2C`
-shape (`dense_dim`, `activation`, `action_dim`, `actor_obs_dim`,
+shape (`hidden_dims`, `activation`, `action_dim`, `actor_obs_dim`,
 `critic_obs_dim`, `action_high`) plus the env construction args (`env_task`,
 `env_overrides`, `env_seed`). This is what lets `eval.py` rebuild a template
 model and `FunctionalEnv` and restore a checkpoint **without** re-running the
@@ -200,16 +206,38 @@ force-merges `terrain.enable`/`arena=accel` on top regardless of the
 checkpoint's own training arena — needs `just build-accel-arena` first. Generates
 `num_levels` levels in `chunk_size`-sized batches (one `jit` compile, reused
 across chunks since every chunk is the same shape), evaluates
-`episodes_per_level` episodes each via `utils/ppo_helpers.eval_levels`, prints
-`mean_reward`/`success_rate`, and optionally dumps the per-level
-reward/terminated arrays to `--output`.
+`episodes_per_level` episodes each via `utils/ppo_helpers.eval_levels`, and
+logs:
+
+- `success_rate` — no fall **and** at least `min_travel` (default 1 m) from
+  spawn at the last step; standing still on the pad is a failure.
+  `no_progress` is disabled for eval, so every termination is a fall.
+- `fall_rate`, `fall_<cause>_rate`, `mean_travel`, `mean_cmd_vx` vs
+  `mean_forward_vel` (body-frame forward speed: the tracking check).
+- Two independent passes over the same levels: CVaR (`cvar_*`) scores the
+  worst `cvar_alpha` levels of pass 1 on pass 2, and `level_success_corr` is
+  the per-level success correlation between passes — near 0 means levels do
+  not differ in difficulty for this policy.
+- `hfield_params.difficulty` scales every level (0 = flat), for a
+  flat-vs-hard sanity check.
+
+Trainers log the same tracking pair (`cmd_vx`, `forward_vel`) per iteration
+via `rollout_metrics`, next to the fall-cause rates.
+
+## Brax reference — `scripts/brax_ppo.py`
+
+Brax PPO (mujoco_playground's Go1 joystick recipe: observation normalization,
+persistent episodes with 20-step unrolls, 512-256-128 ELU) on the benchmark
+env (same overrides and DR as `ppo_dr_terrain.py`) over the accel arena's
+static flat ground. A learnability reference for our PPO, not part of the
+benchmark. Logs brax's eval metrics, then a tracking eval (`track/*`).
 
 ## Visual eval — `scripts/eval_sim.py`
 
 A standalone argparse tool (no hydra/pyrallis, no `meta.json`) that opens a
 MuJoCo viewer and watches a checkpoint walk freshly generated ACCEL levels:
 `just eval-sim [--checkpoint DIR] [--task {joystick,getup,jump}]
-[--dense_dim N] [--activation {relu,tanh}] [--seed N] [--episodes N]
+[--hidden_dims N ...] [--activation {relu,tanh,elu}] [--seed N] [--episodes N]
 [--steps_in_episode N]`. `--episodes 0` (default) runs forever, generating a
 new random level each episode. Needs `just build-accel-arena` first.
 
@@ -220,7 +248,7 @@ item dir — `model/`, `opt_state/`, no `<algo>/<run>/<step>/` nesting and no
 `open_checkpoint_manager`/`restore_checkpoint`/`load_meta` convention that
 `scripts/eval.py`/`scripts/eval_levels.py` rely on. Instead it rebuilds the
 model/env from CLI flags (the same shapes `scripts/accel.py` trains with,
-`--dense_dim`/`--activation` defaulting to `ModelParams`'s) and restores the
+`--hidden_dims`/`--activation` defaulting to `ModelParams`'s) and restores the
 checkpoint directly via `orbax.checkpoint.StandardCheckpointer().restore(
 model_dir, target=array_template)` against the `model/` item dir.
 

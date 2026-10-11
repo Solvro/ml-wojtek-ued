@@ -13,8 +13,8 @@ class EnvironmentParams:
 
 @dataclass
 class ModelParams:
-    dense_dim: int = 128
-    activation: str = "tanh"
+    hidden_dims: list[int] = field(default_factory=lambda: [512, 256, 128])
+    activation: str = "elu"
 
 
 @dataclass

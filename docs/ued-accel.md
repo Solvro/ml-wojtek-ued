@@ -48,13 +48,21 @@ Pure given an rng; no hidden state beyond the config:
 vmappable per env **with no MJX recompilation**; `hfield_size` is static. This
 is the whole reason a heightfield works as an ACCEL genome at RL scale — the
 mechanism (`tree_replace` in `FunctionalEnv`) is in
-[environment.md](environment.md#hfield-mutability).
+[environment.md](environment.md#hfield-mutability). Caveat: per-env levels
+only reach the physics on the `jax` backend — on `warp` every env in a batch
+collides with the first env's level (same section).
 
 ### Arena assets {#arena}
 
 `hfield/arena.py` writes the static **"accel"** MJCF arena the ACCEL env loads:
 a flat (`data = 0.5`) heightfield sized to the config envelope, box "apron"
 strips around it, plus the spec/lookup sidecars — via `terrain.py`'s writers.
+Two far corner nodes are pinned to `0`/`1`: MuJoCo rescales a loaded hfield
+to span `[0, 1]`, so an all-`0.5` file compiles to `0` and sinks the static
+ground to `-amplitude`. That broke `real_pose_ref` (its standing-height settle
+runs on the static model, so every commanded height mapped to the most
+extended pose and zero action tripped the four-bar toggle fall within
+~0.35 s) and any rollout without an `hfield_data` swap.
 Run with `just build-accel-arena` before `just accel`/`just accel-top-k`. The
 per-iteration level
 is swapped into this arena's `hfield_data` at rollout time; the static asset
@@ -261,3 +269,145 @@ materialises `cfg.hfield_params` back into a real `HFieldConfig` via
 `OmegaConf.to_object`.
 
 All knobs (`AccelParams` + reused PPO params): [configuration.md](configuration.md#accel).
+
+## DR vs ACCEL on brax PPO — `scripts/brax_ued.py` {#brax-ued}
+
+Our own PPO (`utils/ppo_helpers`) did not learn to walk on this env within
+~0.6B steps, while brax's PPO (mujoco_playground recipe) did in ~40M
+(`scripts/brax_ppo.py`). `brax_ued.py` keeps brax's PPO pieces (networks,
+running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
+32 minibatches, discount 0.97) and drives `FunctionalEnv`, because
+`ppo.train` fixes each env's model for the whole run and cannot swap levels.
+
+- Outer iteration: `num_lanes` levels x `envs_per_lane` envs, reset onto
+  their level (plus a fresh physics DR draw), stepped `level_steps` in
+  20-step unrolls; when training, a PPO update follows every unroll.
+  Lane regret = mean positive GAE advantage over the iteration.
+- `--mode dr`: fresh uniform levels at full difficulty, train every
+  iteration.
+- `--mode dr_easy`: DR over ACCEL's easy generator (control points within
+  `generator_scale` of flat) — isolates the curriculum from "train easy".
+- `--mode dr_mixed`: uniform levels scaled by a per-level difficulty
+  drawn from `[0, 1]`.
+- `--mode accel`: replay iterations (`replay_prob`, once the buffer holds
+  `num_lanes` levels) train on rank+staleness-prioritized buffer levels,
+  refresh their scores and queue their mutations; explore iterations do not
+  train and score the queued children plus fresh easy levels (control points
+  within `generator_scale` of flat). The buffer keeps the `buffer_size`
+  highest-regret levels.
+- ACCEL curriculum switches (defaults reproduce plain ACCEL):
+  - `--mutation grow` — after the local edits, scale the level's deviation
+    from flat by `U(1, grow_max)` (default 1.3). Plain symmetric edits
+    smooth as often as they roughen; plain ACCEL's buffer stayed at the easy
+    generator's roughness (~0.03 m) for the whole run.
+  - `--score learnability` — level score `p(1-p)` (SFL), `p` = fraction of
+    the lane's envs that never fell and ended >= `min_travel` m out,
+    instead of positive value loss.
+  - `--generator mixed` — explore iterations draw fresh levels from the
+    `dr_mixed` distribution instead of the easy generator.
+  - Logged: `buffer_roughness_mean`/`_p90`, `buffer_score_roughness_spearman`
+    (rank correlation of level score vs roughness), `children_roughness`,
+    `train_success`, `learnability_mean`.
+  - WCSS variants (`brax_ued.sbatch` `MODES`): `accel_grow` = grow + 16
+    edits; `accel_sfl` = grow + 16 edits + learnability.
+- `--mode paired`: PAIRED (port of `feat/paired-implementation`'s design
+  onto the brax student). A learned adversary (`modules/generator.py`,
+  latent seed -> sigmoid-squashed Gaussian over the genome) proposes
+  `num_lanes` levels; protagonist and antagonist (two brax students) both
+  train on them; regret = antagonist max return - protagonist mean return
+  per level, clipped at 0, is the adversary's reward (single-step PPO, 5
+  epochs, HiEnt `gen_entropy_coef=0.1`, no BC distillation yet).
+  `env_steps`/`num_timesteps` count protagonist steps only; the antagonist
+  doubles the real simulation cost.
+- `--mode plr`: robust PLR (PLR⊥) - ACCEL's buffer, rank/staleness replay
+  and score refresh, but no mutation; explore iterations score fresh
+  uniform (DR) levels.
+- `--robot go1`: Playground's Go1 instead of Wojtek, see
+  [Go1](#go1).
+- Eval every `eval_every` iterations: deterministic policy on fresh uniform
+  levels at difficulties 0.25/0.5/0.75/1.0 — `eval/d<d>/success_rate` (no
+  fall and >= `min_travel` m from spawn), fall rate, travel, forward vs
+  commanded speed.
+- WCSS: `brax_ued.sbatch` array (tasks 0-2 dr, 3-5 accel, seeds 0-2); assets
+  must be built beforehand since tasks start together.
+
+## Level spaces — `hfield/level_space.py` {#level-spaces}
+
+`brax_ued.py` and `eval_brax.py` take `--level_space {grid,param}`; every
+mode samples, mutates and renders levels through it.
+
+- `grid` (default, v7 runs): the original `coarse_n x coarse_n` control-point
+  genome. i.i.d. noise, so levels at one scale are statistically alike: the
+  v7 final eval measured per-level success correlation between passes of
+  only 0.02–0.17, and ACCEL landed within seed noise of DR on its own easy
+  generator (DR-easy).
+- `param` (v8 runs): 8 terrain parameters in [0, 1] plus a noise seed (last
+  entry, never mutated). `PARAMS` maps them to physical ranges sized to the
+  ~0.10 m robot: noise amplitude 0–0.10 m and wavelength 0.2–1.0 m, radial
+  slope ±20°, radial stairs ±0.08 m high and 0.15–0.60 m wide, gaps 0–0.25 m
+  wide (0.15 m deep, every 0.6 m), blocks 0–0.10 m high and 0.15–0.60 m
+  wide. Features are radial (or seeded fields) so heading does not matter.
+  - DR: uniform genome; `scaled(d)` shrinks it toward `flat` (no features)
+    by d; `easy(s)` = `scaled(s)`; DR-mixed draws d per level.
+  - ACCEL: `mutate` edits `--n_edits` (WCSS: 2) parameters by ±`--edit_scale`
+    (0.1); `--mutation grow` also scales the genome away from `flat`.
+  - PAIRED: the generator emits the 8 parameters; a random seed is appended.
+- WCSS: `brax_ued.sbatch` / `eval_brax.sbatch` take `SPACE=param` and
+  `PREFIX` (run-name prefix, `v8_param`).
+- `robot_scale` (`ParamSpace`, eval suite): every length range (amplitude,
+  wavelength, stairs, gaps, blocks, gap depth/period) times the robot's size
+  relative to Wojtek; slopes unchanged. Envelopes stay in Wojtek units.
+
+## Go1 — `robots/go1.py` {#go1}
+
+Second robot for the benchmark: open serial chain (Go1) vs Wojtek's closed
+chain. `--robot go1` in `brax_ued.py` / `eval_brax.py`, `ROBOT=go1` on WCSS
+(run prefix `v9_go1`).
+
+- Playground `Go1JoystickRoughTerrain` (feet-only collisions, its reward,
+  blind actor), on the jax backend, with:
+  - the ACCEL arena: one `hfield` geom `floor` (geom 0, so Playground's
+    friction DR hits it), sized by `HFieldConfig`;
+  - forward commands: Wojtek's `vx (0.2, 0.6)`, `vy (-0.2, 0.2)` times
+    `GO1_SCALE`, `wz (-0.4, 0.4)`;
+  - Wojtek's fall rule at Go1's size: trunk below 0.6 x 0.258 m above the
+    terrain under it, or gravity z > -0.4;
+  - critic gets a clean 5x5 height scan (Wojtek's grid x `GO1_SCALE`).
+- `GO1_SCALE = 2.5` (standing trunk 0.258 m vs Wojtek 0.10 m) scales the
+  arena (`hfield_config`), level lengths, commands and `min_travel`.
+- Physics DR: Playground's `go1/randomize.py`.
+- Needs `mujoco_menagerie` under Playground's `external_deps` (meshes);
+  `ensure_menagerie_exists()` clones it, by hand on WCSS (no AVX on login).
+
+## Final eval — `scripts/eval_brax.py` {#eval-brax}
+
+Loads a `brax_ued.py` checkpoint (`--checkpoint <run>.pkl`), deterministic
+policy, no physics DR, no `no_progress` cut. Success = no fall and >=
+`min_travel` m from spawn after `level_steps`.
+
+- `random/d<d>`: `num_levels` (2048) genome levels, the same genomes at
+  each difficulty 0.25/0.5/0.75/1.0.
+- `suite/<terrain>_<k>`: held-out structured terrains no method trains on,
+  written straight into `hfield_data`, radial so heading does not matter:
+  stairs up/down (2k cm steps every 0.3 m), slopes up/down (5k°), trenches
+  (10 cm deep, 5k cm wide, every 0.5 m), waves (±2k cm, 0.6 m), random
+  blocks (±2k cm, 0.3 m cells); k = 1..4. Heights clip at ±`amplitude`.
+- **CVaR** (`cvar<alpha>_success`, alpha 0.1 / 0.25): every level runs in two
+  independent passes; the worst-alpha levels ranked on one pass are scored
+  on the other, both ways, averaged (cross-fitting). Ranking and scoring
+  on the same episodes is biased low by selection noise: with 2000 levels
+  of true success 0.5 and 4 episodes each, same-pass CVaR25 reads 0.19,
+  cross-fitted 0.49.
+- `--level_space param` adds `param/uniform` (2048 levels drawn from the
+  full 8-parameter space: heterogeneous, so CVaR reads a real tail) and
+  capability envelopes `axis/<feature>`: one feature (rough, slope up/down,
+  stairs up/down, gaps, blocks) ramps to its full range in 6 steps, the rest
+  off; `envelope` = largest |feature| passed at 50% success, `auc` = mean
+  success over the ramp. Difficulty 0.25 is too easy to separate methods
+  (~89% for anything trained near flat) and is not a headline number.
+- 95% bootstrap CIs over levels for mean and CVaR; `level_success_corr`
+  between passes; suite CVaR is over the 28 terrain×strength cells.
+- Writes `<name>.json` (metrics) and `<name>.npz` (per-level fell/travel per
+  pass, for IQM / cross-seed aggregation) to `--out_dir`, and the metrics to
+  the wandb run summary. WCSS: `eval_brax.sbatch` (same `MODES` task layout
+  as `brax_ued.sbatch`).

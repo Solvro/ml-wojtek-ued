@@ -1,18 +1,54 @@
 import contextlib
+import dataclasses
 from typing import Any, NamedTuple, cast
 
 import jax
 import jax.numpy as jnp
+import mujoco
 from brax.envs.wrappers import training as brax_training
 from mujoco import mjx
+from mujoco_playground._src.locomotion.go1 import randomize as go1_randomize
 
+from config.hfield_config import HFieldConfig
 from modules.ppo_modules import Obs
+from robots.go1 import Go1Terrain
 from wojtek_env.envs import randomize, registry
 
 
 class ObsSize(NamedTuple):
     actor: int
     critic: int
+
+
+class HFieldGeometry(NamedTuple):
+    nrow: int
+    ncol: int
+    base_z: float
+    elevation: float
+
+    def heights(self, hfield_data: jax.Array) -> jax.Array:
+        grid = hfield_data.reshape(self.nrow, self.ncol)
+        return self.base_z + grid * self.elevation
+
+
+def hfield_geometry(base: Any) -> HFieldGeometry | None:
+    if base._terrain is None:
+        return None
+    m = base.mj_model
+    # mujoco is a C extension that ty cannot introspect
+    hfield_type = mujoco.mjtGeom.mjGEOM_HFIELD  # ty: ignore[unresolved-attribute]
+    geoms = [i for i in range(m.ngeom) if m.geom_type[i] == hfield_type]
+    if m.nhfield != 1 or len(geoms) != 1:
+        return None
+    geometry = HFieldGeometry(
+        nrow=int(m.hfield_nrow[0]),
+        ncol=int(m.hfield_ncol[0]),
+        base_z=float(m.geom_pos[geoms[0], 2]),
+        elevation=float(m.hfield_size[0, 2]),
+    )
+    if base._terrain.lookup.shape != (geometry.nrow, geometry.ncol):
+        return None
+    return geometry
 
 
 class FunctionalEnv:
@@ -23,15 +59,24 @@ class FunctionalEnv:
         episode_length: int | None = None,
         seed: int = 0,
         domain_randomize: bool = False,
+        go1_hfield: HFieldConfig | None = None,
     ):
-        base = registry.make_env(task, env_overrides)
+        # go1_hfield set: Playground's Go1 on that arena instead of Wojtek
+        base: Any
+        if go1_hfield is None:
+            base = registry.make_env(task, env_overrides)
+            dr_fn = randomize.make_domain_randomize(base.mj_model)
+        else:
+            base = cast(Any, Go1Terrain(go1_hfield))
+            dr_fn = go1_randomize.domain_randomize
         length = episode_length or base._config.episode_length
 
         self._env = brax_training.EpisodeWrapper(base, length, action_repeat=1)
+        # Go1 reads heights straight from hfield_data; Wojtek keeps a lookup
+        self._has_lookup = go1_hfield is None
+        self._hfield_geometry = hfield_geometry(base) if self._has_lookup else None
         self.action_size = base.action_size
-        self._domain_randomize = (
-            randomize.make_domain_randomize(base.mj_model) if domain_randomize else None
-        )
+        self._domain_randomize = dr_fn if domain_randomize else None
 
         probe = self._env.reset(jax.random.key(seed))
         self.observation_size = ObsSize(
@@ -55,14 +100,40 @@ class FunctionalEnv:
             return
         base = cast(Any, self._env.unwrapped)
         old_model = base._mjx_model
+        old_terrain: Any = base._terrain if self._has_lookup else None
         new_model = dr_model if dr_model is not None else old_model
         if hfield_data is not None:
             new_model = new_model.tree_replace({"hfield_data": hfield_data})
+            if self._has_lookup:
+                base._terrain = dataclasses.replace(
+                    old_terrain, lookup=self._lookup_from_hfield(hfield_data)
+                )
         base._mjx_model = new_model
         try:
             yield
         finally:
             base._mjx_model = old_model
+            if self._has_lookup:
+                base._terrain = old_terrain
+
+    def _lookup_from_hfield(self, hfield_data: jax.Array) -> jax.Array:
+        # height scan, base height, foot contact and fall checks read the
+        # terrain lookup, not hfield_data; keep it on the swapped level
+        if cast(Any, self._env.unwrapped)._backend == "warp":
+            raise ValueError(
+                "per-env hfield_data on the warp backend collides every env "
+                "with the first env's level (check_hfield_batch.py). Set "
+                "sim.backend=jax, e.g. via utils.env_overrides."
+                "accel_arena_overrides"
+            )
+        if self._hfield_geometry is None:
+            raise ValueError(
+                "hfield_data swap needs a terrain arena whose height lookup "
+                "is the single heightfield's grid (the 'accel' arena); this "
+                "env has none. Build it with `just build-accel-arena` and set "
+                "terrain.arena=accel"
+            )
+        return self._hfield_geometry.heights(hfield_data)
 
     def reset(
         self,

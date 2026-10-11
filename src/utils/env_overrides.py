@@ -12,6 +12,35 @@ def merge_overrides(*overrides: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def accel_arena_overrides(pad_radius: float) -> dict[str, Any]:
+    # warp collides every env with the first env's hfield_data, so per-env
+    # levels need the jax backend (docs/environment.md#hfield-mutability)
+    return {
+        "terrain": {"enable": True, "arena": "accel", "pad_radius": pad_radius},
+        "sim": {"backend": "jax"},
+    }
+
+
+def terrain_task_overrides() -> dict[str, Any]:
+    # walk forward so the robot leaves the flat spawn pad and meets the level
+    # within an episode; standing, spinning and backing up never reach it
+    return {
+        "command": {
+            "vx": (0.2, 0.6),
+            "vy": (-0.2, 0.2),
+            "wz": (-0.4, 0.4),
+            "terrain_bias": {
+                "enable": True,
+                "zero_prob": 0.05,
+                "pure_wz_prob": 0.0,
+                "pure_vy_prob": 0.0,
+                "pure_slow_prob": 0.15,
+                "pure_back_prob": 0.0,
+            },
+        },
+    }
+
+
 def movement_overrides() -> dict[str, Any]:
     return {
         "latency": {"enable": True},
@@ -29,7 +58,6 @@ def movement_overrides() -> dict[str, Any]:
             "pure_fast_prob": 0.1,
             "pure_back_prob": 0.1,
         },
-        "fall": {"max_toggle_deg": 150.0},
         "reward": {
             "tracking_relative": True,
             "tracking_product": True,

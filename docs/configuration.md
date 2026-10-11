@@ -36,8 +36,8 @@ match (same `obs.state`); raises otherwise. `Config` uses the first four plus
 
 | field | default | meaning |
 |---|---|---|
-| `dense_dim` | `128` | MLP hidden width (actor + critic) |
-| `activation` | `"tanh"` | `"relu"` or `"tanh"` |
+| `hidden_dims` | `[512, 256, 128]` | MLP hidden widths (actor + critic) |
+| `activation` | `"elu"` | `"elu"`, `"relu"` or `"tanh"` |
 
 ## TrainingParams
 

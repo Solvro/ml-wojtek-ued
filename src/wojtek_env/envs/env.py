@@ -658,8 +658,15 @@ class WojtekJoystick(WojtekEnv):
         # Kinematic standing family (see real_pose_ref in default_config):
         # gain-invariant by construction — settled on a quasi-rigid copy,
         # so it depends on the geometry only, never on this run's gains.
+        heights, poses, joints = self._settle_height_grid()
+        # Spawn pose per DSECOND_TABLE rung for EVERY leg joint, the passive
+        # four-bar joints included. Setting only the actuated joints left
+        # each leg's closure loop open by up to ~0.13 m at reset; the solver
+        # then snapped it shut near the toggle (40-70 deg at rest instead of
+        # ~15), and the policy fell on fall.max_toggle_deg within ~0.35 s.
+        self._spawn_dsecond = jp.array(DSECOND_TABLE)
+        self._spawn_joints = jp.array(joints)
         if self._config.get("real_pose_ref", False):
-            heights, poses = self._settle_height_grid()
             # The runtime target clamps (knee_target_max) cap the reachable
             # extension: past the peak the settle heights flatten and then
             # DROP (knees pinned while second joints over-extend). The
@@ -877,7 +884,7 @@ class WojtekJoystick(WojtekEnv):
         hi = np.asarray(self._target_hi)
         home_ctrl = np.asarray(self._home_ctrl)
         n_steps = int(round(2.0 / m.opt.timestep))
-        heights, poses = [], []
+        heights, poses, joints = [], [], []
         for ds in DSECOND_TABLE:
             ctrl = np.clip(home_ctrl + np.tile([0.0, 1.0, 2.0], 4) * ds, lo, hi)
             mujoco.mj_resetData(m, d)
@@ -887,7 +894,8 @@ class WojtekJoystick(WojtekEnv):
                 mujoco.mj_step(m, d)
             heights.append(float(d.qpos[2]))
             poses.append(d.qpos[qadr].copy())
-        return np.array(heights), np.array(poses)
+            joints.append(d.qpos[7:].copy())
+        return np.array(heights), np.array(poses), np.array(joints)
 
     def _pose_ref(self, height):
         """Joint-pose reference for a commanded height: the kinematic real
@@ -907,12 +915,25 @@ class WojtekJoystick(WojtekEnv):
         """Planar speed the gait clock should serve; turning counts too."""
         return jp.linalg.norm(command[:2]) + 0.3 * jp.abs(command[2])
 
+    def _dsecond(self, height):
+        """DSECOND_TABLE coordinate of a commanded standing height."""
+        if self._config.get("real_pose_ref", False):
+            return jp.interp(height, self._anchor_heights, self._anchor_dsecond)
+        return jp.interp(height, jp.array(HEIGHT_TABLE), jp.array(DSECOND_TABLE))
+
+    def _spawn_joint_qpos(self, height):
+        """Settled closed-loop pose of every leg joint for a height."""
+        dsecond = self._dsecond(height)
+        return jp.stack(
+            [
+                jp.interp(dsecond, self._spawn_dsecond, self._spawn_joints[:, j])
+                for j in range(self._spawn_joints.shape[1])
+            ]
+        )
+
     def _height_ctrl(self, height):
         """Ctrl anchor for a commanded standing height (measured table)."""
-        if self._config.get("real_pose_ref", False):
-            dsecond = jp.interp(height, self._anchor_heights, self._anchor_dsecond)
-        else:
-            dsecond = jp.interp(height, jp.array(HEIGHT_TABLE), jp.array(DSECOND_TABLE))
+        dsecond = self._dsecond(height)
         offset = jp.tile(jp.array([0.0, 1.0, 2.0]), 4) * dsecond
         return jp.clip(
             self._home_ctrl + offset, self._ctrlrange[:, 0], self._ctrlrange[:, 1]
@@ -1093,9 +1114,9 @@ class WojtekJoystick(WojtekEnv):
         # (the measured settled pose when calibrated, else the ctrl
         # anchor), plus joint noise; ctrl holds the ctrl-space anchor.
         anchor = self._height_ctrl(command[3])
-        qpos = self._home_qpos.at[self._qadr].set(
-            self._pose_ref(command[3])
-            + jax.random.uniform(r_pos, (12,), minval=-0.05, maxval=0.05)
+        qpos = self._home_qpos.at[7:].set(self._spawn_joint_qpos(command[3]))
+        qpos = qpos.at[self._qadr].add(
+            jax.random.uniform(r_pos, (12,), minval=-0.05, maxval=0.05)
         )
         qpos = qpos.at[2].set(command[3])
         if self._terrain_enabled:

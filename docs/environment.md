@@ -40,6 +40,21 @@ task-independent ones for `scripts/ppo_dr.py`/`accel.py`/`accel_top_k.py`:
 - `real_pose_ref` — judge pose/height against the kinematic standing family
   instead of commanded ctrl targets (removes a PD-sag-dependent penalty
   floor; sim2real correctness fix, not just a shaping knob).
+- Spawn pose (`WojtekJoystick.reset`, local edit to the extracted env): every
+  leg joint, passive four-bar joints included, comes from the settled
+  closed-loop pose for the commanded height (`_spawn_joint_qpos`, tabled per
+  `DSECOND_TABLE` rung by `_settle_height_grid`). Previously only the
+  actuated joints were set, leaving the closure loop open by up to ~0.13 m;
+  the solver snapped it shut at 40–70° toggle and the policy hit
+  `fall.max_toggle_deg=150` within ~0.35 s. Rest-pose toggle is now ≤ ~26°.
+- `movement_overrides` no longer sets `fall.max_toggle_deg` (termination
+  off; the `toggle_flat` penalty stays). Even with the fixed spawn and an
+  accurate solver, random actions push a leg past 150° in ~35% of 2 s
+  episodes, and brax PPO (mujoco_playground recipe) still lost 92% of its
+  episodes to the toggle at ~3 s while walking at ~62% of the command.
+  At the default `opt.iterations=2` the four-bar closure also stretches
+  ~14 mm under random actions (2.3 mm at 10 iterations), which doubles the
+  toggle events.
 - `action_filter` — EMA smoothing on actions before the PD targets.
 - `command.pure_wz_prob`/`pure_vy_prob`/`arc_prob`/`pure_slow_prob`/
   `pure_fast_prob`/`pure_back_prob` — dedicated clean-command training
@@ -148,6 +163,10 @@ mechanism instead (below), consistent with the hfield swap it already does.
 wraps `registry.make_env` + brax `EpisodeWrapper` and exposes pure `reset`/`step`
 usable under `jit`/`vmap`.
 
+- `go1_hfield=HFieldConfig(...)` builds Playground's Go1 on that arena
+  (`robots/go1.py`) instead of Wojtek; hfield swap and DR work the same, but
+  Go1 reads terrain heights straight from `hfield_data` (no lookup).
+
 - **Split obs.** `observation_size` / every `Obs` carries `actor` (`state`) and
   `critic` (`privileged_state`) separately — asymmetric actor-critic.
 - **Auto-reset semantics.** `step` freezes `data`/`obs` to the episode's first
@@ -178,6 +197,26 @@ usable under `jit`/`vmap`.
 Consequence: fix the grid resolution and elevation envelope once (in
 `HFieldConfig`), and the heightfield *values* become a cheap, JAX-native,
 batchable "level genome" — which is what makes ACCEL practical at RL scale.
+
+Two things must follow the swap, or the level only exists on paper:
+
+- **Terrain lookup** — height scan, base height, foot contact/clearance and
+  the base-contact/min-height falls read `Arena.lookup`, not `hfield_data`.
+  The accel arena's lookup is static zeros, so `FunctionalEnv._swapped_model`
+  also swaps `base._terrain.lookup` for `base_z + hfield_data * elevation`
+  (`HFieldGeometry`, `utils/env.py`). Requires an arena whose lookup is the
+  single heightfield's grid (the `accel` arena); otherwise it fails fast.
+- **Warp physics** — MJWarp's collision kernel indexes `hfield_data` without a
+  world id, and `mjx` flattens a vmapped `(B, N)` `hfield_data` to `(B*N,)`,
+  so on `sim.backend=warp` every env in a batch collides with the **first**
+  env's heightfield. The `jax` backend handles per-env `hfield_data`
+  correctly. Measured on an H100 (2026-10-07, job 6051735): warp
+  29.6k env-steps/s, jax 13.3k (4096 envs, random levels), and warp also
+  overflowed `njmax`/`naconmax` on random terrain, dropping constraints.
+  So `utils.env_overrides.accel_arena_overrides` pins `sim.backend=jax` for
+  every accel-arena script, and `FunctionalEnv` raises if an `hfield_data`
+  swap reaches a warp env. `src/scripts/check_hfield_batch.py --backend jax`
+  re-checks it (flat vs pit levels; `--bench_envs N` times throughput).
 
 ## Assets {#assets}
 

@@ -15,6 +15,7 @@ from hfield.manager import HFieldManager
 from modules.ppo_modules import A2C
 from ued.levels import level_to_hfield_data
 from utils.env import FunctionalEnv
+from utils.env_overrides import accel_arena_overrides, merge_overrides
 
 
 def restore_model(model_dir: Path, template: A2C) -> A2C:
@@ -29,8 +30,8 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--checkpoint", default="artifacts/accel_checkpoint")
     p.add_argument("--task", default="joystick", choices=["joystick", "getup", "jump"])
-    p.add_argument("--dense_dim", type=int, default=128)
-    p.add_argument("--activation", default="tanh", choices=["relu", "tanh"])
+    p.add_argument("--hidden_dims", type=int, nargs="+", default=[512, 256, 128])
+    p.add_argument("--activation", default="elu", choices=["relu", "tanh", "elu"])
     p.add_argument("--seed", type=int, default=0)
     p.add_argument(
         "--episodes",
@@ -47,20 +48,15 @@ def main() -> None:
 
     env = FunctionalEnv(
         task=args.task,
-        env_overrides={
-            "terrain": {
-                "enable": True,
-                "arena": "accel",
-                "pad_radius": hfield_config.pad_radius,
-            },
-            "sim": {"num_envs": 1},
-        },
+        env_overrides=merge_overrides(
+            accel_arena_overrides(hfield_config.pad_radius), {"sim": {"num_envs": 1}}
+        ),
         episode_length=args.steps_in_episode,
         seed=args.seed,
     )
 
     template = A2C(
-        dense_dim=args.dense_dim,
+        hidden_dims=args.hidden_dims,
         actor_obs_dim=env.observation_size.actor,
         critic_obs_dim=env.observation_size.critic,
         action_dim=env.action_size,

@@ -15,7 +15,7 @@ from ued.levels import (
 )
 from ued.regret import positive_value_loss, positive_value_loss_per_lane
 from ued.types import BatchCurator, Curator, PPOTrainer
-from utils.ppo_helpers import fall_cause_rates, run_ppo_epochs
+from utils.ppo_helpers import rollout_metrics, run_ppo_epochs
 
 
 def mean_episode_reward(episode: Episode) -> float:
@@ -84,7 +84,7 @@ def generate_branch(
         "branch": 0,
         "regret_score": score,
         "mean_reward": mean_episode_reward(episode),
-        **fall_cause_rates(episode),
+        **rollout_metrics(episode),
     }
     return key, log
 
@@ -122,7 +122,7 @@ def replay_branch(
         "regret_score": score,
         "loss": float(loss),
         "mean_reward": mean_episode_reward(episode),
-        **fall_cause_rates(episode),
+        **rollout_metrics(episode),
     }
     return key, a2c, opt_state, log
 
@@ -168,7 +168,7 @@ def generate_branch_top_k(
         "regret_score": float(scores.mean()),
         "max_regret_score": float(scores.max()),
         "mean_reward": mean_episode_reward(episode),
-        **fall_cause_rates(episode),
+        **rollout_metrics(episode),
     }
     return key, log
 
@@ -207,6 +207,6 @@ def replay_branch_top_k(
         "max_regret_score": float(scores.max()),
         "loss": float(loss),
         "mean_reward": mean_episode_reward(episode),
-        **fall_cause_rates(episode),
+        **rollout_metrics(episode),
     }
     return key, a2c, opt_state, log

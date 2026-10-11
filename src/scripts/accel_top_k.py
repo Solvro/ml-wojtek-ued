@@ -32,7 +32,13 @@ from utils.checkpoint import (
     save_meta,
 )
 from utils.env import FunctionalEnv
-from utils.env_overrides import merge_overrides, movement_overrides, terrain_overrides
+from utils.env_overrides import (
+    accel_arena_overrides,
+    merge_overrides,
+    movement_overrides,
+    terrain_overrides,
+    terrain_task_overrides,
+)
 from utils.logging import Logger, quiet_dependencies
 from utils.ppo_helpers import (
     calculate_episode_advantage,
@@ -71,33 +77,30 @@ def train(cfg: AccelConfig) -> None:
     )
 
     env_overrides = merge_overrides(
-        {
-            "terrain": {
-                "enable": True,
-                "arena": "accel",
-                "pad_radius": cfg.hfield_params.pad_radius,
-            }
-        },
+        accel_arena_overrides(cfg.hfield_params.pad_radius),
         movement_overrides(),
         terrain_overrides(),
+        terrain_task_overrides(),
     )
     env = FunctionalEnv(
         task=cfg.environment_params.name,
-        env_overrides={
-            **env_overrides,
-            "sim": {
-                "num_envs": cfg.accel_params.num_lanes * cfg.accel_params.envs_per_lane
+        env_overrides=merge_overrides(
+            env_overrides,
+            {
+                "sim": {
+                    "num_envs": cfg.accel_params.num_lanes
+                    * cfg.accel_params.envs_per_lane
+                }
             },
-        },
+        ),
         seed=cfg.environment_params.seed,
     )
 
     eval_env = FunctionalEnv(
         task=cfg.environment_params.name,
-        env_overrides={
-            **env_overrides,
-            "sim": {"num_envs": cfg.evaluation_params.envs_num},
-        },
+        env_overrides=merge_overrides(
+            env_overrides, {"sim": {"num_envs": cfg.evaluation_params.envs_num}}
+        ),
         seed=cfg.environment_params.seed,
     )
 
@@ -117,7 +120,7 @@ def train(cfg: AccelConfig) -> None:
     )
 
     a2c = A2C(
-        dense_dim=cfg.model_params.dense_dim,
+        hidden_dims=cfg.model_params.hidden_dims,
         actor_obs_dim=obs_size.actor,
         critic_obs_dim=obs_size.critic,
         action_dim=action_dim,
@@ -144,7 +147,7 @@ def train(cfg: AccelConfig) -> None:
             "env_task": cfg.environment_params.name,
             "env_overrides": env_overrides,
             "env_seed": cfg.environment_params.seed,
-            "dense_dim": cfg.model_params.dense_dim,
+            "hidden_dims": list(cfg.model_params.hidden_dims),
             "activation": cfg.model_params.activation,
             "action_dim": action_dim,
             "actor_obs_dim": obs_size.actor,

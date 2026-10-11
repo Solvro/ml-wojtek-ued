@@ -23,14 +23,20 @@ from utils.checkpoint import (
     save_meta,
 )
 from utils.env import FunctionalEnv
-from utils.env_overrides import merge_overrides, movement_overrides
+from utils.env_overrides import (
+    accel_arena_overrides,
+    merge_overrides,
+    movement_overrides,
+    terrain_overrides,
+    terrain_task_overrides,
+)
 from utils.logging import Logger, quiet_dependencies
 from utils.ppo_helpers import (
     batch_rollout,
     calculate_episode_advantage,
     eval,
-    fall_cause_rates,
     make_step,
+    rollout_metrics,
     run_ppo_epochs,
 )
 
@@ -65,35 +71,30 @@ def train(cfg: PpoDrTerrainConfig) -> None:
     hfield_config = cast(HFieldConfig, OmegaConf.to_object(cfg.hfield_params))
     hfield_manager = HFieldManager(hfield_config)
 
+    # same observations and task as the ACCEL trainers, so the comparison
+    # isolates the level distribution
     env_overrides = merge_overrides(
+        accel_arena_overrides(hfield_config.pad_radius),
         movement_overrides(),
-        {
-            "terrain": {
-                "enable": True,
-                "arena": "accel",
-                "pad_radius": hfield_config.pad_radius,
-            },
-            "fall": {"on_base_contact": True},
-        },
+        terrain_overrides(),
+        terrain_task_overrides(),
     )
 
     env = FunctionalEnv(
         task=cfg.environment_params.name,
         seed=cfg.environment_params.seed,
-        env_overrides={
-            **env_overrides,
-            "sim": {"num_envs": cfg.environment_params.envs_num},
-        },
+        env_overrides=merge_overrides(
+            env_overrides, {"sim": {"num_envs": cfg.environment_params.envs_num}}
+        ),
         domain_randomize=True,
     )
 
     eval_env = FunctionalEnv(
         task=cfg.environment_params.name,
         seed=cfg.environment_params.seed,
-        env_overrides={
-            **env_overrides,
-            "sim": {"num_envs": cfg.evaluation_params.envs_num},
-        },
+        env_overrides=merge_overrides(
+            env_overrides, {"sim": {"num_envs": cfg.evaluation_params.envs_num}}
+        ),
     )
 
     action_dim = env.action_size
@@ -113,7 +114,7 @@ def train(cfg: PpoDrTerrainConfig) -> None:
     )
 
     a2c = A2C(
-        dense_dim=cfg.model_params.dense_dim,
+        hidden_dims=cfg.model_params.hidden_dims,
         actor_obs_dim=obs_size.actor,
         critic_obs_dim=obs_size.critic,
         action_dim=action_dim,
@@ -130,7 +131,7 @@ def train(cfg: PpoDrTerrainConfig) -> None:
             "env_task": cfg.environment_params.name,
             "env_overrides": env_overrides,
             "env_seed": cfg.environment_params.seed,
-            "dense_dim": cfg.model_params.dense_dim,
+            "hidden_dims": list(cfg.model_params.hidden_dims),
             "activation": cfg.model_params.activation,
             "action_dim": action_dim,
             "actor_obs_dim": obs_size.actor,
@@ -229,7 +230,7 @@ def train(cfg: PpoDrTerrainConfig) -> None:
                 "loss": loss,
                 "mean_reward": mean_reward,
                 "learning_rate": lr,
-                **fall_cause_rates(episode),
+                **rollout_metrics(episode),
             }
         )
         save_checkpoint(ckptr, iteration, a2c, opt_state)
