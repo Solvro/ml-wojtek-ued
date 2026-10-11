@@ -89,18 +89,22 @@ are asymmetric, flat is not the centre of the cube.
 A level space is only useful for comparing curricula if uniform sampling is
 neither trivially easy (nothing to curate) nor mostly unsolvable (curation
 and DR both train on impossible levels). Our pilot space (v8) was the
-latter: the best pilot policies solved about 8\% of uniform levels, and
-about 92\% of uniform levels were unsolved by every method. We recalibrate
-with the pilot policies themselves: for each feature we measure the best
-v8 policies' capability envelope, the largest feature value still passed
+latter: the best pilot methods passed about 8\% of uniform levels; on
+about 89\% of the 2048 uniform evaluation levels no run reached 50\%
+success, and on about 57\% none of the 24 pilot runs passed a single one
+of its 8 episodes. We recalibrate with the pilot policies themselves: for
+each feature we measure the capability envelope of the best v8 methods
+(ACCEL, its variants and DR-easy), the largest feature value still passed
 with 50\% success when that feature alone is active
 (\S\ref{sec:protocol}), and cap the uphill slope, step-up height, gap width
-and block height at that envelope. Estimated from the subset of v8
-evaluation levels that fall inside the new box, v8 policies solve about
-39\% of uniform v10 levels. Because features compound, uniform levels still
-range from trivial to unsolved. We regard this procedure, sizing the space
-to the capability envelopes of a reference policy, as part of the protocol:
-it is cheap, uses only the evaluation tooling, and transfers to any
-parametric level space.
+and block height at that envelope, rounded
+($18.1^\circ$, 4.7, 5.9 and 5.7\,cm become $18^\circ$, 5, 6 and 6\,cm).
+On the 241 of the 2048 v8 uniform evaluation levels that fall inside the
+new box, a uniform sample of it, the best v8 methods pass 38--39\%.
+Because features compound, uniform levels still range from trivial to
+unsolved. We regard this procedure, sizing the space to the capability
+envelopes of reference policies, as part of the protocol: it is cheap,
+uses only the evaluation tooling, and applies to any parametric level
+space whose features have a magnitude.
 \todo{Report the v10 uniform success of DR as a check that the calibration
 target was met, once results land.}

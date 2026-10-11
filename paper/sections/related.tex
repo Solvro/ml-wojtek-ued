@@ -7,8 +7,8 @@ a learned level generator and two students, a protagonist and an
 antagonist, whose return gap approximates regret.
 PLR~\citep{jiang2021plr} keeps a buffer of sampled levels prioritised by a
 score such as positive value loss and replays them by rank and staleness;
-\plr~\citep{jiang2021replay} trains only on replayed levels, which makes it
-a regret-minimax method.
+\plr~\citep{jiang2021replay} trains only on replayed levels, so that at
+equilibrium the student follows a minimax-regret policy.
 ACCEL~\citep{parkerholder2022accel} extends \plr\ by editing replayed
 levels and scoring the edits as new candidates, with a generator of simple
 levels, and reports gains on 2D BipedalWalker terrain.
@@ -26,7 +26,7 @@ changes the domain: levels are heightfields for a 3D quadruped.
 adaptive curriculum that samples terrain parameters of intermediate
 difficulty. \citet{rudin2022learning} introduce a game-inspired curriculum
 in which robots move to harder terrain rows after walking far enough; it is
-the default in massively parallel locomotion training.
+widely used in massively parallel locomotion training.
 LP-ACRL~\citep{li2026lpacrl} samples tasks by estimated learning progress
 and reaches high-speed ANYmal~D locomotion across stairs, slopes, gravel and
 low-friction ground.

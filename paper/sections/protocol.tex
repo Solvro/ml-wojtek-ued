@@ -27,27 +27,34 @@ method to have something to select. On our earlier control-point
 heightfield space this correlation was only 0.02--0.17; on the parametric
 pilot space it was 0.41--0.74 (Appendix~\ref{app:pilot}).
 
-\paragraph{Difficulty sweep.} The same 2048 genomes shrunk toward flat by
-$d\in\{0.25,0.5,0.75,1.0\}$. We report $d=0.5$ and $d=1.0$; $d=0.25$ is
-solved by almost any policy trained near flat terrain and does not separate
-methods. A flat-terrain reference ($d=0$) checks that a method has not
-traded basic walking for terrain skills.
-\todo{$d=0$ is not in \texttt{eval\_brax.py} yet; add it or drop this
-sentence.}
+\paragraph{Difficulty sweep.} A second set of 2048 uniform genomes, shrunk
+toward flat by $d\in\{0.25,0.5,0.75,1.0\}$; the genomes are the same at
+every $d$, so $d=1.0$ is an independent uniform sample. We report $d=0.5$
+and $d=1.0$; $d=0.25$ is solved by almost any policy trained near flat
+terrain and does not separate methods.
 
-\paragraph{Solvable subset.} Mean success on the uniform levels that at
-least one evaluated policy solves, which removes levels no method can pass
-from the denominator.
-\todo{Computed offline from the per-level \texttt{.npz} outputs; define
-``solves'' (any episode vs.\ $\geq50\%$) before reporting.}
+\paragraph{Flat reference.} 64 flat levels ($d=0$), two passes of 4
+episodes, check that a method has not traded basic walking for terrain
+skills.
+
+\paragraph{Solvable subset.} Uniform success restricted to levels that some
+policy can pass, which removes levels no method passes from the
+denominator. A level counts as solvable if at least one run of any method
+on that robot succeeds in at least one episode of pass A; every run is
+scored on pass B over those levels, and vice versa, and the two are
+averaged. As for CVaR, selecting and scoring on different passes keeps
+selection noise out of the estimate. The subset depends on the set of
+evaluated runs, so the metric is comparable only within one table.
 
 \paragraph{Capability envelopes.} For each of seven features (noise,
 slope up, slope down, stairs up, stairs down, gaps, blocks), the feature
-ramps from off to the end of its range in six steps with all other
-features off, 64 seeded levels per step. The \emph{envelope} is the
-largest feature magnitude still passed with 50\% success (linearly
-interpolated), the \emph{AUC} the mean success over the ramp.
-Envelopes are in Wojtek units for both robots.
+takes six evenly spaced magnitudes up to the end of its range with all
+other features off, 64 seeded levels per magnitude. The \emph{envelope} is
+the largest feature magnitude still passed with 50\% success (linearly
+interpolated between magnitudes; 0 if the smallest magnitude already
+fails), the \emph{AUC} the mean success over the six magnitudes. An
+envelope equal to the end of the range is censored: the policy may pass
+more. Envelopes are in Wojtek units for both robots.
 
 \paragraph{Held-out suite.} Seven structured terrain families no method
 trains on, each at four strengths $k=1..4$ and 64 instances, radially
@@ -63,11 +70,15 @@ matching training, a sanity check), \texttt{newton\_elliptic},
 \texttt{half\_dt}, \texttt{full\_collision} and \texttt{soft\_contact}.
 \todo{Describe each variant (solver, friction cone, timestep, collision
 set, contact softness) from \texttt{src/scripts/eval\_sim2sim.py} once it
-exists, and state which level sets it runs.}
+exists, and state which level sets it runs. The script is not in the
+repository yet; if it does not land before submission, drop this paragraph,
+Table~\ref{tab:sim2sim}, H7--H8 and the sim2sim mentions in the
+introduction and limitations.}
 
 \paragraph{Aggregation.} Per-seed metrics are averaged over three seeds;
 per-level outputs are stored so that interquartile means and
 stratified bootstrap intervals across seeds~\citep{agarwal2021precipice}
 can be computed.
-\todo{Decide between seed mean $\pm$ std and IQM with stratified bootstrap
-for the main table; three seeds is few for either.}
+The generated tables report the seed mean $\pm$ sample standard deviation.
+\todo{Decide whether to add IQM with stratified bootstrap intervals; three
+seeds is few for either.}

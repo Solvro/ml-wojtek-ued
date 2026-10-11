@@ -42,17 +42,20 @@ uniform levels without training and adds them to the buffer.
 new levels come from the easy generator instead of the uniform one, and
 every replayed level is mutated by perturbing two randomly chosen
 parameters by $\mathcal{U}(-0.1,0.1)$ (clipped to $[0,1]$, seed kept). The
-children are scored in the next non-training iteration, with fresh easy
-levels filling the remaining lanes.
+next non-training iteration scores the children of the most recent replay
+batch (children of earlier consecutive replay batches are discarded), and
+fresh easy levels fill the remaining lanes.
 
-\paragraph{ACCEL-SFL.} ACCEL with the learnability score $p(1-p)$ in place
-of positive value loss. Unlike SFL~\citep{rutherford2024noregrets}, which
-samples uniformly and keeps a learnability buffer, this keeps ACCEL's
-generator, mutation and replay and changes only the score. In our job
-scripts this variant also uses a ``grow'' mutation that, after the local
-edit, scales the genome's distance from flat by $\mathcal{U}(1,1.3)$.
-\todo{Either rerun ACCEL-SFL without grow or add an ACCEL-grow arm: as
-configured, ACCEL vs ACCEL-SFL differs in two switches.}
+\paragraph{ACCEL-SFL.} ACCEL with two changes: the learnability score
+$p(1-p)$ in place of positive value loss, and a ``grow'' mutation that,
+after the local edit, scales the genome's distance from flat by
+$\mathcal{U}(1,1.3)$. Unlike SFL~\citep{rutherford2024noregrets}, which
+samples uniformly and keeps a learnability buffer, it keeps ACCEL's
+generator and replay. ACCEL and ACCEL-SFL therefore differ in two
+switches, score and mutation, and a difference between them cannot be
+attributed to the score alone. The pilot (\S\ref{sec:pilot}) ran the
+missing arm, ACCEL-grow (grow mutation, positive value loss); the main
+study does not.
 
 \paragraph{PAIRED~\citep{dennis2020paired}.} A learned generator maps a
 16-dimensional Gaussian latent through an MLP to a sigmoid-squashed

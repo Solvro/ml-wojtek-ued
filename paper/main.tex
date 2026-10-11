@@ -27,10 +27,10 @@ trained in a loop that swaps the heightfield of every environment at every
 reset, and six methods (DR, DR-easy, PLR$^\perp$, ACCEL, ACCEL-SFL, PAIRED)
 at matched environment-step budgets.
 The evaluation protocol reports uniform-level success, cross-fitted CVaR,
-per-level pass-to-pass reliability, per-feature capability envelopes and a
-held-out structured terrain suite.
-The level space is calibrated with pilot policies so that uniform sampling is
-neither trivially easy nor hopeless.
+success on the solvable subset, per-level pass-to-pass reliability,
+per-feature capability envelopes and a held-out structured terrain suite.
+The level space is sized to the capability envelopes of pilot policies, so
+that uniform sampling is meant to be neither trivially easy nor hopeless.
 In a pilot on a wider, uncalibrated space, the starting level distribution
 dominated: DR on easy levels matched ACCEL, and regret-based curation
 recovered part of the gap left by a uniform generator.
