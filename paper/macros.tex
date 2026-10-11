@@ -12,9 +12,17 @@
 \newcommand{\placeholder}[1]{%
   \noindent\fbox{\parbox{0.95\linewidth}{\centering\small\color{gray}%
   \textbf{PLACEHOLDER}\\#1}}}
-% tables/<name>.tex is a bare tabular written by the results generator
+% tables/<name>.tex is a bare tabular written by the results generator;
+% shrunk to the line width when wider
+\newsavebox{\resultbox}
 \newcommand{\resulttable}[2]{%
-  \IfFileExists{tables/#1.tex}{\input{tables/#1.tex}}{\placeholder{#2}}}
+  \IfFileExists{tables/#1.tex}{%
+    \sbox{\resultbox}{\input{tables/#1.tex}}%
+    \ifdim\wd\resultbox>\linewidth
+      \resizebox{\linewidth}{!}{\usebox{\resultbox}}%
+    \else
+      \usebox{\resultbox}%
+    \fi}{\placeholder{#2}}}
 
 \newcommand{\plr}{PLR$^\perp$}
 \newcommand{\cvar}[1]{CVaR$_{#1}$}

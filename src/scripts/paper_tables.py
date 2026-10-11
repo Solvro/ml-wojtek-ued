@@ -1,8 +1,8 @@
 """Paper tables from `eval_brax.py` final evals and training summaries.
 
 Reads `<prefix>_<method>_seed<k>_final_eval.{json,npz}` from `--eval_dir`
-for every `--prefix robot=prefix` and writes `\\input`-able booktabs
-fragments plus a per-run CSV to `--out`:
+for every `--prefix robot=prefix` and writes bare booktabs `tabular`s
+(the paper owns float, caption and label) plus a per-run CSV to `--out`:
 
 - `main.tex`: success (%) per method, column groups per robot: uniform,
   CVaR25, solvable subset, OOD suite, flat; mean +- std over seeds, best
@@ -188,14 +188,9 @@ def by_method(runs: list[Run], methods: list[str]) -> list[list[Run]]:
     return [[r for r in runs if r.method == m] for m in methods]
 
 
-def table(caption: str, label: str, spec: str, head: list[str], body: list[str]) -> str:
+def tabular(spec: str, head: list[str], body: list[str]) -> str:
     return "\n".join(
         [
-            r"\begin{table}[t]",
-            r"\centering",
-            r"\small",
-            rf"\caption{{{caption}}}",
-            rf"\label{{{label}}}",
             rf"\begin{{tabular}}{{{spec}}}",
             r"\toprule",
             *head,
@@ -203,7 +198,6 @@ def table(caption: str, label: str, spec: str, head: list[str], body: list[str])
             *body,
             r"\bottomrule",
             r"\end{tabular}",
-            r"\end{table}",
             "",
         ]
     )
@@ -231,16 +225,8 @@ def main_table(runs: dict[str, list[Run]]) -> str:
         "Method & " + " & ".join([names] * len(robots)) + r" \\",
     ]
     body = [" & ".join(row) + r" \\" for row in zip(*columns, strict=True)]
-    caption = (
-        r"Success rate (\%) of the deterministic policy, mean $\pm$ std over "
-        r"seeds; best per column in bold. Uniform: levels drawn from the full "
-        r"8-parameter space; CVaR$_{25}$: its worst 25\% of levels "
-        r"(cross-fitted between two passes); Solvable: uniform levels at least "
-        r"one run passes (cross-fitted); OOD suite: held-out structured "
-        r"terrains; Flat: no terrain."
-    )
     spec = "l" + " ".join(["c" * n] * len(robots))
-    return table(caption, "tab:main", spec, head, body)
+    return tabular(spec, head, body)
 
 
 def axis_unit(index: int) -> tuple[str, float]:
@@ -275,25 +261,13 @@ def envelopes_table(runs: dict[str, list[Run]]) -> str:
         title = name.replace("_", " ")
         columns.append((f"{title} ({unit})", f"axis/{name}/envelope", scale, 1))
     head, body = per_robot_table(runs, columns, bold=True)
-    caption = (
-        r"Capability envelopes: the largest feature magnitude passed at 50\% "
-        r"success with every other feature off, mean $\pm$ std over seeds. "
-        r"In Wojtek units: Go1's levels scale every length by 2.5 (slopes do "
-        r"not), and its envelopes are reported before that scaling."
-    )
     spec = "ll" + "c" * len(columns)
-    return table(caption, "tab:envelopes", spec, head, body)
+    return tabular(spec, head, body)
 
 
 def compute_table(runs: dict[str, list[Run]]) -> str:
     head, body = per_robot_table(runs, COMPUTE_COLUMNS, bold=False)
-    caption = (
-        r"Training compute per run, mean $\pm$ std over seeds. GPU-h: wall "
-        r"clock on one GPU; sim steps count every simulated env step "
-        r"(PAIRED's antagonist, ACCEL/PLR explore iterations); student steps "
-        r"fed a student PPO update."
-    )
-    return table(caption, "tab:compute", "llccc", head, body)
+    return tabular("llccc", head, body)
 
 
 def write_csv(runs: dict[str, list[Run]], path: Path) -> None:
