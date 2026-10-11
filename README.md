@@ -54,6 +54,7 @@ just eval --algo ppo     # evaluate the latest checkpoint of an algo
 | `just eval *args` | evaluate a checkpoint (`--algo` required; `--run`/`--step` default to latest) |
 | `just eval-levels *args` | evaluate a checkpoint's generalization across generated levels; needs `build-accel-arena` first |
 | `just eval-sim *args` | watch a checkpoint walk random ACCEL levels in the MuJoCo viewer; needs `build-accel-arena` first |
+| `just paper` | build `paper/main.pdf` with `tectonic` (see [paper/README.md](paper/README.md)) |
 
 ## Env usage
 

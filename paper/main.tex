@@ -1,0 +1,55 @@
+% Venue-neutral draft. To switch to a venue template, replace the
+% \documentclass + layout block below; content lives in sections/ and
+% macros.tex, which use only standard packages.
+\documentclass[10pt]{article}
+\usepackage[margin=1in]{geometry}
+
+\input{macros.tex}
+
+\title{Unsupervised Environment Design for Legged Locomotion:\\
+A Minimal Benchmark on Closed- and Open-Chain Quadrupeds}
+\author{Anonymous Authors}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Unsupervised environment design (UED) methods such as PLR, ACCEL, SFL and
+PAIRED are mostly compared on 2D grid worlds, mazes and BipedalWalker, while
+legged-locomotion curricula are usually hand-designed and evaluated against
+a single baseline. To our knowledge, no benchmark compares several UED
+methods under one protocol on 3D legged locomotion.
+We present a minimal one: two quadrupeds in MuJoCo MJX, a small closed-chain
+robot (Wojtek, ${\sim}0.10$\,m tall) and the open-chain Unitree Go1, a
+level space of eight interpretable terrain parameters, a brax PPO student
+trained in a loop that swaps the heightfield of every environment at every
+reset, and six methods (DR, DR-easy, PLR$^\perp$, ACCEL, ACCEL-SFL, PAIRED)
+at matched environment-step budgets.
+The evaluation protocol reports uniform-level success, cross-fitted CVaR,
+per-level pass-to-pass reliability, per-feature capability envelopes and a
+held-out structured terrain suite.
+The level space is calibrated with pilot policies so that uniform sampling is
+neither trivially easy nor hopeless.
+In a pilot on a wider, uncalibrated space, the starting level distribution
+dominated: DR on easy levels matched ACCEL, and regret-based curation
+recovered part of the gap left by a uniform generator.
+\todo{Replace the last sentence with the v10 headline once results land.}
+\end{abstract}
+
+\input{sections/intro.tex}
+\input{sections/related.tex}
+\input{sections/benchmark.tex}
+\input{sections/methods.tex}
+\input{sections/protocol.tex}
+\input{sections/results.tex}
+\input{sections/discussion.tex}
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\clearpage
+\appendix
+\input{appendix.tex}
+
+\end{document}

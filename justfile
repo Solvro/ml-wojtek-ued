@@ -113,3 +113,10 @@ eval-levels *args:
 [group('eval')]
 eval-sim *args:
     uv run mjpython src/scripts/eval_sim.py {{ args }}
+
+# --- paper ---
+
+# Build paper/main.pdf (needs tectonic)
+[group('paper')]
+paper:
+    cd paper && tectonic main.tex
