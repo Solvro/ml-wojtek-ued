@@ -80,11 +80,28 @@ def test_half_dt_keeps_effective_solref(model: mujoco.MjModel) -> None:
     np.testing.assert_allclose(m.geom_solref[model.geom("link_geom").id], [-1000, -10])
 
 
-def test_soft_contact_sets_every_geom(model: mujoco.MjModel) -> None:
+def test_soft_contact_scales_run_timeconst(model: mujoco.MjModel) -> None:
     m = s2s.soft_contact(model, None)
-    np.testing.assert_allclose(m.geom_solref, np.tile(s2s.SOFT_SOLREF, (m.ngeom, 1)))
-    np.testing.assert_allclose(m.geom_solimp, np.tile(s2s.SOFT_SOLIMP, (m.ngeom, 1)))
+    scale = s2s.SOFT_TIMECONST_SCALE
+    # 0.001 s runs at the 2 x 0.004 s floor: scaled from there
+    np.testing.assert_allclose(m.geom_solref[model.geom("box").id], [0.008 * scale, 2])
+    leg = model.geom("leg_collision").id
+    np.testing.assert_allclose(m.geom_solref[leg], [0.02 * scale, 1])
+    link = model.geom("link_geom").id
+    np.testing.assert_allclose(m.geom_solref[link], [-1000, -10])
+    np.testing.assert_allclose(m.geom_solimp, model.geom_solimp)
     np.testing.assert_allclose(m.eq_solref, model.eq_solref)
+
+
+def test_soft_contact_without_refsafe_scales_raw_timeconst(
+    model: mujoco.MjModel,
+) -> None:
+    model.opt.disableflags |= mujoco.mjtDisableBit.mjDSBL_REFSAFE
+    m = s2s.soft_contact(model, None)
+    box = model.geom("box").id
+    np.testing.assert_allclose(
+        m.geom_solref[box], [0.001 * s2s.SOFT_TIMECONST_SCALE, 2]
+    )
 
 
 def test_full_collision_meshes_hit_terrain_only(tmp_path: Path) -> None:

@@ -100,34 +100,38 @@ SOLREF_FIELDS = (
 )
 
 
+def run_timeconst(m: mujoco.MjModel, solref: np.ndarray) -> np.ndarray:
+    """Solref time constants as MuJoCo runs them: refsafe raises one below
+    2 x timestep to that floor (Wojtek's 0.001 s runs at 0.008 s)."""
+    timeconst = solref[..., 0]
+    if m.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_REFSAFE:
+        return timeconst.copy()
+    # direct (negative) stiffness/damping is not a time constant
+    return np.where(timeconst > 0, np.maximum(timeconst, 2 * m.opt.timestep), timeconst)
+
+
 def half_dt(model: mujoco.MjModel, base: Any) -> mujoco.MjModel:
     m = copy.deepcopy(model)
-    refsafe = not m.opt.disableflags & mujoco.mjtDisableBit.mjDSBL_REFSAFE
-    if refsafe:
-        # MuJoCo raises a solref time constant below 2 x timestep to that
-        # floor (Wojtek's 0.001 s runs at 0.008 s); pin it at the training
-        # floor so halving dt changes only the integration step
-        floor = 2 * m.opt.timestep
-        for name in SOLREF_FIELDS:
-            solref = getattr(m, name)
-            timeconst = solref[..., 0]
-            solref[..., 0] = np.where(
-                timeconst > 0, np.maximum(timeconst, floor), timeconst
-            )
+    # pin time constants at the training floor so halving dt changes only
+    # the integration step
+    for name in SOLREF_FIELDS:
+        solref = getattr(m, name)
+        solref[..., 0] = run_timeconst(m, solref)
     m.opt.timestep /= 2
     return m
 
 
-# training contacts: Wojtek solref 0.001 s (0.008 s after the 2 dt floor),
-# Go1 0.02 s; both solimp (0.9, 0.95, 0.001)
-SOFT_SOLREF = (0.03, 1.0)
-SOFT_SOLIMP = (0.7, 0.95, 0.005, 0.5, 2.0)
+# relative to each robot's training contacts: Wojtek 0.001 s (runs at the
+# 0.008 s floor) -> 0.016 s, Go1 0.02 s -> 0.04 s
+SOFT_TIMECONST_SCALE = 2.0
 
 
 def soft_contact(model: mujoco.MjModel, base: Any) -> mujoco.MjModel:
     m = copy.deepcopy(model)
-    m.geom_solref[:] = SOFT_SOLREF
-    m.geom_solimp[:] = SOFT_SOLIMP
+    timeconst = run_timeconst(m, m.geom_solref)
+    m.geom_solref[:, 0] = np.where(
+        timeconst > 0, SOFT_TIMECONST_SCALE * timeconst, timeconst
+    )
     return m
 
 
@@ -199,7 +203,7 @@ VARIANTS: dict[str, tuple[str, Transform]] = {
         full_collision,
     ),
     "soft_contact": (
-        f"contact solref {SOFT_SOLREF}, solimp {SOFT_SOLIMP[:3]}",
+        f"contact solref time constant x{SOFT_TIMECONST_SCALE} of training",
         soft_contact,
     ),
 }

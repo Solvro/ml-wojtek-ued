@@ -474,7 +474,7 @@ network and deterministic policy as eval_brax; no physics DR.
   | `newton_elliptic` | elliptic cones, 100 iterations / 50 line search (training: pyramidal, Wojtek 2 / Go1 1 iterations) | reliance on the unconverged training solver |
   | `half_dt` | timestep 0.004 -> 0.002 s, 2 CPU steps per training substep (policy rate unchanged); solref time constants below the old 2·dt floor pinned at 0.008 s | integration-step sensitivity only |
   | `full_collision` | Wojtek: the source model's per-link `*_collision` meshes collide with the terrain (`build_model` disables them; spec recompiled for convex hulls). Go1: Playground's `go1_mjx_fullcollisions.xml` | contacts the MJX model drops (shins, thighs, trunk) |
-  | `soft_contact` | all geoms solref (0.03 s, 1.0), solimp (0.7, 0.95, 0.005) (training: Wojtek 0.001 s -> 0.008 s floor, Go1 0.02 s; solimp (0.9, 0.95, 0.001)) | contact stiffness/impedance |
+  | `soft_contact` | geom solref time constant x2 (`SOFT_TIMECONST_SCALE`) of the value training runs at: Wojtek 0.001 s (runs at the 0.008 s floor) -> 0.016 s, Go1 0.02 -> 0.04 s; damping ratio, solimp unchanged | contact stiffness, relative to each robot |
 
 - Levels: `flat` (`suite_instances`), `param/uniform` = first `num_levels`
   (default 256) of eval_brax's 2048-level draw (same seed, rows line up
@@ -492,14 +492,36 @@ network and deterministic policy as eval_brax; no physics DR.
   same state differs by up to 1.6 rad/s in qvel at the training solver
   (2 iterations) but 0.01 at 50 iterations: the gap is the unconverged
   solver, not the bridge.
-- Go1 does **not** match: `v9_go1_dr_easy_seed0` (same set sizes) flat
-  .52 vs MJX .73, suite 1-2 .41 vs .58, uniform .03 vs .13. Airborne steps
-  agree to 1e-6; after touchdown CPU's sphere-hfield collision reports
-  other contact counts per foot than MJX's (`*_floor_found` 2 vs 1), and
-  this policy is very contact-sensitive (flat success .60 / .38 / .11 / .01
-  at floor solref 0.020 / 0.022 / 0.025 / 0.030 s). For Go1, `mjx_match` is
-  itself a simulator shift; compare against eval_brax (its npz rows line up
-  with `param/uniform`).
+- Go1 does **not** match on heightfields, and the bridge is not the cause.
+  v10 checkpoints, 32 flat / 64 uniform / 32 per suite cell, 4 episodes,
+  MJX vs `mjx_match` success:
+
+  | Checkpoint | flat | param/uniform | suite 1-2 |
+  |---|---|---|---|
+  | `v10_go1_dr_easy_seed1` | .92 / .08 | .25 / .01 | .78 / .06 |
+  | `v10_go1_accel_seed0` | .71 / .05 | .11 / .00 | .58 / .03 |
+
+  - Same flat levels with the `floor` hfield swapped for a plane in both
+    simulators: MJX .941 / CPU .941 (dr_easy), .754 / .754 (accel). The
+    harness (latency/substeps, ctrl, sensors, write-back) reproduces MJX.
+  - Root cause: CPU MuJoCo collides a sphere with each hfield prism on its
+    own. A Go1 foot (r 0.023 m, up to 15 mm penetration at solref 0.02 s)
+    over a triangle edge gets a second contact from the neighbouring prism,
+    normal tilted 23-47° off vertical, even on a perfectly flat level. MJX's
+    `hfield_sphere` keeps only points within 1 mm of the deepest, so it
+    reports one vertical contact per foot (flat hfield = plane in MJX).
+    Teacher-forced from MJX states, converged solver on both: one control
+    step's qvel error is 1e-5-1e-4 with equal contact sets, up to 0.2 rad/s
+    with the extra CPU contacts.
+  - Not the solver: 100 Newton iterations on CPU only lifts flat to .51
+    (dr_easy) / .18 (accel); `ccd_iterations` 100 changes nothing, libccd
+    (`nativeccd` off) is worse (0.0).
+  - Not contact sensitivity: on the plane, Go1 dr_easy keeps flat .95
+    `soft_contact`, .94 `half_dt`, .95 `newton_elliptic`.
+  - Wojtek (0.046 m feet, 0.008 s contacts) shows no such gap; its flat
+    success under `soft_contact` is .94 (`mjx_match` .95, 32 levels).
+  - Consequence: every Go1 variant on hfields is floored by `mjx_match`
+    itself, so Go1 rows measure the CPU hfield collider, not transfer.
 - Cost (10-core Apple M-series, default args): Wojtek ~18 min wall / 1.8
   CPU-h for all five variants (160-290 s per variant, `full_collision`
   slowest), Go1 ~7 min / 0.4 CPU-h.
