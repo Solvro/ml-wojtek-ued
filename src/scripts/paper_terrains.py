@@ -91,13 +91,13 @@ def _render(
 
 def _grid(images: list[tuple[str, np.ndarray]], cols: int, path: Path) -> None:
     rows = int(np.ceil(len(images) / cols))
-    fig, axes = plt.subplots(rows, cols, figsize=(1.3 * cols, 1.05 * rows))
+    fig, axes = plt.subplots(rows, cols, figsize=(1.3 * cols, 1.25 * rows))
     for ax, (title, image) in zip(axes.flat, images, strict=False):
         ax.imshow(image)
         ax.set_title(title, fontsize=8, pad=2)
     for ax in axes.flat:
         ax.axis("off")
-    fig.tight_layout(pad=0.6, w_pad=0.2, h_pad=0.4)
+    fig.tight_layout(pad=0.4, w_pad=0.3, h_pad=1.2)
     fig.savefig(path, dpi=300)
     plt.close(fig)
 
