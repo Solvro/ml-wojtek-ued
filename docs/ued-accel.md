@@ -478,4 +478,29 @@ PYTHONPATH=src uv run python src/scripts/paper_tables.py \
 - `--dump_wandb FILE`: fetches the training-run summaries for the prefixes
   from `dominikgalus9-wroc-aw-university-of-science-and-technology/wojtyla`
   and writes that JSON.
+- Robot names in headers: `ROBOT_LABEL` (`wojtek` prints as W01-TEK).
+
+## Paper figures — `scripts/paper_figures.py` {#paper-figures}
+
+```sh
+PYTHONPATH=src uv run python src/scripts/paper_figures.py \
+  --dump_history history.json --prefix wojtek=v10_wojtek go1=v10_go1
+PYTHONPATH=src uv run python src/scripts/paper_figures.py \
+  --history history.json --prefix wojtek=v10_wojtek go1=v10_go1 --out paper/figs
+MUJOCO_GL=cgl JAX_PLATFORMS=cpu PYTHONPATH=src uv run python \
+  src/scripts/paper_figures.py --terrains --out paper/figs
+```
+
+- `--dump_history`: per finished run, `eval/d{0.5,1.0}/success_rate` and the
+  `level/*` composition vs `env_steps` from wandb; rows with a NaN are dropped.
+- `curves.pdf`: eval success vs env steps, robot x d panels, seed mean with
+  min-max band.
+- `composition.pdf`: mean physical value of the magnitude parameters and
+  genome distance among training levels, Wojtek units, running mean over 9 points.
+- `terrains.pdf` / `robots.pdf` (`scripts/paper_terrains.py`): offscreen MuJoCo
+  renders of one level per feature at full strength plus uniform samples, and
+  both robots on one shared genome. Needs the built assets (`just build`,
+  `just build-accel-arena`); `MUJOCO_GL=cgl` on macOS.
+- Overleaf: upload the PDFs into a `figs/` folder; `\resultfig` falls back to a
+  placeholder while a file is missing.
 - `results.csv`: one row per run, every value the tables use.
