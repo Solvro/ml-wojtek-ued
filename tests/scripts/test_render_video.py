@@ -1,10 +1,22 @@
 import argparse
+import dataclasses
+import json
+from pathlib import Path
 
 import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from scripts.render_video import frame_steps, hold_command, parse_level
+from config.hfield_config import HFieldConfig
+from scripts.render_video import check_arena, frame_steps, hold_command, parse_level
+
+RUN = HFieldConfig(amplitude=0.3, coarse_n=13, pad_radius=0.55, pad_taper=0.2)
+
+
+def write_spec(path: Path, config: HFieldConfig) -> Path:
+    hfield = {"elevation_z": 2 * config.amplitude, "nrow": config.grid_size}
+    path.write_text(json.dumps({"pad_radius": config.pad_radius, "hfield": hfield}))
+    return path
 
 
 def test_parse_level_reads_difficulty_and_seed() -> None:
@@ -42,3 +54,26 @@ def test_hold_command_without_resample_counter() -> None:
     held = hold_command({"command": jnp.zeros(3)}, jnp.ones(3))
     np.testing.assert_allclose(held["command"], np.ones(3))
     assert set(held) == {"command"}
+
+
+def test_check_arena_accepts_matching_build(tmp_path: Path) -> None:
+    check_arena(write_spec(tmp_path / "spec.json", RUN), RUN)
+
+
+def test_check_arena_rejects_default_build_with_rebuild_command(
+    tmp_path: Path,
+) -> None:
+    spec = write_spec(tmp_path / "spec.json", HFieldConfig())
+    with pytest.raises(ValueError, match="hfield_params.pad_radius=0.55"):
+        check_arena(spec, RUN)
+
+
+def test_check_arena_rejects_amplitude_mismatch(tmp_path: Path) -> None:
+    spec = write_spec(tmp_path / "spec.json", dataclasses.replace(RUN, amplitude=0.12))
+    with pytest.raises(ValueError, match=r"'amplitude': 0\.12"):
+        check_arena(spec, RUN)
+
+
+def test_check_arena_missing_build(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError, match="just build-accel-arena"):
+        check_arena(tmp_path / "spec.json", RUN)

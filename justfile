@@ -70,10 +70,10 @@ lint:
 build:
     uv run python -m wojtek_env.tools.build_model
 
-# Write the "accel" terrain arena's static assets (scene/hfield/spec/lookup)
+# Write the "accel" terrain arena's static assets (scene/hfield/spec/lookup); pass hfield_params.* overrides
 [group('build')]
-build-accel-arena:
-    uv run python -m hfield.arena
+build-accel-arena *args:
+    uv run python -m hfield.arena {{ args }}
 
 # --- training ---
 

@@ -10,6 +10,7 @@ Needs the built assets; MUJOCO_GL=cgl on macOS, egl/osmesa headless.
 """
 
 import argparse
+import json
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -22,9 +23,11 @@ import numpy as np
 from brax.io import model as brax_model
 from brax.training.agents.ppo import networks as ppo_networks
 
+from config.hfield_config import HFieldConfig
 from hfield.level_space import make_level_space
 from scripts.brax_ued import ROBOT_SCALE, hfield_config, make_env, make_network
 from utils.env import FunctionalEnv
+from wojtek_env import paths
 
 # mujoco is a C extension that ty cannot introspect
 mj: Any = mujoco
@@ -63,6 +66,35 @@ def check_checkpoint(params: Any, env: FunctionalEnv) -> None:
             f"checkpoint observations (actor {actor}, critic {critic}) do not "
             f"match the env built from these flags {expected}; pass the "
             "--robot / env flags the checkpoint was trained with"
+        )
+
+
+def check_arena(spec_path: Path, config: HFieldConfig) -> None:
+    rebuild = (
+        "build it with `just build-accel-arena "
+        f"hfield_params.amplitude={config.amplitude} "
+        f"hfield_params.coarse_n={config.coarse_n} "
+        f"hfield_params.pad_radius={config.pad_radius} "
+        f"hfield_params.pad_taper={config.pad_taper}`"
+    )
+    if not spec_path.exists():
+        raise FileNotFoundError(f"no accel arena at {spec_path}; {rebuild}")
+    spec = json.loads(spec_path.read_text())
+    built = {
+        "pad_radius": spec["pad_radius"],
+        "amplitude": spec["hfield"]["elevation_z"] / 2,
+        "grid": spec["hfield"]["nrow"],
+    }
+    wanted = {
+        "pad_radius": config.pad_radius,
+        "amplitude": config.amplitude,
+        "grid": config.grid_size,
+    }
+    # amplitude sets the hfield's height scale: a mismatch runs silently
+    if not all(np.isclose(built[k], wanted[k]) for k in wanted):
+        raise ValueError(
+            f"the accel arena at {spec_path} was built with {built}, these "
+            f"flags need {wanted}; re{rebuild}"
         )
 
 
@@ -166,6 +198,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     config = hfield_config(args)
+    if args.robot == "wojtek":
+        check_arena(paths.terrain_paths("accel")["spec"], config)
     env = make_env(args, config, num_envs=1, train=False)
     params = brax_model.load_params(args.checkpoint)
     check_checkpoint(params, env)

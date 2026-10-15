@@ -550,10 +550,13 @@ just render-video --checkpoint artifacts/checkpoints/<run>.pkl \
   defaults = `brax_ued.py`'s). The `.pkl` holds only params; a checkpoint
   whose observation sizes differ from the built env fails before rollout.
 - Needs the `accel` arena built with the same geometry as the run, e.g.
-  `PYTHONPATH=src uv run python -m hfield.arena hfield_params.amplitude=0.3
+  `just build-accel-arena hfield_params.amplitude=0.3
   hfield_params.coarse_n=13 hfield_params.pad_radius=0.55
   hfield_params.pad_taper=0.2` (plain `just build-accel-arena` builds
-  `pad_radius` 0.6, which the env refuses).
+  `HFieldConfig`'s defaults: amplitude 0.12, `pad_radius` 0.6). For
+  `--robot wojtek` the script checks the arena's spec (`pad_radius`, height
+  scale, grid size) against the flags first and fails with this command
+  filled in; an amplitude mismatch would otherwise run silently.
 - `--level D:SEED` (repeatable): `space.scaled(default_rng(SEED), 1, D)`,
   one clip each, named `<checkpoint stem>_d<D>_s<SEED>.mp4`; `demo.mp4` in
   the same `--out_dir` (default `artifacts/videos`) = all clips in order.
