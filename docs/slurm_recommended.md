@@ -10,6 +10,22 @@ they're comparable apples-to-apples.
 script to `scripts/eval_levels.py` with `EVAL_ARGS` instead, and always forces
 the `accel` arena build regardless of `ALGO`.
 
+**Terrain difficulty (`HFIELD_ARGS`)** — the physical elevation envelope
+(`amplitude`, `patch_radius`, ...) is baked once into the compiled arena's
+MJCF `hfield` `size`/`pos` by `hfield.arena` at build time; it is **not**
+reactive to `hfield_params.*` overrides passed only to `TRAIN_ARGS`/
+`EVAL_ARGS`, since `hfield_size` is static post-compile (see
+[ued-accel.md](ued-accel.md#arena)). Use `HFIELD_ARGS` to set
+`hfield_params.*` overrides once — `slurm.sh` passes it to the arena build
+*and* appends it to `EVAL_ARGS` (always) and `TRAIN_ARGS` (for
+`accel`/`accel_top_k` only, since `ppo`/`ppo_dr` configs have no
+`hfield_params` field), so the compiled arena and the runtime `HFieldManager`
+never drift apart:
+
+```bash
+sbatch --job-name=eval_ppo_dr --export=ALL,MODE=eval,ALGO=ppo_dr,HFIELD_ARGS="hfield_params.amplitude=0.30 hfield_params.coarse_n=13",EVAL_ARGS="run=ppo_dr_seed_1234_envnum_8192" slurm.sh
+```
+
 ## Training
 
 **ACCEL (vanilla, single level per iteration)** — `environment_params.envs_num`

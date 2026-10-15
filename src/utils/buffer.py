@@ -15,3 +15,6 @@ class LevelBuffer:
 
     def get(self):
         return [value for _, value in self._entries]
+
+    def clear(self) -> None:
+        self._entries = []

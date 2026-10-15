@@ -22,26 +22,42 @@ cd "$ROOT_DIR"
 #   sbatch --export=ALL,ALGO=accel slurm.sh
 #   sbatch --export=ALL,MODE=eval,ALGO=accel slurm.sh
 MODE="${MODE:-train}"   # train | eval
-ALGO="${ALGO:-ppo}"     # ppo | ppo_dr | accel | accel_top_k
+ALGO="${ALGO:-ppo}"     # ppo | ppo_dr | ppo_dr_terrain | accel | accel_top_k
 
 case "$ALGO" in
-    ppo)          TRAIN_SCRIPT="src/scripts/ppo.py" ;;
-    ppo_dr)       TRAIN_SCRIPT="src/scripts/ppo_dr.py" ;;
-    accel)        TRAIN_SCRIPT="src/scripts/accel.py" ;;
-    accel_top_k)  TRAIN_SCRIPT="src/scripts/accel_top_k.py" ;;
-    *) echo "Unknown ALGO: $ALGO (ppo|ppo_dr|accel|accel_top_k)" >&2; exit 1 ;;
+    ppo)             TRAIN_SCRIPT="src/scripts/ppo.py" ;;
+    ppo_dr)          TRAIN_SCRIPT="src/scripts/ppo_dr.py" ;;
+    ppo_dr_terrain)  TRAIN_SCRIPT="src/scripts/ppo_dr_terrain.py" ;;
+    accel)           TRAIN_SCRIPT="src/scripts/accel.py" ;;
+    accel_top_k)     TRAIN_SCRIPT="src/scripts/accel_top_k.py" ;;
+    *) echo "Unknown ALGO: $ALGO (ppo|ppo_dr|ppo_dr_terrain|accel|accel_top_k)" >&2; exit 1 ;;
 esac
 
 case "$ALGO" in
-    ppo|ppo_dr)        DEFAULT_TRAIN_ARGS="environment_params.envs_num=4096 training_params.iterations=5000000" ;;
-    accel|accel_top_k) DEFAULT_TRAIN_ARGS="environment_params.envs_num=4096" ;;
+    ppo|ppo_dr|ppo_dr_terrain) DEFAULT_TRAIN_ARGS="environment_params.envs_num=4096 training_params.iterations=5000000" ;;
+    accel|accel_top_k)         DEFAULT_TRAIN_ARGS="environment_params.envs_num=4096" ;;
 esac
 TRAIN_ARGS="${TRAIN_ARGS:-$DEFAULT_TRAIN_ARGS}"
 EVAL_ARGS="${EVAL_ARGS:-}"
 
+# hfield_params.* overrides (e.g. hfield_params.amplitude=0.30), shared by the
+# arena build and every script that reads terrain difficulty, so the compiled
+# arena's physical envelope can never drift out of sync with what the
+# training/eval script thinks it's using.
+HFIELD_ARGS="${HFIELD_ARGS:-}"
+EVAL_ARGS="$EVAL_ARGS $HFIELD_ARGS"
+case "$ALGO" in
+    ppo_dr_terrain|accel|accel_top_k) TRAIN_ARGS="$TRAIN_ARGS $HFIELD_ARGS" ;;
+esac
+
 NEED_ARENA=0
 [ "$MODE" = "eval" ] && NEED_ARENA=1
-case "$ALGO" in accel|accel_top_k) NEED_ARENA=1 ;; esac
+case "$ALGO" in ppo_dr_terrain|accel|accel_top_k) NEED_ARENA=1 ;; esac
+
+echo "MODE=$MODE ALGO=$ALGO NEED_ARENA=$NEED_ARENA"
+echo "TRAIN_ARGS=$TRAIN_ARGS"
+echo "EVAL_ARGS=$EVAL_ARGS"
+echo "HFIELD_ARGS=$HFIELD_ARGS"
 
 DONE_MARKER="$ROOT_DIR/artifacts/DONE"
 
@@ -72,7 +88,7 @@ pip install --upgrade pip
 pip install -e .
 
 python3 -m wojtek_env.tools.build_model
-[ "$NEED_ARENA" = "1" ] && python3 -m hfield.arena
+[ "$NEED_ARENA" = "1" ] && python3 -m hfield.arena $HFIELD_ARGS
 
 if [ "$MODE" = "eval" ]; then
     python3 src/scripts/eval_levels.py algo="$ALGO" $EVAL_ARGS

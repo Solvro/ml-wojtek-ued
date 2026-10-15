@@ -32,7 +32,7 @@ class HFieldManager:
         lx, ly = np.meshgrid(xs, ys)
         fine = _bilinear(level, -half, step, -half, step, lx, ly)
         taper = self._pad_taper(lx, ly)
-        return (0.5 + (fine - 0.5) * taper).astype(np.float32)
+        return (0.5 + (fine - 0.5) * taper * c.difficulty).astype(np.float32)
 
     def height_range(self, data: np.ndarray) -> tuple[float, float]:
         a = self.config.amplitude

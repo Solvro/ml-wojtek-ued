@@ -4,7 +4,6 @@ from typing import Any, cast
 import equinox as eqx
 import hydra
 import jax
-import jax.numpy as jnp
 import numpy as np
 import wandb
 from omegaconf import OmegaConf
@@ -22,9 +21,9 @@ from utils.checkpoint import (
     run_dir,
 )
 from utils.env import FunctionalEnv
-from utils.env_overrides import merge_overrides
+from utils.env_overrides import accel_arena_overrides, merge_overrides
 from utils.logging import Logger, quiet_dependencies
-from utils.ppo_helpers import eval_levels
+from utils.ppo_helpers import FALL_CAUSES, LevelEpisode, eval_levels
 
 
 def rollout_levels(
@@ -34,25 +33,56 @@ def rollout_levels(
     levels: np.ndarray,
     chunk_size: int,
     key: jax.Array,
-) -> tuple[jax.Array, jax.Array, jax.Array]:
+) -> tuple[jax.Array, LevelEpisode]:
     n = levels.shape[0]
     num_chunks = -(-n // chunk_size)
     padded = np.resize(levels, (num_chunks * chunk_size, *levels.shape[1:]))
 
-    rewards = []
-    terminated = []
+    chunks = []
     for start in range(0, padded.shape[0], chunk_size):
         hfield_data = level_to_hfield_data_batch(
             hfield_manager, padded[start : start + chunk_size]
         )
         key, chunk_key = jax.random.split(key)
-        reward, fell = jit_eval_levels(chunk_key, model, hfield_data)
-        rewards.append(reward)
-        terminated.append(fell)
+        chunks.append(jit_eval_levels(chunk_key, model, hfield_data))
 
-    reward = jnp.concatenate(rewards)[:n]
-    fell = jnp.concatenate(terminated)[:n]
-    return key, reward, fell
+    episodes = jax.tree.map(lambda *xs: np.concatenate(xs)[:n], *chunks)
+    return key, episodes
+
+
+def success(episodes: LevelEpisode, min_travel: float) -> np.ndarray:
+    return (np.asarray(episodes.fell) == 0) & (
+        np.asarray(episodes.travel) >= min_travel
+    )
+
+
+def summarize(episodes: LevelEpisode, min_travel: float) -> dict[str, float]:
+    fell = np.asarray(episodes.fell)
+    num_fell = float(fell.sum())
+    cause_rates = {
+        f"fall_{cause}_rate": (
+            float(np.asarray(episodes.causes[cause]).sum() / num_fell)
+            if num_fell > 0
+            else float("nan")
+        )
+        for cause in FALL_CAUSES
+    }
+    return {
+        "mean_reward": float(np.mean(episodes.reward)),
+        "success_rate": float(success(episodes, min_travel).mean()),
+        "fall_rate": float(fell.mean()),
+        "mean_travel": float(np.mean(episodes.travel)),
+        "mean_cmd_vx": float(np.mean(episodes.cmd_vx)),
+        "mean_forward_vel": float(np.mean(episodes.forward_vel)),
+        "base_contact_alive_frac": float(np.mean(episodes.base_contact_alive)),
+        **cause_rates,
+    }
+
+
+def level_success_corr(first: np.ndarray, second: np.ndarray) -> float:
+    if first.std() == 0 or second.std() == 0:
+        return float("nan")
+    return float(np.corrcoef(first, second)[0, 1])
 
 
 @hydra.main(version_base=None, config_name="eval_levels_config")
@@ -82,7 +112,7 @@ def main(cfg: EvalLevelsConfig) -> None:
     )
     meta = load_meta(directory)
 
-    hfield_config = HFieldConfig()
+    hfield_config = cast(HFieldConfig, OmegaConf.to_object(cfg.hfield_params))
     hfield_manager = HFieldManager(hfield_config)
     meta_overrides = meta["env_overrides"] or {}
     pad_radius = meta_overrides.get("terrain", {}).get(
@@ -90,19 +120,22 @@ def main(cfg: EvalLevelsConfig) -> None:
     )
     env_overrides = merge_overrides(
         meta_overrides,
-        {"terrain": {"enable": True, "arena": "accel", "pad_radius": pad_radius}},
+        accel_arena_overrides(pad_radius),
+        # success is judged on falls and travel; the stochastic cut would only
+        # add noise and end episodes that have not failed
+        {"no_progress": {"enable": False}},
     )
     env = FunctionalEnv(
         task=meta["env_task"],
-        env_overrides={
-            **env_overrides,
-            "sim": {"num_envs": cfg.chunk_size * cfg.episodes_per_level},
-        },
+        env_overrides=merge_overrides(
+            env_overrides,
+            {"sim": {"num_envs": cfg.chunk_size * cfg.episodes_per_level}},
+        ),
         seed=cfg.seed,
     )
 
     template = A2C(
-        dense_dim=meta["dense_dim"],
+        hidden_dims=meta["hidden_dims"],
         actor_obs_dim=meta["actor_obs_dim"],
         critic_obs_dim=meta["critic_obs_dim"],
         action_dim=meta["action_dim"],
@@ -127,21 +160,20 @@ def main(cfg: EvalLevelsConfig) -> None:
     key = jax.random.key(cfg.seed)
 
     levels = generate_batch(hfield_manager, rng, cfg.num_levels)
-    key, reward, terminated = rollout_levels(
+    key, first = rollout_levels(
         jit_eval_levels, model, hfield_manager, levels, cfg.chunk_size, key
     )
-
-    mean_reward = float(reward.mean())
-    success_rate = float((1.0 - terminated).mean())
-
-    success_per_level = np.asarray((1.0 - terminated).mean(axis=1))
-    num_worst = max(1, int(np.ceil(cfg.cvar_alpha * cfg.num_levels)))
-    worst_idx = np.argsort(success_per_level)[:num_worst]
-    key, cvar_reward, cvar_terminated = rollout_levels(
-        jit_eval_levels, model, hfield_manager, levels[worst_idx], cfg.chunk_size, key
+    # an independent second pass: ranks levels on the first and scores the
+    # worst on the second, so CVaR is not inflated by selection noise, and
+    # their per-level agreement says whether levels differ in difficulty
+    key, second = rollout_levels(
+        jit_eval_levels, model, hfield_manager, levels, cfg.chunk_size, key
     )
-    cvar_mean_reward = float(cvar_reward.mean())
-    cvar_success_rate = float((1.0 - cvar_terminated).mean())
+    first_per_level = success(first, cfg.min_travel).mean(axis=1)
+    second_per_level = success(second, cfg.min_travel).mean(axis=1)
+    num_worst = max(1, int(np.ceil(cfg.cvar_alpha * cfg.num_levels)))
+    worst_idx = np.argsort(first_per_level)[:num_worst]
+    worst = jax.tree.map(lambda x: x[worst_idx], second)
 
     run.log(
         {
@@ -150,12 +182,14 @@ def main(cfg: EvalLevelsConfig) -> None:
             "step": step,
             "num_levels": cfg.num_levels,
             "episodes_per_level": cfg.episodes_per_level,
-            "mean_reward": mean_reward,
-            "success_rate": success_rate,
+            "difficulty": hfield_config.difficulty,
+            "min_travel": cfg.min_travel,
+            **summarize(first, cfg.min_travel),
             "cvar_alpha": cfg.cvar_alpha,
             "num_worst_levels": num_worst,
-            "cvar_mean_reward": cvar_mean_reward,
-            "cvar_success_rate": cvar_success_rate,
+            **{f"cvar_{k}": v for k, v in summarize(worst, cfg.min_travel).items()},
+            "level_success_corr": level_success_corr(first_per_level, second_per_level),
+            "level_success_std": float(first_per_level.std()),
         }
     )
     run.finish()

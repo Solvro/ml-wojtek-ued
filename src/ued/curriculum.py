@@ -5,6 +5,7 @@ import numpy as np
 
 from modules.ppo_modules import A2C, Episode
 from ued.levels import (
+    fill_buffer,
     generate_batch,
     level_to_hfield_data,
     level_to_hfield_data_batch,
@@ -14,7 +15,7 @@ from ued.levels import (
 )
 from ued.regret import positive_value_loss, positive_value_loss_per_lane
 from ued.types import BatchCurator, Curator, PPOTrainer
-from utils.ppo_helpers import run_ppo_epochs
+from utils.ppo_helpers import rollout_metrics, run_ppo_epochs
 
 
 def mean_episode_reward(episode: Episode) -> float:
@@ -23,6 +24,32 @@ def mean_episode_reward(episode: Episode) -> float:
 
 def decide_replay(curator: Curator | BatchCurator) -> bool:
     return bool(curator.buffer.get()) and curator.rng.random() < curator.replay_prob
+
+
+def terrain_curriculum_step(
+    iteration: int,
+    curator: BatchCurator,
+    *,
+    coarse_n_start: int,
+    coarse_n_end: int,
+    coarse_n_stages: int,
+    ramp_iterations: int,
+    fill_ratio: float,
+) -> dict[str, Any]:
+    progress = min(1.0, iteration / max(1, ramp_iterations))
+    config = curator.hfield_manager.config
+    config.difficulty = progress
+
+    stage = min(coarse_n_stages - 1, int(progress * coarse_n_stages))
+    stage_frac = stage / max(1, coarse_n_stages - 1)
+    coarse_n = round(coarse_n_start + stage_frac * (coarse_n_end - coarse_n_start))
+
+    if coarse_n != config.coarse_n:
+        config.coarse_n = coarse_n
+        curator.buffer.clear()
+        fill_buffer(curator.buffer, curator.hfield_manager, curator.rng, fill_ratio)
+
+    return {"terrain_difficulty": progress, "terrain_coarse_n": config.coarse_n}
 
 
 # --- single-level variant (scripts/accel.py) ---------------------------
@@ -57,6 +84,7 @@ def generate_branch(
         "branch": 0,
         "regret_score": score,
         "mean_reward": mean_episode_reward(episode),
+        **rollout_metrics(episode),
     }
     return key, log
 
@@ -94,6 +122,7 @@ def replay_branch(
         "regret_score": score,
         "loss": float(loss),
         "mean_reward": mean_episode_reward(episode),
+        **rollout_metrics(episode),
     }
     return key, a2c, opt_state, log
 
@@ -139,6 +168,7 @@ def generate_branch_top_k(
         "regret_score": float(scores.mean()),
         "max_regret_score": float(scores.max()),
         "mean_reward": mean_episode_reward(episode),
+        **rollout_metrics(episode),
     }
     return key, log
 
@@ -177,5 +207,6 @@ def replay_branch_top_k(
         "max_regret_score": float(scores.max()),
         "loss": float(loss),
         "mean_reward": mean_episode_reward(episode),
+        **rollout_metrics(episode),
     }
     return key, a2c, opt_state, log

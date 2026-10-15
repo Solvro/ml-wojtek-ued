@@ -1,0 +1,37 @@
+\section{Discussion and Limitations}
+\label{sec:discussion}
+
+\todo{Write after v10 results. Planned points, kept only if the data
+supports them:}
+\begin{itemize}
+  \item \textbf{Generator vs.\ curation.} Whether the pilot's ordering
+    (easy generator $\gg$ curation $>$ none) survives calibration, i.e.\
+    whether UED's benefit on 3D locomotion is mostly ``start easy''.
+  \item \textbf{Regret estimates on locomotion.} Positive value loss
+    depends on the critic, which here sees a privileged height scan;
+    whether learnability is a better score for a continuous-control
+    student with a binary success criterion.
+  \item \textbf{Closed vs.\ open chain.} Whether the small closed-chain
+    robot and Go1 favour the same methods and fail on the same features.
+\end{itemize}
+
+\paragraph{Limitations.}
+\begin{itemize}
+  \item Three seeds per method and robot; small differences (such as the
+    pilot's tail gain of ACCEL-SFL) need more seeds to confirm.
+  \item One student (brax PPO) and one budget per robot; methods that
+    take fewer gradient steps (\plr, ACCEL) or simulate twice (PAIRED)
+    are compared at equal environment steps, not equal compute.
+  \item The level space is parametric and radially symmetric; it does not
+    cover unstructured terrain maps or heading-dependent obstacles.
+  \item The calibration uses pilot policies from the same benchmark, so
+    the level space is tuned to this student and these robots.
+  \item Simulation only: transfer is tested sim-to-sim (MJX to CPU
+    MuJoCo), not on the physical Wojtek.
+  \item PAIRED is run without the behaviour-cloning distillation
+    of~\citet{mediratta2023stabilizing}, and ACCEL-SFL changes two
+    switches relative to ACCEL.
+\end{itemize}
+
+\paragraph{Conclusion.}
+\todo{Two sentences once the headline result is known.}

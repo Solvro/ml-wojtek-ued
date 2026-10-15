@@ -658,8 +658,15 @@ class WojtekJoystick(WojtekEnv):
         # Kinematic standing family (see real_pose_ref in default_config):
         # gain-invariant by construction — settled on a quasi-rigid copy,
         # so it depends on the geometry only, never on this run's gains.
+        heights, poses, joints = self._settle_height_grid()
+        # Spawn pose per DSECOND_TABLE rung for EVERY leg joint, the passive
+        # four-bar joints included. Setting only the actuated joints left
+        # each leg's closure loop open by up to ~0.13 m at reset; the solver
+        # then snapped it shut near the toggle (40-70 deg at rest instead of
+        # ~15), and the policy fell on fall.max_toggle_deg within ~0.35 s.
+        self._spawn_dsecond = jp.array(DSECOND_TABLE)
+        self._spawn_joints = jp.array(joints)
         if self._config.get("real_pose_ref", False):
-            heights, poses = self._settle_height_grid()
             # The runtime target clamps (knee_target_max) cap the reachable
             # extension: past the peak the settle heights flatten and then
             # DROP (knees pinned while second joints over-extend). The
@@ -877,7 +884,7 @@ class WojtekJoystick(WojtekEnv):
         hi = np.asarray(self._target_hi)
         home_ctrl = np.asarray(self._home_ctrl)
         n_steps = int(round(2.0 / m.opt.timestep))
-        heights, poses = [], []
+        heights, poses, joints = [], [], []
         for ds in DSECOND_TABLE:
             ctrl = np.clip(home_ctrl + np.tile([0.0, 1.0, 2.0], 4) * ds, lo, hi)
             mujoco.mj_resetData(m, d)
@@ -887,7 +894,8 @@ class WojtekJoystick(WojtekEnv):
                 mujoco.mj_step(m, d)
             heights.append(float(d.qpos[2]))
             poses.append(d.qpos[qadr].copy())
-        return np.array(heights), np.array(poses)
+            joints.append(d.qpos[7:].copy())
+        return np.array(heights), np.array(poses), np.array(joints)
 
     def _pose_ref(self, height):
         """Joint-pose reference for a commanded height: the kinematic real
@@ -907,12 +915,25 @@ class WojtekJoystick(WojtekEnv):
         """Planar speed the gait clock should serve; turning counts too."""
         return jp.linalg.norm(command[:2]) + 0.3 * jp.abs(command[2])
 
+    def _dsecond(self, height):
+        """DSECOND_TABLE coordinate of a commanded standing height."""
+        if self._config.get("real_pose_ref", False):
+            return jp.interp(height, self._anchor_heights, self._anchor_dsecond)
+        return jp.interp(height, jp.array(HEIGHT_TABLE), jp.array(DSECOND_TABLE))
+
+    def _spawn_joint_qpos(self, height):
+        """Settled closed-loop pose of every leg joint for a height."""
+        dsecond = self._dsecond(height)
+        return jp.stack(
+            [
+                jp.interp(dsecond, self._spawn_dsecond, self._spawn_joints[:, j])
+                for j in range(self._spawn_joints.shape[1])
+            ]
+        )
+
     def _height_ctrl(self, height):
         """Ctrl anchor for a commanded standing height (measured table)."""
-        if self._config.get("real_pose_ref", False):
-            dsecond = jp.interp(height, self._anchor_heights, self._anchor_dsecond)
-        else:
-            dsecond = jp.interp(height, jp.array(HEIGHT_TABLE), jp.array(DSECOND_TABLE))
+        dsecond = self._dsecond(height)
         offset = jp.tile(jp.array([0.0, 1.0, 2.0]), 4) * dsecond
         return jp.clip(
             self._home_ctrl + offset, self._ctrlrange[:, 0], self._ctrlrange[:, 1]
@@ -1093,9 +1114,9 @@ class WojtekJoystick(WojtekEnv):
         # (the measured settled pose when calibrated, else the ctrl
         # anchor), plus joint noise; ctrl holds the ctrl-space anchor.
         anchor = self._height_ctrl(command[3])
-        qpos = self._home_qpos.at[self._qadr].set(
-            self._pose_ref(command[3])
-            + jax.random.uniform(r_pos, (12,), minval=-0.05, maxval=0.05)
+        qpos = self._home_qpos.at[7:].set(self._spawn_joint_qpos(command[3]))
+        qpos = qpos.at[self._qadr].add(
+            jax.random.uniform(r_pos, (12,), minval=-0.05, maxval=0.05)
         )
         qpos = qpos.at[2].set(command[3])
         if self._terrain_enabled:
@@ -1186,6 +1207,10 @@ class WojtekJoystick(WojtekEnv):
             flat_pitch_down_deg_per_step=jp.zeros(()),
             flat_pitch_on_flat_per_step=jp.zeros(()),
             cmd_spin_per_step=jp.zeros(()),
+            fall_min_height_at_done=jp.zeros(()),
+            fall_tilt_at_done=jp.zeros(()),
+            fall_toggle_at_done=jp.zeros(()),
+            fall_base_contact_at_done=jp.zeros(()),
         )
         if self._config.no_progress.enable:
             # Optimistic seed: a fresh episode starts at progress ratio 1,
@@ -1323,7 +1348,7 @@ class WojtekJoystick(WojtekEnv):
             jp.maximum(info["swing_apex"], step_clearance),
             info["swing_apex"],
         )
-        rewards, done = self._get_reward(
+        rewards, done, fall_causes = self._get_reward(
             data, info, action, motor_targets, first_contact, contact
         )
         # Spawn grace: a fall this early is the spawn's fault, not the
@@ -1466,6 +1491,19 @@ class WojtekJoystick(WojtekEnv):
             & (cmd_stepped[1] == 0.0)
         ).astype(jp.float32)
         # The `_per_step` suffix makes brax report the mean, not the sum.
+        terminated = done.astype(jp.float32)
+        metrics["fall_min_height_at_done"] = (
+            fall_causes["min_height"].astype(jp.float32) * terminated
+        )
+        metrics["fall_tilt_at_done"] = (
+            fall_causes["tilt"].astype(jp.float32) * terminated
+        )
+        metrics["fall_toggle_at_done"] = (
+            fall_causes["toggle"].astype(jp.float32) * terminated
+        )
+        metrics["fall_base_contact_at_done"] = (
+            fall_causes["base_contact"].astype(jp.float32) * terminated
+        )
         if self._terrain_enabled:
             metrics["terrain_level_per_step"] = info["terrain_level"].astype(jp.float32)
             # Which states put the base on the terrain, which is where the
@@ -1476,7 +1514,6 @@ class WojtekJoystick(WojtekEnv):
             # suffix on purpose: brax reports its episode sum, which for this
             # indicator is 1 exactly when the episode ended with the base down.
             base_down = self._base_terrain_contact(data).astype(jp.float32)
-            terminated = done.astype(jp.float32)
             metrics["base_contact_alive_per_step"] = base_down * (1.0 - terminated)
             metrics["base_contact_at_done"] = base_down * terminated
         if self._scan_live:
@@ -1551,9 +1588,11 @@ class WojtekJoystick(WojtekEnv):
         # Terrain: measured from the surface. Flat: the old expressions,
         # unchanged.
         base_height = self._base_height(data)
-        fall = (base_height < self._config.fall.min_height) | (
-            gravity[2] > self._config.fall.max_tilt_gz
-        )
+        low = base_height < self._config.fall.min_height
+        tilt_fall = gravity[2] > self._config.fall.max_tilt_gz
+        fall = low | tilt_fall
+        toggle_fall = jp.zeros((), dtype=bool)
+        base_contact_fall = jp.zeros((), dtype=bool)
         max_toggle = self._config.fall.get("max_toggle_deg", 0.0)
         toggle_on = max_toggle or self._config.reward.scales.get("toggle_flat", 0.0)
         toggle_ramp = jp.zeros(())
@@ -1576,9 +1615,17 @@ class WojtekJoystick(WojtekEnv):
             )
             if max_toggle:
                 # angle > max_toggle_deg <=> cos(angle) < cos(max_toggle_deg)
-                fall = fall | jp.any(cosang < jp.cos(jp.deg2rad(max_toggle)))
+                toggle_fall = jp.any(cosang < jp.cos(jp.deg2rad(max_toggle)))
+                fall = fall | toggle_fall
         if self._terrain_enabled and self._config.fall.on_base_contact:
-            fall = fall | self._base_terrain_contact(data)
+            base_contact_fall = self._base_terrain_contact(data)
+            fall = fall | base_contact_fall
+        fall_causes = {
+            "min_height": low,
+            "tilt": tilt_fall,
+            "toggle": toggle_fall,
+            "base_contact": base_contact_fall,
+        }
 
         # Foot clearance above the local ground vs the duty-aware swing profile,
         # plus explicit contact/stance schedule matching.
@@ -1790,4 +1837,4 @@ class WojtekJoystick(WojtekEnv):
                 )
             ),
         }
-        return rewards, fall
+        return rewards, fall, fall_causes

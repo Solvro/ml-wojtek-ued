@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING
 
+from config.hfield_config import HFieldConfig
 from config.ppo_config import WandbParams
 from utils.checkpoint import Algo
 
@@ -29,9 +30,12 @@ class EvalLevelsConfig:
     episodes_per_level: int = 8
     # chunk_size * episodes_per_level = 4096 envs/jit call, H100-scale like above
     chunk_size: int = 512
-    steps: int = 200
+    steps: int = 400
+    # success = no fall and at least this far (m) from spawn at the end
+    min_travel: float = 1.0
     cvar_alpha: float = 0.25
     seed: int = 0
+    hfield_params: HFieldConfig = field(default_factory=HFieldConfig)
     wandb_params: WandbParams = field(default_factory=WandbParams)
 
 

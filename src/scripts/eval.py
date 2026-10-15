@@ -58,7 +58,7 @@ def main(cfg: EvalConfig) -> None:
 
     template_key = jax.random.key(cfg.seed)
     template = A2C(
-        dense_dim=meta["dense_dim"],
+        hidden_dims=meta["hidden_dims"],
         actor_obs_dim=meta["actor_obs_dim"],
         critic_obs_dim=meta["critic_obs_dim"],
         action_dim=meta["action_dim"],

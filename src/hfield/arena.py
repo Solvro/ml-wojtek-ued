@@ -3,9 +3,13 @@ from __future__ import annotations
 import json
 import os
 import re
+from typing import cast
 
+import hydra
 import numpy as np
+from omegaconf import OmegaConf
 
+from config.arena_config import ArenaConfig
 from config.hfield_config import HFieldConfig
 from wojtek_env import paths
 from wojtek_env.terrain import terrain
@@ -81,7 +85,13 @@ def build_accel_arena(config: HFieldConfig, seed: int = 0) -> terrain.Arena:
     grid = config.grid_size
     radius = config.patch_radius
     hfield_data = np.full((grid, grid), 0.5, dtype=np.float32)
-    lookup = np.zeros((grid, grid), dtype=np.float32)
+    # MuJoCo rescales a loaded hfield to span [0, 1]: a constant 0.5 compiles
+    # to 0, sinking the static ground to -amplitude, where real_pose_ref's
+    # standing-height settle and any unswapped rollout would see it. Pinning
+    # two far corners to 0 and 1 makes the rescale the identity.
+    hfield_data[0, 0] = 0.0
+    hfield_data[-1, -1] = 1.0
+    lookup = (2 * hfield_data - 1) * config.amplitude
     tiles = tuple(
         terrain.TileSpec(
             row=0,
@@ -148,5 +158,11 @@ def write_accel_arena(config: HFieldConfig | None = None, seed: int = 0) -> None
         print(f"wrote {p} ({p.stat().st_size / 1e6:.2f} MB)")
 
 
+@hydra.main(version_base=None, config_name="arena_config")
+def main(cfg: ArenaConfig) -> None:
+    hfield_config = cast(HFieldConfig, OmegaConf.to_object(cfg.hfield_params))
+    write_accel_arena(hfield_config, seed=cfg.seed)
+
+
 if __name__ == "__main__":
-    write_accel_arena()
+    main()

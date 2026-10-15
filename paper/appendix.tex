@@ -1,0 +1,117 @@
+\section{Pilot Study (v8 Level Space, Wojtek)}
+\label{app:pilot}
+
+The pilot used the level space of Table~\ref{tab:levelspace} (right
+column), Wojtek only, 300M environment steps, 3 seeds, and the evaluation
+protocol of \S\ref{sec:protocol}. Besides the six methods of
+\S\ref{sec:methods} it included DR-mixed (uniform genome shrunk toward flat
+by a per-level difficulty $d\sim\mathcal{U}(0,1)$) and ACCEL-grow (ACCEL
+with the grow mutation, positive value loss score); ACCEL-SFL is
+ACCEL-grow with the learnability score.
+
+\begin{table}[ht]
+  \centering\small
+  \caption{Pilot (v8) final evaluation, mean over 3 seeds. Success on
+  uniform levels, cross-fitted \cvar{0.25}, pass-to-pass level success
+  correlation, success at difficulty $d=0.5$ and $d=1.0$, and mean success
+  on the held-out suite.}
+  \label{tab:pilot}
+  \begin{tabular}{lcccccc}
+    \toprule
+    Method & Uniform & \cvar{0.25} & Level corr. & $d=0.5$ & $d=1.0$ & Suite \\
+    \midrule
+    ACCEL-SFL  & .082 & .028 & .667 & .337 & .077 & .521 \\
+    DR-easy    & .080 & .022 & .716 & .334 & .073 & .548 \\
+    ACCEL-grow & .078 & .020 & .716 & .329 & .073 & .556 \\
+    ACCEL      & .077 & .021 & .737 & .332 & .070 & .559 \\
+    DR-mixed   & .035 & .012 & .689 & .181 & .030 & .445 \\
+    \plr       & .022 & .009 & .692 & .098 & .018 & .382 \\
+    PAIRED     & .016 & .006 & .673 & .076 & .013 & .320 \\
+    DR         & .004 & .002 & .414 & .010 & .002 & .120 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\todo{Add seed standard deviations and the v8 capability envelopes
+(\texttt{paper\_tables.py --prefix wojtek=v8\_param}).}
+
+\section{Arena and Level Rendering}
+\label{app:render}
+A level is rendered into a square heightfield of half-width 3.0\,m at
+0.05\,m resolution ($121\times121$ nodes) with heights clipped to
+$\pm0.3$\,m (all $\times s$ for Go1). A flat spawn disc of radius 0.55\,m
+blends into the terrain over 0.2\,m. In MJX the heightfield data is an
+array leaf of the model, so each of the parallel environments can be reset
+onto a different level without recompilation; this is what makes
+per-environment level swapping feasible at RL scale. We run MJX on its JAX
+backend, because the Warp backend (at the pinned version) collides every
+environment in a batch with the first environment's heightfield.
+
+Let $r$ be the distance from the arena centre, $r_0$ the spawn-pad radius,
+$w$ the taper width, $\delta=\max(r-r_0-w,\,0)$ the radial distance past
+the pad and $\tau(r)=\mathrm{clip}((r-r_0)/w,0,1)$. With the physical
+parameters of Table~\ref{tab:levelspace},
+\begin{equation*}
+  h(x,y) = \tau(r)\Big[\tan(\phi)\,\delta
+    + h_s\Big\lceil\frac{\delta}{w_s}\Big\rceil
+    + A\,n_\lambda(x,y) + h_b\,b_c(x,y)
+    - D\,\mathbf{1}\big[\delta>0,\ (\delta \bmod P) < g\big]\Big],
+\end{equation*}
+where $\phi$ is the slope, $h_s,w_s$ stair height and width, $A,\lambda$
+noise amplitude and wavelength, $n_\lambda$ a seeded bilinear noise field
+in $[-1,1]$ with control points every $\lambda$, $b_c$ a seeded
+piecewise-constant field in $[-1,1]$ with cells of size $c$ and height
+$h_b$, and $g$ the gap width with depth $D=0.15$\,m and period $P=0.6$\,m.
+Heights are clipped to the arena amplitude. For Go1 every length is
+multiplied by $s=2.5$.
+
+\section{Additional Results}
+\label{app:extra}
+
+\begin{figure}[t]
+  \centering
+  \placeholder{Capability envelopes per feature: grouped bars (or one radar
+  per robot), envelope normalised by the feature's range, one bar per
+  method, seed min--max as error bars.}
+  \caption{Capability envelopes.}
+  \label{fig:envelopes}
+\end{figure}
+
+\section{Hyperparameters and Compute}
+\label{app:compute}
+
+\begin{table}[ht]
+  \centering\small
+  \caption{Training hyperparameters shared by all methods.}
+  \label{tab:hparams}
+  \begin{tabular}{ll}
+    \toprule
+    Lanes $\times$ envs per lane & $256\times32$ \\
+    Steps per level (episode) & 300 (6\,s) \\
+    Env steps & 300M (Wojtek), 1B (Go1) \\
+    PPO & brax; 20-step unroll, 4 epochs $\times$ 32 minibatches \\
+    $\gamma$, $\lambda$, lr, entropy, clip & 0.97, 0.95, $3\times10^{-4}$, 0.01, 0.2 \\
+    Networks & MLP 512-256-128, ELU, obs.\ normalisation \\
+    Buffer (\plr, ACCEL) & 4000 levels; replay prob.\ 0.8 \\
+    Replay sampling & rank (temp.\ 0.3) + staleness (0.3) \\
+    Easy generator & shrink toward flat $\times0.1$ \\
+    Mutation (ACCEL) & 2 parameters, $\pm0.1$ \\
+    Grow (ACCEL-SFL) & distance from flat $\times\,\mathcal{U}(1,1.3)$ \\
+    PAIRED generator & latent 16, hidden 128, lr $10^{-4}$, entropy 0.1 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[ht]
+  \centering\small
+  \caption{Training compute per run, mean $\pm$ std over seeds. GPU-h: wall
+  clock on one GPU; sim steps count every simulated environment step
+  (PAIRED's antagonist, the non-training iterations of \plr\ and ACCEL);
+  student steps are those that fed a student PPO update.}
+  \label{tab:compute}
+  \resulttable{compute}{Compute table (\texttt{tables/compute.tex}):
+  rows = robots $\times$ methods; columns = GPU-h, sim steps, student
+  steps.}
+\end{table}
+\todo{State the hardware (WCSS Lem, one H100 per run) once the compute
+table confirms it for v10.}

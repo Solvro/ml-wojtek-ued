@@ -1,0 +1,77 @@
+\section{Student and Methods}
+\label{sec:methods}
+
+\subsection{Student and training loop}
+All methods train the same student: brax's PPO
+networks, loss and hyperparameters from MuJoCo Playground's locomotion
+recipe (policy and value MLPs $512\text{-}256\text{-}128$ with ELU, running
+observation normalisation, 20-step unrolls, 4 epochs $\times$ 32
+minibatches, $\gamma=0.97$, $\lambda=0.95$, learning rate $3\times10^{-4}$,
+entropy cost $10^{-2}$, clipping 0.2). Brax's own training loop fixes each
+environment's model for a whole run, so we drive the same components from a
+custom loop. One outer \emph{iteration} runs 256 lanes $\times$ 32
+environments; every lane holds one level, all 32 of its environments are
+reset onto it with a fresh physics-randomisation draw, and the batch is
+stepped for 300 steps in 20-step unrolls, with a PPO update after each
+unroll when the iteration trains. An iteration is therefore
+$256\cdot32\cdot300\approx2.46$M environment steps. Each lane's score is
+either the positive value loss, the mean positive GAE advantage over the
+iteration~\citep{jiang2021plr}, or the learnability $p(1-p)$, where $p$ is
+the fraction of the lane's environments that never fell and travelled at
+least 1\,m ($\times s$) from spawn~\citep{rutherford2024noregrets}.
+Runs last 300M environment steps for Wojtek and 1B for Go1, with three
+seeds per method and robot.
+
+\subsection{Methods}
+\label{sec:methodlist}
+
+\paragraph{DR.} Every iteration trains on 256 fresh uniform levels.
+
+\paragraph{DR-easy.} DR on ACCEL's easy generator: a uniform genome shrunk
+toward the flat genome by a factor 0.1. It isolates the effect of
+``training on easy levels'' from the effect of curation.
+
+\paragraph{\plr~\citep{jiang2021replay}.} A buffer of the 4000
+highest-scoring levels (positive value loss). Once it holds at least 256
+levels, an iteration replays with probability 0.8: it samples 256 levels by
+rank prioritisation (temperature 0.3) mixed with staleness (weight 0.3),
+trains on them and refreshes their scores. Otherwise it scores 256 fresh
+uniform levels without training and adds them to the buffer.
+
+\paragraph{ACCEL~\citep{parkerholder2022accel}.} \plr\ with two changes:
+new levels come from the easy generator instead of the uniform one, and
+every replayed level is mutated by perturbing two randomly chosen
+parameters by $\mathcal{U}(-0.1,0.1)$ (clipped to $[0,1]$, seed kept). The
+next non-training iteration scores the children of the most recent replay
+batch (children of earlier consecutive replay batches are discarded), and
+fresh easy levels fill the remaining lanes.
+
+\paragraph{ACCEL-SFL.} ACCEL with two changes: the learnability score
+$p(1-p)$ in place of positive value loss, and a ``grow'' mutation that,
+after the local edit, scales the genome's distance from flat by
+$\mathcal{U}(1,1.3)$. Unlike SFL~\citep{rutherford2024noregrets}, which
+samples uniformly and keeps a learnability buffer, it keeps ACCEL's
+generator and replay. ACCEL and ACCEL-SFL therefore differ in two
+switches, score and mutation, and a difference between them cannot be
+attributed to the score alone. The pilot (\S\ref{sec:pilot}) ran the
+missing arm, ACCEL-grow (grow mutation, positive value loss); the main
+study does not.
+
+\paragraph{PAIRED~\citep{dennis2020paired}.} A learned generator maps a
+16-dimensional Gaussian latent through an MLP to a sigmoid-squashed
+Gaussian over the 8 parameters; a random seed is appended. Each iteration
+it proposes 256 levels, on which a protagonist and an antagonist (two
+independent brax students) both train. The generator's reward per level is
+$\max(0,\ \max R_{\text{ant}} - \overline{R}_{\text{pro}})$, the best
+antagonist return minus the mean protagonist return over the lane, and it
+is updated by single-step PPO (5 epochs, entropy coefficient 0.1). We do
+not use the behaviour-cloning distillation between the students
+proposed by~\citet{mediratta2023stabilizing}. The budget
+counts protagonist steps only, so PAIRED uses twice the simulation of the
+other methods.
+
+\paragraph{Budget accounting.}
+All methods get the same number of environment steps. Non-training
+iterations of \plr, ACCEL and ACCEL-SFL count toward the budget, so these
+methods take fewer gradient steps than DR. We report wall-clock and
+simulated steps per method in Table~\ref{tab:compute}.

@@ -11,6 +11,7 @@ import orbax.checkpoint as ocp
 class Algo(str, Enum):
     ppo = "ppo"
     ppo_dr = "ppo_dr"
+    ppo_dr_terrain = "ppo_dr_terrain"
     accel = "accel"
     accel_top_k = "accel_top_k"
 
@@ -21,7 +22,7 @@ class RunMeta(TypedDict):
     env_task: str
     env_overrides: dict[str, Any] | None
     env_seed: int
-    dense_dim: int
+    hidden_dims: list[int]
     activation: str
     action_dim: int
     actor_obs_dim: int

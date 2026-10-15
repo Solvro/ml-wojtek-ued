@@ -14,7 +14,12 @@ from config.accel_config import AccelConfig
 from config.hfield_config import HFieldConfig
 from hfield.manager import HFieldManager
 from modules.ppo_modules import A2C
-from ued.curriculum import decide_replay, generate_branch_top_k, replay_branch_top_k
+from ued.curriculum import (
+    decide_replay,
+    generate_branch_top_k,
+    replay_branch_top_k,
+    terrain_curriculum_step,
+)
 from ued.levels import fill_buffer
 from ued.stopper import PlateauStopper
 from ued.types import BatchCurator, PPOTrainer
@@ -27,13 +32,20 @@ from utils.checkpoint import (
     save_meta,
 )
 from utils.env import FunctionalEnv
-from utils.env_overrides import merge_overrides, movement_overrides, terrain_overrides
+from utils.env_overrides import (
+    accel_arena_overrides,
+    merge_overrides,
+    movement_overrides,
+    terrain_overrides,
+    terrain_task_overrides,
+)
 from utils.logging import Logger, quiet_dependencies
 from utils.ppo_helpers import (
     calculate_episode_advantage,
     eval,
     lanes_rollout,
     make_step,
+    warm_start_actor,
 )
 
 ALGO = "accel_top_k"
@@ -65,33 +77,30 @@ def train(cfg: AccelConfig) -> None:
     )
 
     env_overrides = merge_overrides(
-        {
-            "terrain": {
-                "enable": True,
-                "arena": "accel",
-                "pad_radius": cfg.hfield_params.pad_radius,
-            }
-        },
+        accel_arena_overrides(cfg.hfield_params.pad_radius),
         movement_overrides(),
         terrain_overrides(),
+        terrain_task_overrides(),
     )
     env = FunctionalEnv(
         task=cfg.environment_params.name,
-        env_overrides={
-            **env_overrides,
-            "sim": {
-                "num_envs": cfg.accel_params.num_lanes * cfg.accel_params.envs_per_lane
+        env_overrides=merge_overrides(
+            env_overrides,
+            {
+                "sim": {
+                    "num_envs": cfg.accel_params.num_lanes
+                    * cfg.accel_params.envs_per_lane
+                }
             },
-        },
+        ),
         seed=cfg.environment_params.seed,
     )
 
     eval_env = FunctionalEnv(
         task=cfg.environment_params.name,
-        env_overrides={
-            **env_overrides,
-            "sim": {"num_envs": cfg.evaluation_params.envs_num},
-        },
+        env_overrides=merge_overrides(
+            env_overrides, {"sim": {"num_envs": cfg.evaluation_params.envs_num}}
+        ),
         seed=cfg.environment_params.seed,
     )
 
@@ -111,7 +120,7 @@ def train(cfg: AccelConfig) -> None:
     )
 
     a2c = A2C(
-        dense_dim=cfg.model_params.dense_dim,
+        hidden_dims=cfg.model_params.hidden_dims,
         actor_obs_dim=obs_size.actor,
         critic_obs_dim=obs_size.critic,
         action_dim=action_dim,
@@ -119,6 +128,16 @@ def train(cfg: AccelConfig) -> None:
         key=model_key,
         activation=cfg.model_params.activation,
     )
+    if cfg.warm_start_run is not None:
+        assert cfg.warm_start_algo is not None, (
+            "warm_start_algo is required when warm_start_run is set"
+        )
+        a2c = warm_start_actor(
+            cfg.training_params.artifacts_dir,
+            cfg.warm_start_algo,
+            cfg.warm_start_run,
+            a2c,
+        )
 
     save_meta(
         directory,
@@ -128,7 +147,7 @@ def train(cfg: AccelConfig) -> None:
             "env_task": cfg.environment_params.name,
             "env_overrides": env_overrides,
             "env_seed": cfg.environment_params.seed,
-            "dense_dim": cfg.model_params.dense_dim,
+            "hidden_dims": list(cfg.model_params.hidden_dims),
             "activation": cfg.model_params.activation,
             "action_dim": action_dim,
             "actor_obs_dim": obs_size.actor,
@@ -213,6 +232,16 @@ def train(cfg: AccelConfig) -> None:
     converged = False
 
     while not converged:
+        curriculum_log = terrain_curriculum_step(
+            iteration,
+            curator,
+            coarse_n_start=cfg.accel_params.terrain_coarse_n_start,
+            coarse_n_end=cfg.hfield_params.coarse_n,
+            coarse_n_stages=cfg.accel_params.terrain_coarse_n_stages,
+            ramp_iterations=cfg.accel_params.min_iterations,
+            fill_ratio=cfg.accel_params.initial_fill_ratio,
+        )
+
         if decide_replay(curator):
             key, a2c, opt_state, step_log = replay_branch_top_k(
                 key, a2c, opt_state, curator, trainer
@@ -241,6 +270,7 @@ def train(cfg: AccelConfig) -> None:
                 "buffer_fill_ratio": len(level_buffer.get()) / level_buffer.size,
                 "smoothed_regret": stopper.smoothed_regret,
                 "smoothed_reward": stopper.smoothed_reward,
+                **curriculum_log,
                 **step_log,
             }
         )

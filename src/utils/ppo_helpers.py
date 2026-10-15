@@ -1,17 +1,57 @@
 import functools
+from typing import Any, NamedTuple
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+from brax import math as brax_math
 from mujoco import mjx
 
 from modules.ppo_modules import A2C, Episode
+from utils.checkpoint import (
+    Algo,
+    load_meta,
+    open_checkpoint_manager,
+    restore_checkpoint,
+    run_dir,
+)
 from utils.env import FunctionalEnv
+
+FALL_CAUSES = ("min_height", "tilt", "toggle", "base_contact")
 
 
 def clip_log_std(model, low=-5.0, high=0.5):
     clipped = jnp.clip(model.actor_log_std, low, high)
     return eqx.tree_at(lambda m: m.actor_log_std, model, clipped)
+
+
+def warm_start_actor(artifacts_dir: str, algo: Algo, run: str, target: A2C) -> A2C:
+    directory = run_dir(artifacts_dir, algo.value, run)
+    meta = load_meta(directory)
+    target_actor_dim = target.actor_norm.mean.shape[0]
+    if meta["actor_obs_dim"] != target_actor_dim:
+        raise ValueError(
+            f"warm start actor_obs_dim mismatch: donor {run!r} ({algo.value}) "
+            f"has {meta['actor_obs_dim']}, target has {target_actor_dim} — "
+            "obs.state must match between the two runs"
+        )
+    donor_template = A2C(
+        hidden_dims=meta["hidden_dims"],
+        actor_obs_dim=meta["actor_obs_dim"],
+        critic_obs_dim=meta["critic_obs_dim"],
+        action_dim=meta["action_dim"],
+        action_high=meta["action_high"],
+        key=jax.random.key(0),
+        activation=meta["activation"],
+    )
+    donor, _ = restore_checkpoint(
+        open_checkpoint_manager(directory), None, donor_template
+    )
+    return eqx.tree_at(
+        lambda m: (m.actor_norm, m.actor_mean, m.actor_log_std),
+        target,
+        (donor.actor_norm, donor.actor_mean, donor.actor_log_std),
+    )
 
 
 def is_finite_array(model):
@@ -37,6 +77,11 @@ def compute_gae(rewards, values, dones, next_value, gamma=0.99, lam=0.95):
     return advantages, returns
 
 
+def body_velocity(data: Any) -> jax.Array:
+    # free-joint linear qvel is world-frame; commands are body-frame
+    return brax_math.inv_rotate(data.qvel[:3], data.qpos[3:7])
+
+
 def policy_step(
     env: FunctionalEnv,
     model: A2C,
@@ -48,10 +93,19 @@ def policy_step(
     obs, state, key = state_input
     key, key_step, key_act = jax.random.split(key, 3)
     action, log_prob, value, entropy = model(obs, key_act)
-    next_obs, next_state, reward, done, _ = env.step(
+    next_obs, next_state, reward, done, info = env.step(
         key_step, state, action, hfield_data, dr_model
     )
     carry = [next_obs, next_state, key]
+    step_metrics = {
+        "terminated": done * (1.0 - info["truncation"]),
+        "cmd_vx": state.info["command"][0],
+        "forward_vel": body_velocity(next_state.data)[0],
+        **{
+            f"fall_{cause}_at_done": next_state.metrics[f"fall_{cause}_at_done"]
+            for cause in FALL_CAUSES
+        },
+    }
     step_out = Episode(
         obs=obs,
         action=action,
@@ -61,8 +115,26 @@ def policy_step(
         reward=reward,
         next_obs=next_obs,
         done=done,
+        metrics=step_metrics,
     )
     return carry, step_out
+
+
+def rollout_metrics(episode: Episode) -> dict[str, float]:
+    num_terminated = float(episode.metrics["terminated"].sum())
+    fall_rates = {
+        f"fall_{cause}_rate": (
+            float(episode.metrics[f"fall_{cause}_at_done"].sum() / num_terminated)
+            if num_terminated > 0
+            else float("nan")
+        )
+        for cause in FALL_CAUSES
+    }
+    return {
+        **fall_rates,
+        "cmd_vx": float(episode.metrics["cmd_vx"].mean()),
+        "forward_vel": float(episode.metrics["forward_vel"].mean()),
+    }
 
 
 def batch_rollout(
@@ -74,23 +146,24 @@ def batch_rollout(
     hfield_data: jax.Array | None = None,
     dr_model: mjx.Model | None = None,
     dr_in_axes: mjx.Model | None = None,
+    hfield_in_axes: int | None = None,
 ) -> Episode:
     key_reset, key_episode = jax.random.split(key_input)
     reset_keys = jax.random.split(key_reset, envs_num)
     episode_keys = jax.random.split(key_episode, envs_num)
 
     obs, state = jax.vmap(
-        lambda k, dr: env.reset(k, hfield_data, dr),
-        in_axes=(0, dr_in_axes),
-    )(reset_keys, dr_model)
+        lambda k, hf, dr: env.reset(k, hf, dr),
+        in_axes=(0, hfield_in_axes, dr_in_axes),
+    )(reset_keys, hfield_data, dr_model)
     step_fn = jax.vmap(
-        lambda state_input, tmp, dr: policy_step(
-            env, model, state_input, tmp, hfield_data=hfield_data, dr_model=dr
+        lambda state_input, tmp, hf, dr: policy_step(
+            env, model, state_input, tmp, hfield_data=hf, dr_model=dr
         ),
-        in_axes=(0, None, dr_in_axes),
+        in_axes=(0, None, hfield_in_axes, dr_in_axes),
     )
     _, episode = jax.lax.scan(
-        lambda carry, x: step_fn(carry, x, dr_model),
+        lambda carry, x: step_fn(carry, x, hfield_data, dr_model),
         [obs, state, episode_keys],
         (),
         steps_in_episode,
@@ -118,7 +191,7 @@ def lanes_rollout(
 
 
 def calculate_episode_advantage(model, episode, gamma=0.99, lam=0.95):
-    next_values = jax.vmap(model.critic)(
+    next_values = jax.vmap(model.value)(
         episode.next_obs.critic[:, -1, :],
     ).squeeze(-1)
     advantages, returns = jax.vmap(
@@ -205,6 +278,7 @@ def run_ppo_epochs(
     epochs: int,
     minibatches: int,
 ):
+    model = model.update_obs_norm(episode.obs)
     batch_size = episode.action.shape[0] * episode.action.shape[1]
     minibatch_size = batch_size // minibatches
 
@@ -273,7 +347,9 @@ def level_eval_step(
     state_input: list,
     tmp: tuple[()],
     hfield_data: jax.Array,
-) -> tuple[list, tuple[jax.Array, jax.Array]]:
+) -> tuple[
+    list, tuple[jax.Array, jax.Array, jax.Array, dict[str, jax.Array], jax.Array]
+]:
     obs, state, key = state_input
     key, key_step = jax.random.split(key)
     action = model.deterministic_action(obs)
@@ -281,8 +357,26 @@ def level_eval_step(
         key_step, state, action, hfield_data
     )
     carry = [next_obs, next_state, key]
-    fell = done * (1.0 - info["truncation"])
-    return carry, (reward, fell)
+    alive = 1.0 - info["truncation"]
+    fell = done * alive
+    cause_at_done = {
+        cause: next_state.metrics[f"fall_{cause}_at_done"] * alive
+        for cause in FALL_CAUSES
+    }
+    base_contact_alive = next_state.metrics["base_contact_alive_per_step"]
+    tracking = jnp.stack([state.info["command"][0], body_velocity(next_state.data)[0]])
+    return carry, (reward, fell, base_contact_alive, cause_at_done, tracking)
+
+
+class LevelEpisode(NamedTuple):
+    reward: jax.Array
+    fell: jax.Array
+    # planar distance from spawn at the last step; a fall respawns the robot
+    travel: jax.Array
+    cmd_vx: jax.Array
+    forward_vel: jax.Array
+    base_contact_alive: jax.Array
+    causes: dict[str, jax.Array]
 
 
 def level_eval_rollout(
@@ -291,12 +385,24 @@ def level_eval_rollout(
     model: A2C,
     steps: int,
     hfield_data: jax.Array,
-) -> tuple[jax.Array, jax.Array]:
+) -> LevelEpisode:
     key_reset, key_episode = jax.random.split(key_input)
     obs, state = env.reset(key_reset, hfield_data)
     step_fn = functools.partial(level_eval_step, env, model, hfield_data=hfield_data)
-    _, (rewards, fell) = jax.lax.scan(step_fn, [obs, state, key_episode], (), steps)
-    return rewards.sum(), jnp.any(fell > 0)
+    carry, (rewards, fell, base_contact_alive, cause_at_done, tracking) = jax.lax.scan(
+        step_fn, [obs, state, key_episode], (), steps
+    )
+    last_state: Any = carry[1]
+    travel = jnp.linalg.norm(last_state.data.qpos[:2] - state.data.qpos[:2])
+    return LevelEpisode(
+        reward=rewards.sum(),
+        fell=jnp.any(fell > 0),
+        travel=travel,
+        cmd_vx=tracking[:, 0].mean(),
+        forward_vel=tracking[:, 1].mean(),
+        base_contact_alive=base_contact_alive.mean(),
+        causes={cause: jnp.any(cause_at_done[cause] > 0) for cause in FALL_CAUSES},
+    )
 
 
 def eval_levels(
@@ -306,7 +412,7 @@ def eval_levels(
     hfield_data: jax.Array,
     episodes_per_level: int,
     steps: int,
-) -> tuple[jax.Array, jax.Array]:
+) -> LevelEpisode:
     num_levels = hfield_data.shape[0]
     level_keys = jax.random.split(key_input, num_levels)
 
