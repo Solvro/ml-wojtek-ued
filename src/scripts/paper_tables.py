@@ -317,7 +317,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--eval_dir", type=Path)
     p.add_argument("--prefix", nargs="+", action="extend", required=True)
-    p.add_argument("--out", type=Path, default=Path("paper/tables"))
+    p.add_argument("--out", type=Path, default=Path("artifacts/paper/tables"))
     p.add_argument("--train_summaries", type=Path)
     p.add_argument("--dump_wandb", type=Path, help="write summaries JSON, exit")
     args = p.parse_args()
