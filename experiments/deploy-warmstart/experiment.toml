@@ -1,0 +1,40 @@
+name = "deploy-warmstart"
+question = "Does ACCEL fine-tuning in brax_ued, warm-started from upstream's A1-long policy, keep it walking and improve it on the deploy arena?"
+
+envs = ["deploy_ws"]
+conditions = ["accel"]
+seeds = [0, 1, 2]
+total_steps = 150_000_000
+
+[wandb]
+entity = "dominikgalus9-wroc-aw-university-of-science-and-technology"
+project = "wojtyla"
+# added through the wandb API once the runs exist
+tag = "deploy-warmstart"
+run_name = '^(?P<env>deploy_ws)_(?P<condition>accel)_seed(?P<seed>\d+)$'
+
+[metric]
+keys = ["eval/d1.0/success_rate"]
+x = ["env_steps"]
+label = "success rate, uniform levels d=1.0"
+final_window = 0.1
+
+[reference]
+condition = "accel"
+thresholds = [0.5]
+
+[[secondary]]
+key = "falls_per_step"
+label = "train falls / step"
+note = "go/no-go: stop if > 0.05 by ~30M"
+
+[[secondary]]
+key = "eval/d0.25/fall_rate"
+label = "eval d0.25 fall rate"
+note = "lower = better"
+
+[cluster]
+ssh_host = "wcss"
+
+[report]
+url = ""
