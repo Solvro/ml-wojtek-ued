@@ -40,6 +40,7 @@ from scripts.eval_brax import AXES
 
 ENTITY = "dominikgalus9-wroc-aw-university-of-science-and-technology"
 PROJECT = "wojtyla"
+ROBOT_LABEL = {"wojtek": "W01-TEK", "go1": "Go1"}
 MIN_TRAVEL_M = 1.0  # eval_brax.py --min_travel, at Wojtek's size
 METHODS = {
     "dr": "DR",
@@ -213,7 +214,7 @@ def main_table(runs: dict[str, list[Run]]) -> str:
             columns.append(column_cells(groups, key, 100.0, 1, bold=True))
     n = len(MAIN_COLUMNS)
     groups_head = " & ".join(
-        rf"\multicolumn{{{n}}}{{c}}{{{robot.capitalize()}}}" for robot in robots
+        rf"\multicolumn{{{n}}}{{c}}{{{ROBOT_LABEL[robot]}}}" for robot in robots
     )
     rules = "".join(
         rf"\cmidrule(lr){{{2 + i * n}-{1 + (i + 1) * n}}}" for i in range(len(robots))
@@ -248,7 +249,7 @@ def per_robot_table(
         groups = by_method(robot_runs, methods)
         cells = [column_cells(groups, key, s, d, bold) for _, key, s, d in columns]
         for j, method in enumerate(methods):
-            name = robot.capitalize() if j == 0 else ""
+            name = ROBOT_LABEL[robot] if j == 0 else ""
             row = [name, method_label(method), *(c[j] for c in cells)]
             body.append(" & ".join(row) + r" \\")
     return head, body
