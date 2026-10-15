@@ -17,13 +17,13 @@
   scratch (A1/A1-long), drops to ~10-step episodes ending base-down by
   11M steps, stays there to ~40M, then recovers: eval episode length 166
   at 51M, 478 at 102M, 754 at 152M, ~900 from 190M to 305M (eval reward
-  -777 → +58, base-down ends 0.8 % → 0).
-- **Our loop is in the same state at 50M.** A0/A3/A4/A5 at 50M: ~0.08-0.1
-  falls/step (≈10-step episodes), eval fall rate ≈1.0. A1-long at 50.8M:
+  -777 → +58, base-down ends 94.5 % at 20M → 0.8 % from 193M).
+- **Our loop is in the same state at 50M.** A3/A4/A5 at 50M (A0 at 25M):
+  ~0.08-0.1 falls/step (≈10-step episodes), eval fall rate ≈1.0. A1-long at 50.8M:
   train episode length 9.3 (≈0.11 falls/step), 75 % of eval episodes end
   base-down. T4 was cancelled at 32M, inside this phase.
 - **Mechanism (A2, A6, diagnostic only):** the jitter penalty of the
-  stochastic initial policy (`torque_rate` -0.02 ≈ -1.15 to -1.4/step)
+  stochastic initial policy (`torque_rate` -0.02 ≈ -1.15/step: A1 at 0, A3 at 10M)
   dwarfs the one-off termination (-1 x 0.02 = -0.02), so dying early is
   the best response until the policy is smooth enough. With torque_rate
   at v10's -1e-4 (A6) or the whole v10 reward (A2) the dip is shorter
@@ -51,7 +51,7 @@
   < 0.02 and eval d0.25 fall rate below ~0.5, as in A1-long; if still at
   ~0.1 falls/step, stop and escalate (brax_ued saves only at the end).
 - Alternative if that is too slow: train with upstream's trainer itself
-  (A1-long reached a walking policy in 55 min / 305M steps), then evaluate
+  (A1-long reached a walking policy in 54 min / 305M steps), then evaluate
   and export through our pipeline — needs a converter from upstream's
   checkpoint to our sidecar/`.pkl` (not built).
 
@@ -154,7 +154,7 @@ A1 (50M, separate run, same config): eval ep_len 521 → 26 (11M) → ~10
 ## Throughput
 
 - Upstream trainer: 89-117k env steps/s on one H100 (A1-long: 305M in
-  54 min). brax_ued: 8-10k steps/s (~9x slower).
+  54 min). brax_ued: 8-10k steps/s (~10x slower).
 - Not ACCEL: A5 (flat levels, `dr_easy`, every iteration trains) runs at
   the same 8-9k as the ACCEL arms. Likely causes, not profiled: the jax
   MJX backend with heightfield collision vs warp, and the per-env model
