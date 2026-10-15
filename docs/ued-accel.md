@@ -459,6 +459,8 @@ policy, no physics DR, no `no_progress` cut. Success = no fall and >=
   - `track_lin_err` / `track_yaw_err` = mean absolute errors (m/s, rad/s)
     over episodes without a fall; npz adds `<set>_lin_err`, `_yaw_err`,
     `_lin_rel`, `_yaw_rel` per random/param set.
+  - Suite sets report it too: `suite/<terrain>_<k>/cmd_success_rate`, and
+    `suite/cmd_success_rate` = mean over them (npz `suite_cmd_success`).
 - `--level_space param` adds `param/uniform` (2048 levels drawn from the
   full 8-parameter space: heterogeneous, so CVaR reads a real tail) and
   capability envelopes `axis/<feature>`: one feature (rough, slope up/down,

@@ -31,7 +31,8 @@ skipping `TRACK_SKIP_S` after the reset and after every command resample
 (6 s levels with the 5 s resample score 1-5 s). Stand, spin and slow
 commands count; a robot that stands still passes 12.4% of deploy command
 draws, nearly all of them zero commands. `track_lin_err` / `track_yaw_err` average the
-absolute errors over episodes without a fall.
+absolute errors over episodes without a fall. `suite/cmd_success_rate`
+averages the suite sets.
 
 With the `param` level space two more sets:
 
@@ -398,7 +399,7 @@ def evaluate(ctx: dict[str, Any]) -> tuple[dict[str, float], dict[str, Any]]:
             {k: round(v, 3) for k, v in metrics.items() if f"d{difficulty}/" in k},
             flush=True,
         )
-    suite_success = []
+    suite_success, suite_cmd_success = [], []
     for terrain in SUITE_TERRAINS:
         for k in SUITE_STRENGTHS:
             hfields = np.stack(
@@ -409,17 +410,20 @@ def evaluate(ctx: dict[str, Any]) -> tuple[dict[str, float], dict[str, Any]]:
             )
             key, sub = jax.random.split(key)
             passes = two_passes(ctx, hfields, sub)
-            summary = summarize(f"suite/{terrain}_{k}", passes, ctx)
-            metrics[f"suite/{terrain}_{k}/success_rate"] = summary[
-                f"suite/{terrain}_{k}/success_rate"
-            ]
-            suite_success.append(summary[f"suite/{terrain}_{k}/success_rate"])
+            tag = f"suite/{terrain}_{k}"
+            summary = summarize(tag, passes, ctx)
+            for name in ("success_rate", "cmd_success_rate"):
+                metrics[f"{tag}/{name}"] = summary[f"{tag}/{name}"]
+            suite_success.append(summary[f"{tag}/success_rate"])
+            suite_cmd_success.append(summary[f"{tag}/cmd_success_rate"])
     suite_success = np.asarray(suite_success)
     metrics["suite/success_rate"] = float(suite_success.mean())
     for alpha in args.alphas:
         k = max(1, int(np.ceil(alpha * len(suite_success))))
         metrics[f"suite/cvar{alpha}_success"] = float(np.sort(suite_success)[:k].mean())
     raw["suite_success"] = suite_success
+    metrics["suite/cmd_success_rate"] = float(np.mean(suite_cmd_success))
+    raw["suite_cmd_success"] = np.asarray(suite_cmd_success)
     if isinstance(space, ParamSpace):
         param_metrics, param_raw = param_space_sets(ctx, space, key)
         metrics.update(param_metrics)
