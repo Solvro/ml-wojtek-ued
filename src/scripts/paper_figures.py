@@ -183,7 +183,7 @@ def main() -> None:
     p.add_argument("--dump_history", type=Path)
     p.add_argument("--history", type=Path)
     p.add_argument("--terrains", action="store_true")
-    p.add_argument("--out", type=Path, default=Path("paper/figs"))
+    p.add_argument("--out", type=Path, default=Path("artifacts/paper/figs"))
     args = p.parse_args()
     prefixes = parse_prefixes(args.prefix) if args.prefix else {}
     if args.dump_history:

@@ -538,14 +538,14 @@ network and deterministic policy as eval_brax; no physics DR.
 
 Builds the workshop paper's tables from `eval_brax.py` outputs
 (`<prefix>_<method>_seed<k>_final_eval.{json,npz}`); bare booktabs
-`tabular`s; the paper owns float, caption and label (`paper/README.md`).
+`tabular`s; the paper (on Overleaf) owns float, caption and label.
 
 ```sh
 PYTHONPATH=src uv run python src/scripts/paper_tables.py \
   --dump_wandb summaries.json --prefix wojtek=v10_wojtek go1=v10_go1
 PYTHONPATH=src uv run python src/scripts/paper_tables.py \
   --eval_dir <evals> --prefix wojtek=v10_wojtek go1=v10_go1 \
-  --train_summaries summaries.json --out paper/tables
+  --train_summaries summaries.json --out artifacts/paper/tables
 ```
 
 - `--prefix robot=prefix` (repeatable): one column group / row group per
@@ -575,9 +575,9 @@ PYTHONPATH=src uv run python src/scripts/paper_tables.py \
 PYTHONPATH=src uv run python src/scripts/paper_figures.py \
   --dump_history history.json --prefix wojtek=v10_wojtek go1=v10_go1
 PYTHONPATH=src uv run python src/scripts/paper_figures.py \
-  --history history.json --prefix wojtek=v10_wojtek go1=v10_go1 --out paper/figs
+  --history history.json --prefix wojtek=v10_wojtek go1=v10_go1 --out artifacts/paper/figs
 MUJOCO_GL=cgl JAX_PLATFORMS=cpu PYTHONPATH=src uv run python \
-  src/scripts/paper_figures.py --terrains --out paper/figs
+  src/scripts/paper_figures.py --terrains --out artifacts/paper/figs
 ```
 
 - `--dump_history`: per finished run, `eval/d{0.5,1.0}/success_rate` and the
