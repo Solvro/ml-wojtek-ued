@@ -53,5 +53,9 @@ label = "A1 upstream trainer, 8192 envs (6108907 OOM at 32768)"
 id = 6108908
 label = "eval_brax on final checkpoints (aftercorr:6108906)"
 
+[[cluster.jobs]]
+id = 6109504
+label = "A1-long upstream trainer to 300M, 31 evals"
+
 [report]
 url = ""

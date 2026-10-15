@@ -19,9 +19,13 @@ export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1 XLA_PYTHON_CLIENT_PREALLOC=false
 export MUJOCO_GL=disabled WANDB_MODE=online
 export WANDB_ENTITY=dominikgalus9-wroc-aw-university-of-science-and-technology
 UPSTREAM="${UPSTREAM:?set UPSTREAM=<frozen w01-tek copy>}"
+# A1: 50M, Playground's 10 evals; A1-long: STEPS=300000000 EVALS=31 RUN=...a1long...
+STEPS="${STEPS:-50000000}"
+EVALS="${EVALS:-10}"
+RUN="${RUN:-deploy_ab_a1_upstream_seed0}"
 cd "$UPSTREAM/training"
 echo "job ${SLURM_JOB_ID} on ${SLURM_JOB_NODELIST}: upstream $(cat "$UPSTREAM/GIT_COMMIT")"
 PYTHONPATH=. "$HOME/workspace/ml-wojtek-ued/.venv/bin/python" -m wojtek_rl.train \
   +experiment=terrain_blind_v4_4d "++ppo.num_envs=8192" "++ppo.batch_size=256" \
-  "++ppo.num_timesteps=50000000" wandb.enable=true wandb.project=wojtyla \
-  run_name=deploy_ab_a1_upstream_seed0 seed=0 restore=null
+  "++ppo.num_timesteps=$STEPS" "++ppo.num_evals=$EVALS" wandb.enable=true \
+  wandb.project=wojtyla "run_name=$RUN" seed=0 restore=null
