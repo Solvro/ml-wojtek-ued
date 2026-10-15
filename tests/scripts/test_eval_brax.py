@@ -1,9 +1,12 @@
 import argparse
+from typing import Any
 
 import jax
 import numpy as np
 import pytest
 
+from config.hfield_config import HFieldConfig
+from scripts import eval_brax
 from scripts.brax_ued import ROBOT_SCALE
 from scripts.eval_brax import (
     TRACK_FLOOR_LIN,
@@ -188,3 +191,45 @@ def test_stack_passes_names_every_key_per_set() -> None:
         for k in ("fell", "travel", "lin_err", "yaw_err", "lin_rel", "yaw_rel")
     }
     assert raw["random_d1.0_fell"].shape == (2, 1, 1)
+
+
+def test_suite_reports_cmd_success_per_set_and_their_mean(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rates: list[float] = []
+
+    def fake_two_passes(
+        ctx: dict[str, Any], hfields: np.ndarray, key: jax.Array
+    ) -> list[dict[str, np.ndarray]]:
+        levels = len(hfields)
+        tracked_levels = len(rates) % (levels + 1)
+        rel = np.where(np.arange(levels) < tracked_levels, 0.0, 1.0)[:, None]
+        rates.append(tracked_levels / levels)
+        run = {k: v.repeat(levels, axis=0) for k, v in episodes(0, 0, 0).items()}
+        run["lin_rel"] = rel
+        return [run, run]
+
+    monkeypatch.setattr(eval_brax, "two_passes", fake_two_passes)
+    args = argparse.Namespace(
+        seed=0,
+        num_levels=4,
+        suite_instances=4,
+        min_travel=1.0,
+        alphas=[0.25],
+    )
+    ctx = {
+        "args": args,
+        "config": HFieldConfig(),
+        "spec": {"robot": "wojtek", "level_space": "grid"},
+    }
+    metrics, raw = eval_brax.evaluate(ctx)
+    suite_rates = rates[len(eval_brax.DIFFICULTIES) :][: len(raw["suite_success"])]
+    tags = [
+        f"suite/{terrain}_{k}"
+        for terrain in eval_brax.SUITE_TERRAINS
+        for k in eval_brax.SUITE_STRENGTHS
+    ]
+    assert [metrics[f"{t}/cmd_success_rate"] for t in tags] == suite_rates
+    assert raw["suite_cmd_success"].tolist() == suite_rates
+    assert metrics["suite/cmd_success_rate"] == pytest.approx(np.mean(suite_rates))
+    assert metrics["suite/success_rate"] == 0.0
