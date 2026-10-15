@@ -8,8 +8,10 @@ repeated here.
 
 - **Research code goes in sibling packages under `src/`** — `config/`,
   `modules/`, `utils/`, `hfield/`, `ued/`, `scripts/`. Never add files inside
-  `src/wojtek_env/`; it is the extracted env library and is ruff-excluded and
-  hatchling-packaged (`packages = ["src/wojtek_env"]`).
+  `src/wojtek_env/`; it is the env library synced from w01-tek and is
+  ruff-excluded and hatchling-packaged (`packages = ["src/wojtek_env"]`).
+  The exception is an upstream re-sync — see
+  [environment.md](environment.md#upstream-sync).
 - **Namespace packages** — research code has no `__init__.py`. Imports are
   top-level and absolute (`from ued.curriculum import ...`), resolved via
   `PYTHONPATH=src` (exported by the `justfile`).
@@ -44,7 +46,8 @@ of those pins.
 
 `just lint` covers ruff only; run `ty check` (static types) manually per the
 global convention. Tests live in `tests/`, mirroring `src/`
-(`tests/scripts/test_eval_sim2sim.py`); `uv run pytest -q` (pyproject sets
+(`tests/scripts/test_eval_sim2sim.py`, upstream's model-free env tests under
+`tests/wojtek_env/`); `uv run pytest -q` (pyproject sets
 `pythonpath = ["src"]`).
 - ty cannot see mujoco's C-extension members; a `[[tool.ty.overrides]]`
   entry treats `mujoco` as `Any` for the files it lists (add new files that

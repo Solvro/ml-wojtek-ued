@@ -20,9 +20,12 @@ it when the code changes.**
 
 ## Where code lives
 
-- `src/wojtek_env/` — extracted env library. **Do not add files here**; it is
-  ruff-excluded and hatchling-packaged. The one edit point is
-  `envs/registry.py` (register a task).
+- `src/wojtek_env/` — env library, synced from w01-tek `e44c1a9`
+  (`training/wojtek_rl/`). **Do not add files here**; it is ruff-excluded and
+  hatchling-packaged. The one edit point is `envs/registry.py` (register a
+  task); an upstream re-sync is the only other sanctioned change — re-apply
+  the local patches listed in
+  [docs/environment.md](docs/environment.md#upstream-sync).
 - `src/{config,modules,utils,hfield,ued}/`, `src/scripts/` — research code.
   Add new work here as sibling packages.
 - `src/ued/` — the ACCEL algorithm, split by role (`types`, `regret`, `levels`,

@@ -15,9 +15,9 @@ inside `wojtek_env`.
 | **Env library** | `src/wojtek_env/` | MJX sim env, procedural terrain, Gymnasium wrapper, build/check CLIs | packaged (hatchling), **excluded from ruff** |
 | **Research code** | `src/{config,modules,utils,hfield,ued}/`, `src/scripts/` | PPO trainer, ACCEL curriculum, heightfield levels, Hydra config | ruff + ty enforced |
 
-`src/wojtek_env/` is extracted from an upstream robot stack (w01-tek) and treated
-as a stable dependency: env only, no trainer, no ROS, no deployment. Details in
-[environment.md](environment.md).
+`src/wojtek_env/` is copied from an upstream robot stack (w01-tek, synced at
+`e44c1a9`) and treated as a stable dependency: env only, no trainer, no ROS,
+no deployment. Details in [environment.md](environment.md#upstream-sync).
 
 ## Repo map
 
