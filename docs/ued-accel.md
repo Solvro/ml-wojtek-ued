@@ -438,6 +438,29 @@ policy, no physics DR, no `no_progress` cut. Success = no fall and >=
   on the same episodes is biased low by selection noise: with 2000 levels
   of true success 0.5 and 4 episodes each, same-pass CVaR25 reads 0.19,
   cross-fitted 0.49.
+- **Command-conditioned success** (`<set>/cmd_success_rate`, secondary):
+  no fall and the env's sampled command tracked, judged like the deploy
+  tracking reward (`tracking_relative`). Per step, body frame:
+  `lin_rel = |v_xy - cmd_xy| / max(|cmd_xy|, 0.3 m/s x ROBOT_SCALE)`,
+  `yaw_rel = |wz - cmd_wz| / max(|cmd_wz|, 0.7 rad/s)` (the deploy reward's
+  `tracking_rel_floor_lin` / `_ang`). Tracked = episode means of both
+  < 0.5, i.e. within 50% of the command (`TRACK_*` in `eval_brax.py`).
+  Steps within 1 s of the reset or of a command change are a start-up
+  transient and not scored: the env resamples every 250 steps (5 s), so a
+  6 s level scores 1-5 s and the second command's last second is all
+  transient. Deploy commands include stand, spin and slow draws
+  whose |v_xy| x 6 s is below `min_travel` (~19% of draws on
+  accel_deploy), which caps `success_rate` below 1. Travel is distance
+  from spawn, so backward walks can reach it.
+  - Stand-still floor: a robot that never moves passes 12.4% of deploy
+    command draws (accel_deploy rows; 100k draws of the env's
+    `_sample_command`), nearly all of them the 10.4% zero commands. An
+    absolute 0.25 m/s / 0.5 rad/s tolerance gave it 26.9%.
+  - `track_lin_err` / `track_yaw_err` = mean absolute errors (m/s, rad/s)
+    over episodes without a fall; npz adds `<set>_lin_err`, `_yaw_err`,
+    `_lin_rel`, `_yaw_rel` per random/param set.
+  - Suite sets report it too: `suite/<terrain>_<k>/cmd_success_rate`, and
+    `suite/cmd_success_rate` = mean over them (npz `suite_cmd_success`).
 - `--level_space param` adds `param/uniform` (2048 levels drawn from the
   full 8-parameter space: heterogeneous, so CVaR reads a real tail) and
   capability envelopes `axis/<feature>`: one feature (rough, slope up/down,

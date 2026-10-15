@@ -395,10 +395,11 @@ def make_unroll(env: FunctionalEnv, make_policy: Any, dr_in_axes: Any):
             state, key = carry
             key, act_key = jax.random.split(key)
             action, extras = policy(state.obs, act_key)
-            cmd_vx = state.info["command"][:, 0]
+            cmd = state.info["command"][:, :3]
             next_state, reward, done, truncation = v_step(
                 state, action, hfield, dr_model
             )
+            linvel = jax.vmap(body_velocity)(next_state.data)
             transition = types.Transition(
                 observation=state.obs,
                 action=action,
@@ -412,8 +413,13 @@ def make_unroll(env: FunctionalEnv, make_policy: Any, dr_in_axes: Any):
                     "log": {
                         "fell": done * (1.0 - truncation),
                         "reward": reward,
-                        "cmd_vx": cmd_vx,
-                        "forward_vel": jax.vmap(body_velocity)(next_state.data)[:, 0],
+                        "cmd_vx": cmd[:, 0],
+                        "forward_vel": linvel[:, 0],
+                        "cmd": cmd,
+                        # free-joint angular qvel is body-frame: [5] = yaw rate
+                        "vel": jnp.concatenate(
+                            [linvel[:, :2], next_state.data.qvel[:, 5:6]], axis=-1
+                        ),
                         "xy": next_state.data.qpos[:, :2],
                     },
                 },

@@ -577,7 +577,8 @@ def evaluate(
         for i, (name, hfields) in enumerate(sets.items()):
             # same reset keys for every variant: paired comparisons
             key = jax.random.fold_in(jax.random.key(args.seed), i)
-            fell, travel = rollout(ctx, hfields, key)
+            episodes = rollout(ctx, hfields, key)
+            fell, travel = episodes["fell"], episodes["travel"]
             results[variant][name] = (fell, travel, physics.take_diverged())
             tag = f"{variant}_{name.replace('/', '_')}"
             raw[f"{tag}_fell"], raw[f"{tag}_travel"] = fell, travel
@@ -633,6 +634,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "params": params,
         "reset": jax.jit(jax.vmap(lambda k, h: env.reset(k, h))),
         "unroll": cpu_unroll,
+        "dt": base.dt,
     }
 
 

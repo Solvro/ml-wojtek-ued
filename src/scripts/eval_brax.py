@@ -23,6 +23,17 @@ episodes would bias it low by selection noise. 95% CIs bootstrap over
 levels. `level_success_corr` (pass A vs pass B per-level success) checks
 that levels genuinely differ in difficulty.
 
+Every set also reports `cmd_success_rate`: no fall and the sampled command
+tracked, judged like the deploy tracking reward (`tracking_relative`):
+mean body-frame |v_xy - cmd_xy| / max(|cmd_xy|, `TRACK_FLOOR_LIN`) and
+|wz - cmd_wz| / max(|cmd_wz|, `TRACK_FLOOR_YAW`) both below `TRACK_REL_TOL`,
+skipping `TRACK_SKIP_S` after the reset and after every command resample
+(6 s levels with the 5 s resample score 1-5 s). Stand, spin and slow
+commands count; a robot that stands still passes 12.4% of deploy command
+draws, nearly all of them zero commands. `track_lin_err` / `track_yaw_err` average the
+absolute errors over episodes without a fall. `suite/cmd_success_rate`
+averages the suite sets.
+
 With the `param` level space two more sets:
 
 - `param/uniform`: `num_levels` levels drawn uniformly from the 8-parameter
@@ -59,6 +70,17 @@ from scripts.brax_ued import (
 )
 
 DIFFICULTIES = (0.25, 0.5, 0.75, 1.0)
+# command-conditioned success: no fall and the command tracked, so stand,
+# spin and slow commands (|v_xy| x level time < min_travel) can succeed.
+# Relative error with the deploy reward's floors (tracking_rel_floor_lin /
+# _ang): an absolute 0.25 m/s, 0.5 rad/s let a stand-still robot pass 26.9%
+# of deploy command draws, this lets it pass 12.4%. The linear floor scales
+# with the robot like min_travel. Steps within TRACK_SKIP_S of the reset or
+# a command change are a start-up transient and not scored.
+TRACK_REL_TOL = 0.5
+TRACK_FLOOR_LIN = 0.3
+TRACK_FLOOR_YAW = 0.7
+TRACK_SKIP_S = 1.0
 SUITE_STRENGTHS = (1, 2, 3, 4)
 
 
@@ -122,13 +144,60 @@ def suite_hfield(
     return np.clip(data, 0.0, 1.0).astype(np.float32).reshape(-1)
 
 
-def rollout(
-    ctx: dict[str, Any], hfields: np.ndarray, key: jax.Array
-) -> tuple[np.ndarray, np.ndarray]:
-    """Per (level, episode): fell and final travel. hfields: (levels, N)."""
+Episodes = dict[str, np.ndarray]
+
+
+def settled_steps(cmd: np.ndarray, skip: int) -> np.ndarray:
+    """(envs, steps): at least `skip` steps since the reset or the last
+    command change. cmd: (envs, steps, 3)."""
+    steps = np.arange(cmd.shape[1])
+    changed = np.any(cmd[:, 1:] != cmd[:, :-1], axis=-1)
+    last_change = np.maximum.accumulate(np.where(changed, steps[1:], 0), axis=1)
+    last_change = np.concatenate([np.zeros((len(cmd), 1), int), last_change], 1)
+    return steps - last_change >= skip
+
+
+def settled_mean(x: np.ndarray, settled: np.ndarray) -> np.ndarray:
+    count = settled.sum(axis=1)
+    # no settled step: the episode cannot be judged, nan is never tracked
+    total = np.where(settled, x, 0.0).sum(axis=1)
+    return np.where(count > 0, total / np.maximum(count, 1), np.nan)
+
+
+def tracking_errors(
+    cmd: np.ndarray, vel: np.ndarray, skip: int, lin_floor: float
+) -> Episodes:
+    """Per env, means over `settled_steps`: absolute (`lin_err` m/s,
+    `yaw_err` rad/s) and relative to max(|cmd|, floor) (`lin_rel`,
+    `yaw_rel`). cmd, vel: (envs, steps, 3) as (vx, vy, wz), body frame."""
+    err = cmd - vel
+    lin = np.linalg.norm(err[..., :2], axis=-1)
+    yaw = np.abs(err[..., 2])
+    lin_ref = np.maximum(np.linalg.norm(cmd[..., :2], axis=-1), lin_floor)
+    yaw_ref = np.maximum(np.abs(cmd[..., 2]), TRACK_FLOOR_YAW)
+    settled = settled_steps(cmd, skip)
+    return {
+        "lin_err": settled_mean(lin, settled),
+        "yaw_err": settled_mean(yaw, settled),
+        "lin_rel": settled_mean(lin / lin_ref, settled),
+        "yaw_rel": settled_mean(yaw / yaw_ref, settled),
+    }
+
+
+def rollout(ctx: dict[str, Any], hfields: np.ndarray, key: jax.Array) -> Episodes:
+    """Per (level, episode): fell, final travel and the `tracking_errors`.
+    hfields: (levels, N)."""
     args = ctx["args"]
     per_chunk = max(1, args.chunk_envs // args.episodes)
-    fell, travel = [], []
+    skip = round(TRACK_SKIP_S / ctx["dt"])
+    if args.level_steps <= skip:
+        raise ValueError(
+            f"--level_steps {args.level_steps} leaves no step past the "
+            f"{TRACK_SKIP_S} s tracking transient ({skip} steps); "
+            f"use more than {skip}"
+        )
+    lin_floor = TRACK_FLOOR_LIN * ROBOT_SCALE[ctx["spec"]["robot"]]
+    out: dict[str, list[np.ndarray]] = {}
     for start in range(0, len(hfields), per_chunk):
         chunk = jnp.repeat(
             jnp.asarray(hfields[start : start + per_chunk]), args.episodes, axis=0
@@ -146,10 +215,18 @@ def rollout(
             length=args.level_steps,
         )
         log = data.extras["log"]
-        fell.append(np.asarray(log["fell"].max(axis=1)))
-        travel.append(np.asarray(jnp.linalg.norm(log["xy"][:, -1] - start_xy, axis=-1)))
+        travel = jnp.linalg.norm(log["xy"][:, -1] - start_xy, axis=-1)
+        chunk_out = {
+            "fell": np.asarray(log["fell"].max(axis=1)),
+            "travel": np.asarray(travel),
+            **tracking_errors(
+                np.asarray(log["cmd"]), np.asarray(log["vel"]), skip, lin_floor
+            ),
+        }
+        for k, v in chunk_out.items():
+            out.setdefault(k, []).append(v)
     shape = (len(hfields), args.episodes)
-    return np.concatenate(fell).reshape(shape), np.concatenate(travel).reshape(shape)
+    return {k: np.concatenate(v).reshape(shape) for k, v in out.items()}
 
 
 def cross_fit_cvar(a: np.ndarray, b: np.ndarray, alpha: float) -> float:
@@ -165,21 +242,42 @@ def bootstrap_ci(
     return float(np.percentile(samples, 2.5)), float(np.percentile(samples, 97.5))
 
 
+def tracked(episodes: Episodes) -> np.ndarray:
+    return (
+        (episodes["fell"] == 0)
+        & (episodes["lin_rel"] < TRACK_REL_TOL)
+        & (episodes["yaw_rel"] < TRACK_REL_TOL)
+    )
+
+
+def tracking_summary(prefix: str, passes: list[Episodes]) -> dict[str, float]:
+    both = {k: np.stack([p[k] for p in passes]) for k in passes[0]}
+    standing = both["fell"] == 0
+    out = {f"{prefix}/cmd_success_rate": float(tracked(both).mean())}
+    # errors over episodes without a fall: a fallen robot's velocity says
+    # nothing about tracking
+    if standing.any():
+        out[f"{prefix}/track_lin_err"] = float(both["lin_err"][standing].mean())
+        out[f"{prefix}/track_yaw_err"] = float(both["yaw_err"][standing].mean())
+    return out
+
+
 def summarize(
-    prefix: str, passes: list[tuple[np.ndarray, np.ndarray]], ctx: dict[str, Any]
+    prefix: str, passes: list[Episodes], ctx: dict[str, Any]
 ) -> dict[str, float]:
     args = ctx["args"]
     threshold = min_travel(ctx["spec"]["robot"], args.min_travel)
-    (fell_a, travel_a), (fell_b, travel_b) = passes
-    success_a = ((fell_a == 0) & (travel_a >= threshold)).mean(axis=1)
-    success_b = ((fell_b == 0) & (travel_b >= threshold)).mean(axis=1)
+    a, b = passes
+    success_a = ((a["fell"] == 0) & (a["travel"] >= threshold)).mean(axis=1)
+    success_b = ((b["fell"] == 0) & (b["travel"] >= threshold)).mean(axis=1)
     rng = np.random.default_rng(0)
     n = len(success_a)
     mean = 0.5 * (success_a + success_b)
     out = {
         f"{prefix}/success_rate": float(mean.mean()),
-        f"{prefix}/fall_rate": float(0.5 * (fell_a.mean() + fell_b.mean())),
-        f"{prefix}/mean_travel": float(0.5 * (travel_a.mean() + travel_b.mean())),
+        f"{prefix}/fall_rate": float(0.5 * (a["fell"].mean() + b["fell"].mean())),
+        f"{prefix}/mean_travel": float(0.5 * (a["travel"].mean() + b["travel"].mean())),
+        **tracking_summary(prefix, passes),
     }
     lo, hi = bootstrap_ci(lambda i: float(mean[i].mean()), n, rng)
     out[f"{prefix}/success_rate_ci_low"], out[f"{prefix}/success_rate_ci_high"] = lo, hi
@@ -201,7 +299,7 @@ def summarize(
 
 def two_passes(
     ctx: dict[str, Any], hfields: np.ndarray, key: jax.Array
-) -> list[tuple[np.ndarray, np.ndarray]]:
+) -> list[Episodes]:
     key_a, key_b = jax.random.split(key)
     return [rollout(ctx, hfields, key_a), rollout(ctx, hfields, key_b)]
 
@@ -231,6 +329,11 @@ def envelope(values: np.ndarray, success: np.ndarray, threshold: float = 0.5) ->
     return float(values[-1])
 
 
+def stack_passes(prefix: str, passes: list[Episodes]) -> dict[str, np.ndarray]:
+    """npz arrays `<prefix>_<key>`, pass x level x episode."""
+    return {f"{prefix}_{k}": np.stack([p[k] for p in passes]) for k in passes[0]}
+
+
 def param_space_sets(
     ctx: dict[str, Any], space: ParamSpace, key: jax.Array
 ) -> tuple[dict[str, float], dict[str, Any]]:
@@ -241,8 +344,7 @@ def param_space_sets(
     passes = two_passes(ctx, space.render(uniform), sub)
     metrics = summarize("param/uniform", passes, ctx)
     raw = {
-        "param_uniform_fell": np.stack([p[0] for p in passes]),
-        "param_uniform_travel": np.stack([p[1] for p in passes]),
+        **stack_passes("param_uniform", passes),
         "param_uniform_levels": uniform,
     }
     for name, index, end in AXES:
@@ -292,13 +394,12 @@ def evaluate(ctx: dict[str, Any]) -> tuple[dict[str, float], dict[str, Any]]:
         key, sub = jax.random.split(key)
         passes = two_passes(ctx, hfields, sub)
         metrics.update(summarize(f"random/d{difficulty}", passes, ctx))
-        raw[f"random_d{difficulty}_fell"] = np.stack([p[0] for p in passes])
-        raw[f"random_d{difficulty}_travel"] = np.stack([p[1] for p in passes])
+        raw.update(stack_passes(f"random_d{difficulty}", passes))
         print(
             {k: round(v, 3) for k, v in metrics.items() if f"d{difficulty}/" in k},
             flush=True,
         )
-    suite_success = []
+    suite_success, suite_cmd_success = [], []
     for terrain in SUITE_TERRAINS:
         for k in SUITE_STRENGTHS:
             hfields = np.stack(
@@ -309,17 +410,20 @@ def evaluate(ctx: dict[str, Any]) -> tuple[dict[str, float], dict[str, Any]]:
             )
             key, sub = jax.random.split(key)
             passes = two_passes(ctx, hfields, sub)
-            summary = summarize(f"suite/{terrain}_{k}", passes, ctx)
-            metrics[f"suite/{terrain}_{k}/success_rate"] = summary[
-                f"suite/{terrain}_{k}/success_rate"
-            ]
-            suite_success.append(summary[f"suite/{terrain}_{k}/success_rate"])
+            tag = f"suite/{terrain}_{k}"
+            summary = summarize(tag, passes, ctx)
+            for name in ("success_rate", "cmd_success_rate"):
+                metrics[f"{tag}/{name}"] = summary[f"{tag}/{name}"]
+            suite_success.append(summary[f"{tag}/success_rate"])
+            suite_cmd_success.append(summary[f"{tag}/cmd_success_rate"])
     suite_success = np.asarray(suite_success)
     metrics["suite/success_rate"] = float(suite_success.mean())
     for alpha in args.alphas:
         k = max(1, int(np.ceil(alpha * len(suite_success))))
         metrics[f"suite/cvar{alpha}_success"] = float(np.sort(suite_success)[:k].mean())
     raw["suite_success"] = suite_success
+    metrics["suite/cmd_success_rate"] = float(np.mean(suite_cmd_success))
+    raw["suite_cmd_success"] = np.asarray(suite_cmd_success)
     if isinstance(space, ParamSpace):
         param_metrics, param_raw = param_space_sets(ctx, space, key)
         metrics.update(param_metrics)
@@ -336,6 +440,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     check_spec_arena(spec)
     env = make_env(spec, args.chunk_envs, train=False)
     make_policy = ppo_networks.make_inference_fn(spec_network(spec))
+    base: Any = env._env.unwrapped
     return {
         "args": args,
         "spec": spec,
@@ -343,6 +448,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "params": params,
         "reset": jax.jit(jax.vmap(lambda k, h: env.reset(k, h))),
         "unroll": make_unroll(env, make_policy, None),
+        "dt": base.dt,
     }
 
 
