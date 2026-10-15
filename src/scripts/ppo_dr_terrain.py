@@ -5,6 +5,7 @@ from typing import Any, cast
 import equinox as eqx
 import hydra
 import jax
+import jax.numpy as jnp
 import numpy as np
 import optax
 import wandb
@@ -13,6 +14,7 @@ from omegaconf import OmegaConf
 from config.hfield_config import HFieldConfig
 from config.ppo_dr_terrain_config import PpoDrTerrainConfig
 from hfield.manager import HFieldManager
+from hfield.tiles import TileLayout
 from modules.ppo_modules import A2C
 from ued.levels import generate_batch, level_to_hfield_data_batch
 from utils.checkpoint import (
@@ -166,9 +168,14 @@ def train(cfg: PpoDrTerrainConfig) -> None:
             envs_num=cfg.environment_params.envs_num,
             steps_in_episode=cfg.environment_params.steps_in_episode,
             dr_in_axes=dr_in_axes,
-            hfield_in_axes=0,
         )
     )
+    layout = TileLayout(hfield_config)
+    assemble = jax.jit(layout.assemble)
+    # fresh levels every iteration, one per tile, envs spread over them
+    envs_num = cfg.environment_params.envs_num
+    num_levels = min(envs_num, layout.n_tiles)
+    tile_xy = jnp.asarray(layout.centres()[np.arange(envs_num) % num_levels])
     jit_advantage = eqx.filter_jit(
         functools.partial(
             calculate_episode_advantage,
@@ -193,10 +200,10 @@ def train(cfg: PpoDrTerrainConfig) -> None:
         key, rollout_key, dr_key, update_key = jax.random.split(key, 4)
 
         dr_model, _ = env.sample_dr(dr_key, cfg.environment_params.envs_num)
-        levels = generate_batch(hfield_manager, rng, cfg.environment_params.envs_num)
-        hfield_data = level_to_hfield_data_batch(hfield_manager, levels)
+        levels = generate_batch(hfield_manager, rng, num_levels)
+        arena = assemble(level_to_hfield_data_batch(hfield_manager, levels))
         episode = jit_batch_rollout(
-            rollout_key, a2c, hfield_data=hfield_data, dr_model=dr_model
+            rollout_key, a2c, hfield_data=arena, tile_xy=tile_xy, dr_model=dr_model
         )
         advantages, returns = jit_advantage(a2c, episode)
 

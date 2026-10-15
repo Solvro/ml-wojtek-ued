@@ -13,7 +13,8 @@ from omegaconf import OmegaConf
 from config.accel_config import AccelConfig
 from config.hfield_config import HFieldConfig
 from hfield.manager import HFieldManager
-from modules.ppo_modules import A2C
+from hfield.tiles import TileLayout
+from modules.ppo_modules import A2C, Episode
 from ued.curriculum import (
     decide_replay,
     generate_branch_top_k,
@@ -202,6 +203,20 @@ def train(cfg: AccelConfig) -> None:
     level_buffer = LevelBuffer(size=cfg.accel_params.buffer_size)
     hfield_config = cast(HFieldConfig, OmegaConf.to_object(cfg.hfield_params))
     hfield_manager = HFieldManager(hfield_config)
+    layout = TileLayout(hfield_config)
+    assemble = jax.jit(layout.assemble)
+    lanes, per_lane = cfg.accel_params.num_lanes, cfg.accel_params.envs_per_lane
+    tile_xy = layout.tile_xy(lanes, per_lane).reshape(lanes, per_lane, 2)
+
+    def lane_rollout(
+        key: jax.Array, model: A2C, *, hfield_data: jax.Array | None = None
+    ) -> Episode:
+        if hfield_data is None:
+            raise ValueError("accel_top_k.py needs one level per lane")
+        # lane i on tile i
+        arena = assemble(hfield_data)
+        return jit_batch_rollout(key, model, hfield_data=arena, tile_xy=tile_xy)
+
     rng = np.random.default_rng(cfg.environment_params.seed)
     fill_buffer(level_buffer, hfield_manager, rng, cfg.accel_params.initial_fill_ratio)
 
@@ -214,7 +229,7 @@ def train(cfg: AccelConfig) -> None:
         top_k=cfg.accel_params.top_k,
     )
     trainer = PPOTrainer(
-        rollout=jit_batch_rollout,
+        rollout=lane_rollout,
         advantage=jit_advantage,
         make_step=jit_make_step,
         epochs=cfg.training_params.epochs,

@@ -95,20 +95,33 @@ class FunctionalEnv:
         return self._domain_randomize(base._mjx_model, dr_rng)
 
     @contextlib.contextmanager
-    def _swapped_model(self, hfield_data: jax.Array | None, dr_model: mjx.Model | None):
+    def _swapped_model(
+        self,
+        hfield_data: jax.Array | None,
+        dr_model: mjx.Model | None,
+        tile_xy: jax.Array | None = None,
+    ):
         if hfield_data is None and dr_model is None:
             yield
             return
         base = cast(Any, self._env.unwrapped)
         old_model = base._mjx_model
         old_terrain: Any = base._terrain if self._has_lookup else None
+        old_spawn = None if self._has_lookup else base.spawn_xy
         new_model = dr_model if dr_model is not None else old_model
         if hfield_data is not None:
             new_model = new_model.tree_replace({"hfield_data": hfield_data})
             if self._has_lookup:
-                base._terrain = dataclasses.replace(
+                terrain = dataclasses.replace(
                     old_terrain, lookup=self._lookup_from_hfield(hfield_data)
                 )
+                if tile_xy is not None:
+                    # every spawn table entry points at this env's tile
+                    origin = jnp.broadcast_to(tile_xy, old_terrain.origin_xy.shape)
+                    terrain = dataclasses.replace(terrain, origin_xy=origin)
+                base._terrain = terrain
+            elif tile_xy is not None:
+                base.spawn_xy = tile_xy
         base._mjx_model = new_model
         try:
             yield
@@ -116,17 +129,12 @@ class FunctionalEnv:
             base._mjx_model = old_model
             if self._has_lookup:
                 base._terrain = old_terrain
+            else:
+                base.spawn_xy = old_spawn
 
     def _lookup_from_hfield(self, hfield_data: jax.Array) -> jax.Array:
         # height scan, base height, foot contact and fall checks read the
-        # terrain lookup, not hfield_data; keep it on the swapped level
-        if cast(Any, self._env.unwrapped)._backend == "warp":
-            raise ValueError(
-                "per-env hfield_data on the warp backend collides every env "
-                "with the first env's level (check_hfield_batch.py). Set "
-                "sim.backend=jax, e.g. via utils.env_overrides."
-                "accel_arena_overrides"
-            )
+        # terrain lookup, not hfield_data; keep it on the arena's levels
         if self._hfield_geometry is None:
             raise ValueError(
                 "hfield_data swap needs a terrain arena whose height lookup "
@@ -141,8 +149,18 @@ class FunctionalEnv:
         key: jax.Array,
         hfield_data: jax.Array | None = None,
         dr_model: mjx.Model | None = None,
+        tile_xy: jax.Array | None = None,
     ) -> tuple[Obs, Any]:
-        with self._swapped_model(hfield_data, dr_model):
+        """`hfield_data`: the shared tiled arena (`hfield.tiles`), the same
+        array for every env (vmap it with in_axes None); `tile_xy`: this
+        env's tile centre, where it spawns."""
+        if hfield_data is not None and tile_xy is None:
+            raise ValueError(
+                "reset with an arena hfield_data needs the env's tile_xy "
+                "(TileLayout.tile_xy); without it the robot spawns at the "
+                "arena centre, between tiles"
+            )
+        with self._swapped_model(hfield_data, dr_model, tile_xy):
             state: Any = self._env.reset(key)
         state.info["first_data"] = state.data
         state.info["first_obs"] = state.obs

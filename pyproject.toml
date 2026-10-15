@@ -38,8 +38,13 @@ dev = ["pytest>=8.0.0", "ruff>=0.14.1"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-# third-party: brax/distrax import the unmaintained jaxopt at import time
-filterwarnings = ["ignore:JAXopt is no longer maintained:DeprecationWarning"]
+# third-party: brax/distrax import the unmaintained jaxopt at import time;
+# mjx's hfield collision writes float64 max into a float32 distance
+# (collision_convex._convex_convex)
+filterwarnings = [
+  "ignore:JAXopt is no longer maintained:DeprecationWarning",
+  "ignore:overflow encountered in cast:RuntimeWarning",
+]
 
 [[tool.ty.overrides]]
 include = ["src/scripts/eval_sim2sim.py", "tests/**"]

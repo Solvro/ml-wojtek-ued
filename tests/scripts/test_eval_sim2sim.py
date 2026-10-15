@@ -205,7 +205,7 @@ def host_inputs(model: mujoco.MjModel, n: int, delay: int) -> list[np.ndarray]:
 
 def test_cpu_physics_step_matches_mj_step(model: mujoco.MjModel) -> None:
     physics = s2s.CpuPhysics(model, threads=2)
-    physics.set_levels(np.full((3, model.nhfielddata), 0.5, np.float32))
+    physics.set_arena(np.full(model.nhfielddata, 0.5, np.float32))
     out = physics.step(5, specs_for(model), *host_inputs(model, 3, delay=2))
     data = mujoco.MjData(model)
     model.hfield_data[:] = 0.5
@@ -227,14 +227,14 @@ def test_cpu_physics_half_dt_runs_two_steps_per_substep(
 ) -> None:
     physics = s2s.CpuPhysics(model, threads=1)
     physics.use(s2s.half_dt(model, None))
-    physics.set_levels(np.full((1, model.nhfielddata), 0.5, np.float32))
+    physics.set_arena(np.full(model.nhfielddata, 0.5, np.float32))
     out = physics.step(5, specs_for(model), *host_inputs(model, 1, delay=0))
     assert out["time"][0] == pytest.approx(5 * 0.004)
 
 
 def test_cpu_physics_drops_diverged_env(model: mujoco.MjModel) -> None:
     physics = s2s.CpuPhysics(model, threads=1)
-    physics.set_levels(np.full((1, model.nhfielddata), 0.5, np.float32))
+    physics.set_arena(np.full(model.nhfielddata, 0.5, np.float32))
     inputs = host_inputs(model, 1, delay=0)
     inputs[1][:] = 1e30
     out = physics.step(5, specs_for(model), *inputs)
@@ -244,11 +244,21 @@ def test_cpu_physics_drops_diverged_env(model: mujoco.MjModel) -> None:
     assert physics.take_diverged() == 0
 
 
-def test_cpu_physics_rejects_batch_level_mismatch(model: mujoco.MjModel) -> None:
+def test_cpu_physics_rejects_arena_of_another_model(model: mujoco.MjModel) -> None:
     physics = s2s.CpuPhysics(model, threads=1)
-    physics.set_levels(np.full((2, model.nhfielddata), 0.5, np.float32))
-    with pytest.raises(ValueError, match="set_levels"):
-        physics.step(5, specs_for(model), *host_inputs(model, 3, delay=0))
+    with pytest.raises(ValueError, match="TileLayout.assemble"):
+        physics.set_arena(np.full((2, model.nhfielddata), 0.5, np.float32))
+
+
+def test_cpu_physics_loads_the_arena_into_every_thread(
+    model: mujoco.MjModel,
+) -> None:
+    physics = s2s.CpuPhysics(model, threads=2)
+    arena = np.linspace(0.0, 1.0, model.nhfielddata, dtype=np.float32)
+    physics.set_arena(arena)
+    physics.step(1, specs_for(model), *host_inputs(model, 2, delay=0))
+    for m in physics.models:
+        np.testing.assert_array_equal(m.hfield_data, arena)
 
 
 def level_case(

@@ -4,6 +4,7 @@ from typing import Any, cast
 import equinox as eqx
 import hydra
 import jax
+import jax.numpy as jnp
 import numpy as np
 import wandb
 from omegaconf import OmegaConf
@@ -11,6 +12,7 @@ from omegaconf import OmegaConf
 from config.eval_config import EvalLevelsConfig
 from config.hfield_config import HFieldConfig
 from hfield.manager import HFieldManager
+from hfield.tiles import TileLayout
 from modules.ppo_modules import A2C
 from ued.levels import generate_batch, level_to_hfield_data_batch
 from utils.checkpoint import (
@@ -34,6 +36,14 @@ def rollout_levels(
     chunk_size: int,
     key: jax.Array,
 ) -> tuple[jax.Array, LevelEpisode]:
+    """Chunks of `chunk_size` levels, level i of a chunk on arena tile i."""
+    layout = TileLayout(hfield_manager.config)
+    if chunk_size > layout.n_tiles:
+        raise ValueError(
+            f"chunk_size={chunk_size} exceeds the arena's {layout.n_tiles} "
+            "tiles, one level each; lower chunk_size"
+        )
+    tile_xy = jnp.asarray(layout.centres()[:chunk_size])
     n = levels.shape[0]
     num_chunks = -(-n // chunk_size)
     padded = np.resize(levels, (num_chunks * chunk_size, *levels.shape[1:]))
@@ -43,8 +53,9 @@ def rollout_levels(
         hfield_data = level_to_hfield_data_batch(
             hfield_manager, padded[start : start + chunk_size]
         )
+        arena = layout.assemble(hfield_data)
         key, chunk_key = jax.random.split(key)
-        chunks.append(jit_eval_levels(chunk_key, model, hfield_data))
+        chunks.append(jit_eval_levels(chunk_key, model, arena, tile_xy))
 
     episodes = jax.tree.map(lambda *xs: np.concatenate(xs)[:n], *chunks)
     return key, episodes
