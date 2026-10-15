@@ -438,6 +438,14 @@ policy, no physics DR, no `no_progress` cut. Success = no fall and >=
   on the same episodes is biased low by selection noise: with 2000 levels
   of true success 0.5 and 4 episodes each, same-pass CVaR25 reads 0.19,
   cross-fitted 0.49.
+- **Command-conditioned success** (`<set>/cmd_success_rate`, secondary):
+  no fall and the env's sampled command tracked — mean body-frame
+  |v_xy - cmd_xy| < 0.25 m/s (x `ROBOT_SCALE`) and |wz - cmd_wz| <
+  0.5 rad/s, after the first 1 s (`TRACK_*` in `eval_brax.py`). Deploy
+  commands include stand, spin and backward draws that never reach
+  `min_travel`, which caps `success_rate` below 1. `track_lin_err` /
+  `track_yaw_err` = mean errors over episodes without a fall; npz adds
+  `<set>_lin_err`, `<set>_yaw_err` per random/param set.
 - `--level_space param` adds `param/uniform` (2048 levels drawn from the
   full 8-parameter space: heterogeneous, so CVaR reads a real tail) and
   capability envelopes `axis/<feature>`: one feature (rough, slope up/down,

@@ -23,6 +23,12 @@ episodes would bias it low by selection noise. 95% CIs bootstrap over
 levels. `level_success_corr` (pass A vs pass B per-level success) checks
 that levels genuinely differ in difficulty.
 
+Every set also reports `cmd_success_rate`: no fall and the sampled command
+tracked (mean body-frame |v_xy - cmd_xy| < `TRACK_LIN_TOL` m/s and
+|wz - cmd_wz| < `TRACK_YAW_TOL` rad/s after the first `TRACK_SKIP_S`), so
+stand, spin and backward commands count; `track_lin_err` / `track_yaw_err`
+average the errors over episodes without a fall.
+
 With the `param` level space two more sets:
 
 - `param/uniform`: `num_levels` levels drawn uniformly from the 8-parameter
@@ -59,6 +65,13 @@ from scripts.brax_ued import (
 )
 
 DIFFICULTIES = (0.25, 0.5, 0.75, 1.0)
+# command-conditioned success: no fall and the command tracked, so stand,
+# spin and backward commands (which never reach min_travel) can succeed.
+# Errors are means over the episode after TRACK_SKIP_S (start-up transient);
+# the linear tolerance scales with the robot like min_travel.
+TRACK_LIN_TOL = 0.25
+TRACK_YAW_TOL = 0.5
+TRACK_SKIP_S = 1.0
 SUITE_STRENGTHS = (1, 2, 3, 4)
 
 
@@ -122,13 +135,32 @@ def suite_hfield(
     return np.clip(data, 0.0, 1.0).astype(np.float32).reshape(-1)
 
 
-def rollout(
-    ctx: dict[str, Any], hfields: np.ndarray, key: jax.Array
-) -> tuple[np.ndarray, np.ndarray]:
-    """Per (level, episode): fell and final travel. hfields: (levels, N)."""
+Episodes = dict[str, np.ndarray]
+
+
+def tracking_errors(
+    cmd: jax.Array, vel: jax.Array, skip: int
+) -> tuple[jax.Array, jax.Array]:
+    """Mean |cmd - vel| per env: linear (vx, vy) norm and yaw rate.
+
+    cmd, vel: (envs, steps, 3) as (vx, vy, wz), body frame."""
+    err = (cmd - vel)[:, skip:]
+    lin = jnp.linalg.norm(err[..., :2], axis=-1).mean(axis=1)
+    return lin, jnp.abs(err[..., 2]).mean(axis=1)
+
+
+def rollout(ctx: dict[str, Any], hfields: np.ndarray, key: jax.Array) -> Episodes:
+    """Per (level, episode): fell, final travel, mean linear and yaw command
+    tracking errors. hfields: (levels, N)."""
     args = ctx["args"]
     per_chunk = max(1, args.chunk_envs // args.episodes)
-    fell, travel = [], []
+    skip = round(TRACK_SKIP_S / ctx["dt"])
+    out: dict[str, list[np.ndarray]] = {
+        "fell": [],
+        "travel": [],
+        "lin_err": [],
+        "yaw_err": [],
+    }
     for start in range(0, len(hfields), per_chunk):
         chunk = jnp.repeat(
             jnp.asarray(hfields[start : start + per_chunk]), args.episodes, axis=0
@@ -146,10 +178,15 @@ def rollout(
             length=args.level_steps,
         )
         log = data.extras["log"]
-        fell.append(np.asarray(log["fell"].max(axis=1)))
-        travel.append(np.asarray(jnp.linalg.norm(log["xy"][:, -1] - start_xy, axis=-1)))
+        lin_err, yaw_err = tracking_errors(log["cmd"], log["vel"], skip)
+        out["fell"].append(np.asarray(log["fell"].max(axis=1)))
+        out["travel"].append(
+            np.asarray(jnp.linalg.norm(log["xy"][:, -1] - start_xy, axis=-1))
+        )
+        out["lin_err"].append(np.asarray(lin_err))
+        out["yaw_err"].append(np.asarray(yaw_err))
     shape = (len(hfields), args.episodes)
-    return np.concatenate(fell).reshape(shape), np.concatenate(travel).reshape(shape)
+    return {k: np.concatenate(v).reshape(shape) for k, v in out.items()}
 
 
 def cross_fit_cvar(a: np.ndarray, b: np.ndarray, alpha: float) -> float:
@@ -165,21 +202,44 @@ def bootstrap_ci(
     return float(np.percentile(samples, 2.5)), float(np.percentile(samples, 97.5))
 
 
+def tracked(episodes: Episodes, robot: str) -> np.ndarray:
+    return (
+        (episodes["fell"] == 0)
+        & (episodes["lin_err"] < TRACK_LIN_TOL * ROBOT_SCALE[robot])
+        & (episodes["yaw_err"] < TRACK_YAW_TOL)
+    )
+
+
+def tracking_summary(
+    prefix: str, passes: list[Episodes], robot: str
+) -> dict[str, float]:
+    both = {k: np.stack([p[k] for p in passes]) for k in passes[0]}
+    standing = both["fell"] == 0
+    out = {f"{prefix}/cmd_success_rate": float(tracked(both, robot).mean())}
+    # errors over episodes without a fall: a fallen robot's velocity says
+    # nothing about tracking
+    if standing.any():
+        out[f"{prefix}/track_lin_err"] = float(both["lin_err"][standing].mean())
+        out[f"{prefix}/track_yaw_err"] = float(both["yaw_err"][standing].mean())
+    return out
+
+
 def summarize(
-    prefix: str, passes: list[tuple[np.ndarray, np.ndarray]], ctx: dict[str, Any]
+    prefix: str, passes: list[Episodes], ctx: dict[str, Any]
 ) -> dict[str, float]:
     args = ctx["args"]
     threshold = min_travel(ctx["spec"]["robot"], args.min_travel)
-    (fell_a, travel_a), (fell_b, travel_b) = passes
-    success_a = ((fell_a == 0) & (travel_a >= threshold)).mean(axis=1)
-    success_b = ((fell_b == 0) & (travel_b >= threshold)).mean(axis=1)
+    a, b = passes
+    success_a = ((a["fell"] == 0) & (a["travel"] >= threshold)).mean(axis=1)
+    success_b = ((b["fell"] == 0) & (b["travel"] >= threshold)).mean(axis=1)
     rng = np.random.default_rng(0)
     n = len(success_a)
     mean = 0.5 * (success_a + success_b)
     out = {
         f"{prefix}/success_rate": float(mean.mean()),
-        f"{prefix}/fall_rate": float(0.5 * (fell_a.mean() + fell_b.mean())),
-        f"{prefix}/mean_travel": float(0.5 * (travel_a.mean() + travel_b.mean())),
+        f"{prefix}/fall_rate": float(0.5 * (a["fell"].mean() + b["fell"].mean())),
+        f"{prefix}/mean_travel": float(0.5 * (a["travel"].mean() + b["travel"].mean())),
+        **tracking_summary(prefix, passes, ctx["spec"]["robot"]),
     }
     lo, hi = bootstrap_ci(lambda i: float(mean[i].mean()), n, rng)
     out[f"{prefix}/success_rate_ci_low"], out[f"{prefix}/success_rate_ci_high"] = lo, hi
@@ -201,7 +261,7 @@ def summarize(
 
 def two_passes(
     ctx: dict[str, Any], hfields: np.ndarray, key: jax.Array
-) -> list[tuple[np.ndarray, np.ndarray]]:
+) -> list[Episodes]:
     key_a, key_b = jax.random.split(key)
     return [rollout(ctx, hfields, key_a), rollout(ctx, hfields, key_b)]
 
@@ -231,6 +291,11 @@ def envelope(values: np.ndarray, success: np.ndarray, threshold: float = 0.5) ->
     return float(values[-1])
 
 
+def stack_passes(prefix: str, passes: list[Episodes]) -> dict[str, np.ndarray]:
+    """npz arrays `<prefix>_<key>`, pass x level x episode."""
+    return {f"{prefix}_{k}": np.stack([p[k] for p in passes]) for k in passes[0]}
+
+
 def param_space_sets(
     ctx: dict[str, Any], space: ParamSpace, key: jax.Array
 ) -> tuple[dict[str, float], dict[str, Any]]:
@@ -241,8 +306,7 @@ def param_space_sets(
     passes = two_passes(ctx, space.render(uniform), sub)
     metrics = summarize("param/uniform", passes, ctx)
     raw = {
-        "param_uniform_fell": np.stack([p[0] for p in passes]),
-        "param_uniform_travel": np.stack([p[1] for p in passes]),
+        **stack_passes("param_uniform", passes),
         "param_uniform_levels": uniform,
     }
     for name, index, end in AXES:
@@ -292,8 +356,7 @@ def evaluate(ctx: dict[str, Any]) -> tuple[dict[str, float], dict[str, Any]]:
         key, sub = jax.random.split(key)
         passes = two_passes(ctx, hfields, sub)
         metrics.update(summarize(f"random/d{difficulty}", passes, ctx))
-        raw[f"random_d{difficulty}_fell"] = np.stack([p[0] for p in passes])
-        raw[f"random_d{difficulty}_travel"] = np.stack([p[1] for p in passes])
+        raw.update(stack_passes(f"random_d{difficulty}", passes))
         print(
             {k: round(v, 3) for k, v in metrics.items() if f"d{difficulty}/" in k},
             flush=True,
@@ -336,6 +399,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     check_spec_arena(spec)
     env = make_env(spec, args.chunk_envs, train=False)
     make_policy = ppo_networks.make_inference_fn(spec_network(spec))
+    base: Any = env._env.unwrapped
     return {
         "args": args,
         "spec": spec,
@@ -343,6 +407,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "params": params,
         "reset": jax.jit(jax.vmap(lambda k, h: env.reset(k, h))),
         "unroll": make_unroll(env, make_policy, None),
+        "dt": base.dt,
     }
 
 
