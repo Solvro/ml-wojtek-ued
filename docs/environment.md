@@ -13,15 +13,17 @@ not edit it.
   layout; only `wojtek_rl` imports and module-path strings are rewritten.
   `paths.py`, `gymnasium/`, `tools/check_gym.py` and the `__init__.py` files
   are ours.
-- **Dynamics are 1:1 with upstream.** Every local delta vs `e44c1a9` (re-apply
-  on the next sync):
+- Every local delta vs `e44c1a9` (re-apply on the next sync). None is
+  inference-relevant: obs layout, action pipeline, PD/ctrl config and network
+  inputs are upstream's.
 
-| file | delta | why | dynamics |
+| file | delta | why | scope |
 |---|---|---|---|
-| every ported module | `wojtek_rl` imports / module-path strings → `wojtek_env.{envs,terrain,tools}` | package layout | no |
-| `envs/env.py` | `_get_reward` also returns `fall_causes`; `step` writes `fall_{min_height,tilt,toggle,base_contact}_at_done` metrics | read by `utils/ppo_helpers.py` | no (metrics only) |
-| `paths.py` | ours: assets under `assets/wojtek_description/`, `"accel"` in `TERRAIN_KINDS`, no room/HF/policy constants | repo layout; accel arena for UED | no |
-| `envs/__init__.py`, `gymnasium/`, `tools/check_gym.py` | ours: re-exports, Gymnasium wrapper | convenience API | no |
+| every ported module | `wojtek_rl` imports / module-path strings → `wojtek_env.{envs,terrain,tools}` | package layout | neither |
+| `envs/env.py` | spawn pose: every leg joint, passive four-bar joints included, from the settled closed-loop pose (`_spawn_joint_qpos`, see below) | upstream leaves the closure open at reset | training-only (reset state) |
+| `envs/env.py` | `_get_reward` also returns `fall_causes`; `step` writes `fall_{min_height,tilt,toggle,base_contact}_at_done` | read by `utils/ppo_helpers.py` | training-only (metrics) |
+| `paths.py` | ours: assets under `assets/wojtek_description/`, `"accel"` in `TERRAIN_KINDS`, no room/HF/policy constants | repo layout; accel arena for UED | training-only |
+| `envs/__init__.py`, `gymnasium/`, `tools/check_gym.py` | ours: re-exports, Gymnasium wrapper | convenience API | training-only |
 - Generated `wojtek_mjx.xml` / `scene_mjx.xml` are byte-identical to upstream
   `ros/src/wojtek_description/mujoco/` at `e44c1a9`.
 - Model-free upstream unit tests live in `tests/wojtek_env/` (mirrors the
@@ -29,16 +31,9 @@ not edit it.
 
 ### What the e44c1a9 sync changed for existing experiments
 
-- **Reset pose reverted to upstream.** The previous copy carried a local
-  spawn-pose patch (every leg joint, passive four-bar joints included, from
-  the settled closed-loop pose). Upstream sets only the 12 actuated joints, so
-  each leg's closure loop starts open and the solver closes it in the first
-  steps. The patch was dropped for upstream parity, so v10 runs are not
-  reproducible on this env.
-- **No config default changed.** Every new feature ships off (`0.0` /
-  `enable=False`); apart from the reset pose, obs / reward / qpos at default
-  config and with `movement_overrides()` match the previous copy bit-for-bit
-  over 20 jax-backend CPU steps (checked with the spawn patch still applied).
+- **No default changed.** Every new feature ships off (`0.0` / `enable=False`).
+  At default config and with `movement_overrides()`, obs / reward / qpos match
+  the previous copy bit-for-bit over 20 jax-backend CPU steps.
 - New `info` keys on every joystick state: `gyro_bias`, `gyro_vib`,
   `gyro_vib_gain`, `last_base_vz`, `last_gyro_xy`, `last_qvel_probe`.
 - New `reward/*` metrics (scale 0 by default): `energy_cmd`, `slip_cmd`,
@@ -105,14 +100,15 @@ task-independent ones for `scripts/ppo_dr.py`/`accel.py`/`accel_top_k.py`:
 - `real_pose_ref` — judge pose/height against the kinematic standing family
   instead of commanded ctrl targets (removes a PD-sag-dependent penalty
   floor; sim2real correctness fix, not just a shaping knob).
-- Spawn pose (`WojtekJoystick.reset`, upstream): only the 12 actuated
-  joints are set, leaving each leg's four-bar closure open by up to ~0.13 m;
-  the solver snaps it shut at 40–70° toggle, and with
-  `fall.max_toggle_deg=150` the policy fell within ~0.35 s. A local
-  closed-loop spawn patch fixed this until the `e44c1a9` sync, which dropped
-  it for upstream parity (see [Upstream sync](#upstream-sync)).
+- Spawn pose (`WojtekJoystick.reset`, local patch on top of upstream): every
+  leg joint, passive four-bar joints included, comes from the settled
+  closed-loop pose for the commanded height (`_spawn_joint_qpos`, tabled per
+  `DSECOND_TABLE` rung by `_settle_height_grid`). Previously only the
+  actuated joints were set, leaving the closure loop open by up to ~0.13 m;
+  the solver snapped it shut at 40–70° toggle and the policy hit
+  `fall.max_toggle_deg=150` within ~0.35 s. Rest-pose toggle is now ≤ ~26°.
 - `movement_overrides` no longer sets `fall.max_toggle_deg` (termination
-  off; the `toggle_flat` penalty stays). Even with a closed-loop spawn and an
+  off; the `toggle_flat` penalty stays). Even with the fixed spawn and an
   accurate solver, random actions push a leg past 150° in ~35% of 2 s
   episodes, and brax PPO (mujoco_playground recipe) still lost 92% of its
   episodes to the toggle at ~3 s while walking at ~62% of the command.
