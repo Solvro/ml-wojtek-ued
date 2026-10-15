@@ -60,12 +60,13 @@ class FunctionalEnv:
         seed: int = 0,
         domain_randomize: bool = False,
         go1_hfield: HFieldConfig | None = None,
+        dr_config: dict | None = None,
     ):
         # go1_hfield set: Playground's Go1 on that arena instead of Wojtek
         base: Any
         if go1_hfield is None:
             base = registry.make_env(task, env_overrides)
-            dr_fn = randomize.make_domain_randomize(base.mj_model)
+            dr_fn = randomize.make_domain_randomize(base.mj_model, dr_config)
         else:
             base = cast(Any, Go1Terrain(go1_hfield))
             dr_fn = go1_randomize.domain_randomize
