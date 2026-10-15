@@ -547,7 +547,7 @@ just render-video --checkpoint artifacts/checkpoints/<run>.pkl \
 - Env, network and level space are built as in `eval_brax.py`: pass the
   checkpoint's training flags (`--robot`, `--level_space` (default
   `param`), `--amplitude`, `--coarse_n`, `--pad_radius`, `--pad_taper`;
-  defaults = `brax_ued.py`'s). The `.pkl` holds only params; a checkpoint
+  the rest default to `brax_ued.py`'s). The `.pkl` holds only params; a checkpoint
   whose observation sizes differ from the built env fails before rollout.
 - Needs the `accel` arena built with the same geometry as the run, e.g.
   `just build-accel-arena hfield_params.amplitude=0.3
