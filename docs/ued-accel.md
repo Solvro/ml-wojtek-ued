@@ -469,6 +469,14 @@ policy, no physics DR, no `no_progress` cut. Success = no fall and >=
     `_lin_rel`, `_yaw_rel` per random/param set.
   - Suite sets report it too: `suite/<terrain>_<k>/cmd_success_rate`, and
     `suite/cmd_success_rate` = mean over them (npz `suite_cmd_success`).
+- Eval-only overrides (the trained network is unchanged; both are
+  training-only to the policy): `--arena {benchmark,deploy}` evaluates on
+  that profile's arena geometry instead of the checkpoint's;
+  `--command_box VX_LO VX_HI VY_LO VY_HI WZ_LO WZ_HI HEIGHT` samples one
+  uniform command in that box with every special draw (stand, spin,
+  strafe, backward, arc, terrain bias) off. v10-comparable eval of a
+  deploy policy: `--arena benchmark --command_box 0.2 0.6 -0.2 0.2 -0.4 0.4
+  0.14`. `render_video.py --arena` renders on another arena the same way.
 - `--level_space param` adds `param/uniform` (2048 levels drawn from the
   full 8-parameter space: heterogeneous, so CVaR reads a real tail) and
   capability envelopes `axis/<feature>`: one feature (rough, slope up/down,
