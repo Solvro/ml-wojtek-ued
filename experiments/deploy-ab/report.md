@@ -170,3 +170,5 @@ A1 (50M, separate run, same config): eval ep_len 521 → 26 (11M) → ~10
   stopped at 50M) — the recommendation's go/no-go check covers that.
 - A2's v10 reward includes `feet_phase`/`contact_match`, which the deploy
   actor cannot observe (no `phase` input); it still recovered first.
+
+- Report page: https://claude.ai/code/artifact/b7670145-1c80-4829-916f-d42c3b3c03aa

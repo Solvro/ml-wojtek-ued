@@ -58,4 +58,4 @@ id = 6109504
 label = "A1-long upstream trainer to 300M, 31 evals"
 
 [report]
-url = ""
+url = "https://claude.ai/code/artifact/b7670145-1c80-4829-916f-d42c3b3c03aa"
