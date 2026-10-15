@@ -341,6 +341,12 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   `final/student_train_steps` (`paper_tables.py` compute table).
 - WCSS: `brax_ued.sbatch` array (tasks 0-2 dr, 3-5 accel, seeds 0-2); assets
   must be built beforehand since tasks start together.
+- The arena must match the run's geometry or `terrain_env.load` refuses it
+  (`just build-accel-arena` builds `HFieldConfig` defaults, `pad_radius`
+  0.6). For `--robot wojtek` at the CLI defaults:
+  `uv run python -m hfield.arena hfield_params.amplitude=0.3
+  hfield_params.coarse_n=13 hfield_params.pad_radius=0.55
+  hfield_params.pad_taper=0.2`.
 
 ## Level spaces — `hfield/level_space.py` {#level-spaces}
 
