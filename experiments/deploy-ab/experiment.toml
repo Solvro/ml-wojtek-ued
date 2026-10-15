@@ -46,8 +46,8 @@ id = 6108906
 label = "arms A2-A6 (afterok:6108905)"
 
 [[cluster.jobs]]
-id = 6108907
-label = "A1 upstream trainer (afterok:6108905)"
+id = 6108929
+label = "A1 upstream trainer, 8192 envs (6108907 OOM at 32768)"
 
 [[cluster.jobs]]
 id = 6108908
