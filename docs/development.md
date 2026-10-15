@@ -43,8 +43,12 @@ of those pins.
 | `just accel *args` | run ACCEL (`scripts/accel.py`) |
 
 `just lint` covers ruff only; run `ty check` (static types) manually per the
-global convention. `pytest` is available via the `dev` extra; there is no
-`tests/` tree yet — mirror package structure under `tests/` when adding one.
+global convention. Tests live in `tests/`, mirroring `src/`
+(`tests/scripts/test_eval_sim2sim.py`); `uv run pytest -q` (pyproject sets
+`pythonpath = ["src"]`).
+- ty cannot see mujoco's C-extension members; a `[[tool.ty.overrides]]`
+  entry treats `mujoco` as `Any` for the files it lists (add new files that
+  use the bindings heavily there instead of per-line ignores).
 
 ## Adding to the ACCEL loop
 

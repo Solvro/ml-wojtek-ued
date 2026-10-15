@@ -445,6 +445,95 @@ policy, no physics DR, no `no_progress` cut. Success = no fall and >=
     new in v10; v8 npz files lack them. WCSS: `eval_brax.sbatch` (same `MODES` task layout
   as `brax_ued.sbatch`).
 
+## Sim2sim — `scripts/eval_sim2sim.py` {#sim2sim}
+
+Transfer test in place of sim2real: the MJX-trained policy, physics stepped
+by CPU MuJoCo under several model/solver variants. Same checkpoint loading,
+network and deterministic policy as eval_brax; no physics DR.
+
+- **Only the simulator changes.** Observations, termination, commands and
+  control latency are the env's jax code. While the unroll is traced,
+  `mjx_env.step` and `WojtekEnv._step_with_latency` are swapped for a
+  `jax.pure_callback` (`cpu_physics`); `mjx.step` raises inside it, so a
+  missed physics path fails loudly. Reset stays on MJX (it only places the
+  robot).
+- `CpuPhysics`: one `MjModel` copy + `MjData` per thread
+  (`sched_getaffinity` threads), contiguous env slices, `hfield_data`
+  reloaded when the next env is on another level. Per env and control
+  period it sets qpos/qvel/act/warmstart/time/applied forces, runs
+  `mj_step` (latency: `prev` ctrl for `delay` substeps, then `new`), and
+  writes back the state plus frames, sensors (mapped by sensor name) and
+  actuator forces. Geom frames are rebuilt from body frames with the
+  training model's offsets, so a variant may add/drop geoms.
+- Diverged env (MuJoCo bad qpos/qvel/qacc warning, or non-finite state):
+  base dropped to z = -100 m so both robots score a fall; counted as
+  `diverged_per_episode`.
+- Variants (`VARIANTS`, one table in code), all on the same levels and reset
+  keys:
+
+  | Variant | Change vs training model | Tests |
+  |---|---|---|
+  | `mjx_match` | none | CPU MuJoCo vs MJX implementation; must match eval_brax within noise |
+  | `newton_elliptic` | elliptic cones, 100 iterations / 50 line search (training: pyramidal, Wojtek 2 / Go1 1 iterations) | reliance on the unconverged training solver |
+  | `half_dt` | timestep 0.004 -> 0.002 s, 2 CPU steps per training substep (policy rate unchanged); solref time constants below the old 2·dt floor pinned at 0.008 s | integration-step sensitivity only |
+  | `full_collision` | Wojtek: the source model's per-link `*_collision` meshes collide with the terrain (`build_model` disables them; spec recompiled for convex hulls). Go1: Playground's `go1_mjx_fullcollisions.xml` | contacts the MJX model drops (shins, thighs, trunk) |
+  | `soft_contact` | geom solref time constant x2 (`SOFT_TIMECONST_SCALE`) of the value training runs at: Wojtek 0.001 s (runs at the 0.008 s floor) -> 0.016 s, Go1 0.02 -> 0.04 s; damping ratio, solimp unchanged | contact stiffness, relative to each robot |
+
+- Levels: `flat` (`suite_instances`), `param/uniform` = first `num_levels`
+  (default 256) of eval_brax's 2048-level draw (same seed, rows line up
+  with eval_brax's npz), suite strengths 1-2 (`suite/<terrain>_<k>`, pooled
+  as `suite`); robot-scaled as in eval_brax.
+- Metrics per `<variant>/<set>`: `success_rate`, `fall_rate`, `mean_travel`
+  (95% bootstrap CIs over levels), `drop` = `mjx_match` - variant success
+  (paired bootstrap CI), `diverged_per_episode`; per suite cell
+  `success_rate`; `<variant>/elapsed_s`. One pass (`--episodes` per level),
+  no CVaR.
+- Sanity (2026-10-11, `v8_param_accel_seed0`, 16 flat / 64 uniform / 16
+  per suite cell, 4 episodes, same levels and keys): `mjx_match` vs MJX
+  (eval_brax rollout) success flat .922 / .922, suite 1-2 .778 / .777,
+  param/uniform drop +.02 (95% CI -.016….059). One control step from the
+  same state differs by up to 1.6 rad/s in qvel at the training solver
+  (2 iterations) but 0.01 at 50 iterations: the gap is the unconverged
+  solver, not the bridge.
+- Go1 does **not** match on heightfields, and the bridge is not the cause.
+  v10 checkpoints, 32 flat / 64 uniform / 32 per suite cell, 4 episodes,
+  MJX vs `mjx_match` success:
+
+  | Checkpoint | flat | param/uniform | suite 1-2 |
+  |---|---|---|---|
+  | `v10_go1_dr_easy_seed1` | .92 / .08 | .25 / .01 | .78 / .06 |
+  | `v10_go1_accel_seed0` | .71 / .05 | .11 / .00 | .58 / .03 |
+
+  - Same flat levels with the `floor` hfield swapped for a plane in both
+    simulators: MJX .941 / CPU .941 (dr_easy), .754 / .754 (accel). The
+    harness (latency/substeps, ctrl, sensors, write-back) reproduces MJX.
+  - Root cause: CPU MuJoCo collides a sphere with each hfield prism on its
+    own. A Go1 foot (r 0.023 m, up to 15 mm penetration at solref 0.02 s)
+    over a triangle edge gets a second contact from the neighbouring prism,
+    normal tilted 23-47° off vertical, even on a perfectly flat level. MJX's
+    `hfield_sphere` keeps only points within 1 mm of the deepest, so it
+    reports one vertical contact per foot (flat hfield = plane in MJX).
+    Teacher-forced from MJX states, converged solver on both: one control
+    step's qvel error is 1e-5-1e-4 with equal contact sets, up to 0.2 rad/s
+    with the extra CPU contacts.
+  - Not the solver: 100 Newton iterations on CPU only lifts flat to .51
+    (dr_easy) / .18 (accel); `ccd_iterations` 100 changes nothing, libccd
+    (`nativeccd` off) is worse (0.0).
+  - Not contact sensitivity: on the plane, Go1 dr_easy keeps flat .95
+    `soft_contact`, .94 `half_dt`, .95 `newton_elliptic`.
+  - Wojtek (0.046 m feet, 0.008 s contacts) shows no such gap; its flat
+    success under `soft_contact` is .94 (`mjx_match` .95, 32 levels).
+  - Consequence: every Go1 variant on hfields is floored by `mjx_match`
+    itself, so Go1 rows measure the CPU hfield collider, not transfer.
+- Cost (10-core Apple M-series, default args): Wojtek ~18 min wall / 1.8
+  CPU-h for all five variants (160-290 s per variant, `full_collision`
+  slowest), Go1 ~7 min / 0.4 CPU-h.
+- Writes `<name>.json` and `<name>.npz` (`<variant>_<set>_fell/_travel`,
+  levels x episodes) to `--out_dir`; wandb tags `sim2sim`, robot.
+- WCSS: `slurm/eval_sim2sim.sbatch`, same `MODES`/seed array layout, `SRC`,
+  `ROBOT`, `PREFIX` as `eval_brax.sbatch`; `lem-cpu-short`, 16 cores (CPU
+  only; Lem CPU nodes share the GPU nodes' AlmaLinux 9, so the venv runs).
+
 ## Paper tables — `scripts/paper_tables.py` {#paper-tables}
 
 Builds the workshop paper's tables from `eval_brax.py` outputs

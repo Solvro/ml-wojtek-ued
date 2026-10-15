@@ -33,6 +33,18 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0.0", "ruff>=0.14.1"]
 
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+# third-party: brax/distrax import the unmaintained jaxopt at import time
+filterwarnings = ["ignore:JAXopt is no longer maintained:DeprecationWarning"]
+
+[[tool.ty.overrides]]
+include = ["src/scripts/eval_sim2sim.py", "tests/**"]
+# mujoco's bindings are a C extension without stubs, so ty resolves none of
+# its members; mujoco.mjx is pure Python and stays checked
+analysis.replace-imports-with-any = ["mujoco"]
+
 [tool.ruff]
 extend-exclude = ["src/wojtek_env"]
 
