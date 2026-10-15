@@ -38,6 +38,25 @@ def test_consumed_keys_are_refused(
     assert "not TRAINING_ONLY" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"obs": {"actor": ["command"]}},
+        {"command": {"vx": [-1.0, 1.0]}},
+        # a sampling-only command key still sits under CONSUMED `command`
+        {"command": {"resample_steps": 100}},
+        {"reward": {}, "pd_kp": 10.0},
+    ],
+    ids=["obs.actor", "command.vx", "command.resample_steps", "mixed"],
+)
+def test_nested_consumed_keys_are_refused(
+    tmp_path: Path, override: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit):
+        parse_args([*DEPLOY, "--env_override", write(tmp_path, override)])
+    assert "not TRAINING_ONLY" in capsys.readouterr().err
+
+
 def test_unclassified_keys_are_refused(tmp_path: Path) -> None:
     with pytest.raises(SystemExit):
         parse_args([*DEPLOY, "--env_override", write(tmp_path, {"made_up": 1})])
