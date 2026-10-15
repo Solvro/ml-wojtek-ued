@@ -90,7 +90,7 @@ def fmt(value: float | None) -> str:
 
 def print_upstream(name: str) -> None:
     """A1 runs: w01-tek train.py logs brax ppo.train's eval/* (128 envs,
-    1000-step episodes, deterministic) and training episode/* metrics.
+    1000-step episodes, stochastic policy) and training episode/* metrics.
     eval/episode_reward/<term> is the raw term summed over an episode; the
     termination term is zeroed inside the 1 s spawn grace, so fall ends are
     read from base_contact_at_done (1 when the episode ended base-down)."""
