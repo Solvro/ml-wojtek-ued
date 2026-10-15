@@ -1136,7 +1136,10 @@ class WojtekJoystick(WojtekEnv):
         return jp.linalg.norm(command[:2]) + 0.3 * jp.abs(command[2])
 
     def _dsecond(self, height):
-        """DSECOND_TABLE coordinate of a commanded standing height."""
+        """DSECOND_TABLE coordinate of a commanded standing height.
+
+        Spawn-only. _height_ctrl keeps upstream's inline copy so the
+        anchor path stays byte-identical to w01-tek."""
         if self._config.get("real_pose_ref", False):
             return jp.interp(height, self._anchor_heights, self._anchor_dsecond)
         return jp.interp(height, jp.array(HEIGHT_TABLE), jp.array(DSECOND_TABLE))
@@ -1153,7 +1156,12 @@ class WojtekJoystick(WojtekEnv):
 
     def _height_ctrl(self, height):
         """Ctrl anchor for a commanded standing height (measured table)."""
-        dsecond = self._dsecond(height)
+        if self._config.get("real_pose_ref", False):
+            dsecond = jp.interp(height, self._anchor_heights, self._anchor_dsecond)
+        else:
+            dsecond = jp.interp(
+                height, jp.array(HEIGHT_TABLE), jp.array(DSECOND_TABLE)
+            )
         offset = jp.tile(jp.array([0.0, 1.0, 2.0]), 4) * dsecond
         return jp.clip(
             self._home_ctrl + offset, self._ctrlrange[:, 0], self._ctrlrange[:, 1]
@@ -1319,9 +1327,9 @@ class WojtekJoystick(WojtekEnv):
                     self._terrain.pad_jitter, self._terrain.spawn_yaw,
                 )
         command = self._sample_command(r_cmd, on_flat)
-        # Start posed for the commanded height: legs on the pose reference
-        # (the measured settled pose when calibrated, else the ctrl
-        # anchor), plus joint noise; ctrl holds the ctrl-space anchor.
+        # Start posed for the commanded height: every leg joint on the
+        # settled closed-loop pose (_spawn_joint_qpos), plus noise on the
+        # actuated joints; ctrl holds the ctrl-space anchor.
         anchor = self._height_ctrl(command[3])
         qpos = self._home_qpos.at[7:].set(self._spawn_joint_qpos(command[3]))
         qpos = qpos.at[self._qadr].add(

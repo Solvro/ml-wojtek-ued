@@ -20,7 +20,7 @@ not edit it.
 | file | delta | why | scope |
 |---|---|---|---|
 | every ported module | `wojtek_rl` imports / module-path strings → `wojtek_env.{envs,terrain,tools}` | package layout | neither |
-| `envs/env.py` | spawn pose: every leg joint, passive four-bar joints included, from the settled closed-loop pose (`_spawn_joint_qpos`, see below) | upstream leaves the closure open at reset | training-only (reset state) |
+| `envs/env.py` | spawn pose: every leg joint, passive four-bar joints included, from the settled closed-loop pose (`_spawn_joint_qpos`, `_dsecond`, see below); `_settle_height_grid` also returns the joints and runs at every construction (~0.7 s CPU), not only under `real_pose_ref`; `_height_ctrl` / `_pose_ref` stay verbatim | upstream leaves the closure open at reset | training-only (reset state) |
 | `envs/env.py` | `_get_reward` also returns `fall_causes`; `step` writes `fall_{min_height,tilt,toggle,base_contact}_at_done` | read by `utils/ppo_helpers.py` | training-only (metrics) |
 | `paths.py` | ours: assets under `assets/wojtek_description/`, `"accel"` in `TERRAIN_KINDS`, no room/HF/policy constants | repo layout; accel arena for UED | training-only |
 | `envs/__init__.py`, `gymnasium/`, `tools/check_gym.py` | ours: re-exports, Gymnasium wrapper | convenience API | training-only |
