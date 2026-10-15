@@ -61,6 +61,15 @@ setup, unchanged).
     episodes, brax_ued's PPO loop and hyperparameters (Playground's Go1
     values, as upstream; upstream trains 8192 envs x 1000-step episodes via
     `ppo.train`).
+- Training-side variants: `--env_override <file.json>` merges a JSON object
+  onto the profile's env overrides; only TRAINING_ONLY top-level keys are
+  accepted (`contract.TRAINING_ONLY_KEYS`), anything that shapes the
+  contract (`obs`, `command`, `action_scale`, `pd_*`, ...) is refused at
+  parse time. The merged config lands in the sidecar, so export and evals
+  rebuild the same env. `--clipping_epsilon` (default 0.2) sets PPO's clip.
+  `tests/scripts/test_env_override.py` keeps every
+  `experiments/deploy-ab/arms/*.json` at upstream's CONSUMED keys and
+  network.
 - Parity test: `tests/deploy/test_upstream_parity.py` compares the deploy
   profile's resolved env config (every CONSUMED key, every TRAINING_ONLY key
   but `terrain`/`sim`), `dr` and network against

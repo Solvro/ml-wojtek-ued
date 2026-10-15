@@ -60,6 +60,7 @@ from brax.training.agents.ppo import losses as ppo_losses
 from brax.training.agents.ppo import networks as ppo_networks
 
 from config.hfield_config import HFieldConfig
+from deploy.contract import TRAINING_ONLY_KEYS
 from hfield.arena import check_arena
 from hfield.level_space import (
     PARAMS,
@@ -144,6 +145,24 @@ def hfield_config(args: argparse.Namespace) -> HFieldConfig:
     )
 
 
+def load_env_override(path: str) -> dict[str, Any]:
+    """`--env_override` file: a JSON object of TRAINING_ONLY env keys."""
+    try:
+        override = json.loads(Path(path).read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        raise ValueError(f"--env_override {path}: cannot read JSON ({e})") from e
+    if not isinstance(override, dict):
+        raise TypeError(f"--env_override {path}: expected a JSON object")
+    refused = sorted(set(override) - TRAINING_ONLY_KEYS)
+    if refused:
+        raise ValueError(
+            f"--env_override {path}: {refused} are not TRAINING_ONLY keys "
+            "(src/deploy/contract.py); keys that shape the deploy contract or "
+            "the actor's inputs cannot be overridden"
+        )
+    return override
+
+
 def env_overrides(args: argparse.Namespace) -> dict[str, Any] | None:
     if args.robot == "go1":
         return None
@@ -152,10 +171,14 @@ def env_overrides(args: argparse.Namespace) -> dict[str, Any] | None:
         # upstream's terrain block configures its tile curriculum arena; the
         # accel arena replaces it (training-only, docs/deploy.md)
         upstream = {k: v for k, v in deploy_overrides().items() if k != "terrain"}
-        return merge_overrides(upstream, arena)
-    return merge_overrides(
-        arena, movement_overrides(), terrain_overrides(), terrain_task_overrides()
-    )
+        profile = merge_overrides(upstream, arena)
+    else:
+        profile = merge_overrides(
+            arena, movement_overrides(), terrain_overrides(), terrain_task_overrides()
+        )
+    if args.env_override:
+        return merge_overrides(profile, load_env_override(args.env_override))
+    return profile
 
 
 def git_commit() -> dict[str, Any]:
@@ -291,7 +314,14 @@ def spec_network(spec: dict[str, Any]) -> ppo_networks.PPONetworks:
 class Student:
     """brax PPO networks, optimizer and jitted unroll / update / regret."""
 
-    def __init__(self, env: FunctionalEnv, network: dict[str, Any], key: jax.Array):
+    def __init__(
+        self,
+        env: FunctionalEnv,
+        network: dict[str, Any],
+        key: jax.Array,
+        clipping_epsilon: float,
+    ):
+        self.clipping_epsilon = clipping_epsilon
         obs_size = env.observation_size
         self.network = make_network(network, obs_size, env.action_size)
         self.make_policy = ppo_networks.make_inference_fn(self.network)
@@ -329,7 +359,7 @@ class Student:
             entropy_cost=PPO["entropy_cost"],
             discounting=PPO["discounting"],
             gae_lambda=PPO["gae_lambda"],
-            clipping_epsilon=PPO["clipping_epsilon"],
+            clipping_epsilon=self.clipping_epsilon,
         )
 
     def _update(self, params, opt_state, normalizer, data, key):
@@ -416,6 +446,13 @@ def make_unroll(env: FunctionalEnv, make_policy: Any, dr_in_axes: Any):
                         "cmd_vx": cmd[:, 0],
                         "forward_vel": linvel[:, 0],
                         "cmd": cmd,
+                        # per-term rewards as the env reports them: before
+                        # reward.scales and the x dt
+                        "reward_terms": {
+                            k.removeprefix("reward/"): v
+                            for k, v in next_state.metrics.items()
+                            if k.startswith("reward/")
+                        },
                         # free-joint angular qvel is body-frame: [5] = yaw rate
                         "vel": jnp.concatenate(
                             [linvel[:, :2], next_state.data.qvel[:, 5:6]], axis=-1
@@ -542,6 +579,7 @@ def run_levels(
         "reward_per_step": log["reward"],
         "cmd_vx": log["cmd_vx"],
         "forward_vel": log["forward_vel"],
+        **{f"reward_term/{k}": v for k, v in log["reward_terms"].items()},
         "travel": float(travel.mean()),
         "lane_roughness": mean_abs_height(ctx["space"].config, rendered),
         "levels": levels,
@@ -754,9 +792,13 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         key_state["key"], key = jax.random.split(key_state["key"])
         return key
 
-    student = Student(env, spec["network"], next_key())
+    student = Student(env, spec["network"], next_key(), args.clipping_epsilon)
     paired = args.mode == "paired"
-    antagonist = Student(env, spec["network"], next_key()) if paired else None
+    antagonist = (
+        Student(env, spec["network"], next_key(), args.clipping_epsilon)
+        if paired
+        else None
+    )
     adversary = Adversary(args, space.gen_shape, next_key()) if paired else None
     _, dr_in_axes = env.sample_dr(jax.random.key(0), num_envs)
     reset = jax.jit(jax.vmap(env.reset, in_axes=(0, 0, dr_in_axes)))
@@ -818,9 +860,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--eval_levels", type=int, default=512)
     p.add_argument("--min_travel", type=float, default=1.0)
     p.add_argument("--checkpoint_dir", default=None)
+    p.add_argument(
+        "--env_override",
+        default=None,
+        help="JSON file of TRAINING_ONLY env keys merged onto the profile's",
+    )
+    p.add_argument("--clipping_epsilon", type=float, default=PPO["clipping_epsilon"])
     args = p.parse_args(argv)
     if args.profile == "deploy" and args.robot != "wojtek":
         p.error("--profile deploy is Wojtek's robot setup; use --robot wojtek")
+    if args.env_override:
+        if args.robot == "go1":
+            p.error("--env_override edits Wojtek's env config; Go1 has none")
+        try:
+            load_env_override(args.env_override)
+        except (ValueError, TypeError) as e:
+            p.error(str(e))
     if args.coarse_n is None:
         args.coarse_n = ARENAS[args.profile]["coarse_n"]
     return args
@@ -839,7 +894,10 @@ def main() -> None:
         project=args.project,
         name=args.name,
         tags=["brax-ued", args.mode, args.robot],
-        config={**vars(args), "ppo": PPO},
+        config={
+            **vars(args),
+            "ppo": {**PPO, "clipping_epsilon": args.clipping_epsilon},
+        },
     )
     ctx = build(args)
     buffer = LevelBuffer(args.buffer_size)

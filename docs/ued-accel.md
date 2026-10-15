@@ -343,6 +343,12 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   `level/<param>` = mean physical value (`ParamSpace.physical`, robot
   units), `level/slope_deg_abs` / `level/step_height_m_abs` = mean |value|
   of the signed parameters, `level/genome_dist` = mean |genome - `flat`|.
+- `--env_override <file.json>` (TRAINING_ONLY env keys merged onto the
+  profile's, [deploy.md](deploy.md#profile)), `--clipping_epsilon` (PPO
+  clip, default 0.2).
+- Reward terms, every iteration: `reward_term/<name>` = mean of the env's
+  `reward/<name>` metric over the iteration's training steps, raw (before
+  `reward.scales` and the x `ctrl_dt`).
 - Compute accounting, every iteration: `sim_steps` (every training env step
   simulated: PAIRED's antagonist and ACCEL/PLR explore iterations included,
   eval rollouts not), `student_train_steps` (env steps whose data fed a

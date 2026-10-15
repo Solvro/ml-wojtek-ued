@@ -1,0 +1,61 @@
+name = "deploy-ab"
+question = "Why does deploy-profile training collapse to a fall-immediately policy, and which training-only setting keeps it healthy?"
+
+envs = ["deploy_ab"]
+# A1 (upstream trainer) logs brax ppo.train keys and is read separately
+conditions = ["a2_v10_reward", "a3_level1000", "a4_clip03", "a5_flat", "a6_torque_rate"]
+seeds = [0]
+total_steps = 50_000_000
+
+[wandb]
+entity = "dominikgalus9-wroc-aw-university-of-science-and-technology"
+project = "wojtyla"
+# added through the wandb API once the runs exist
+tag = "deploy-ab"
+run_name = '^(?P<env>deploy_ab)_(?P<condition>a\d_[a-z0-9_]+?)_seed(?P<seed>\d+)$'
+
+[metric]
+keys = ["falls_per_step"]
+x = ["env_steps"]
+label = "train falls per step (lower = better)"
+final_window = 0.1
+
+[reference]
+condition = "a2_v10_reward"
+thresholds = [0.5]
+
+[[secondary]]
+key = "eval/d0.25/fall_rate"
+label = "eval d0.25 fall rate"
+note = "healthy < 0.3 at 50M"
+
+[[secondary]]
+key = "train_success"
+label = "train success"
+note = "no fall and >= 1 m travel"
+
+[cluster]
+ssh_host = "wcss"
+
+[[cluster.jobs]]
+id = 6108905
+label = "build assets (cpu)"
+
+[[cluster.jobs]]
+id = 6108906
+label = "arms A2-A6 (afterok:6108905)"
+
+[[cluster.jobs]]
+id = 6108929
+label = "A1 upstream trainer, 8192 envs (6108907 OOM at 32768)"
+
+[[cluster.jobs]]
+id = 6108908
+label = "eval_brax on final checkpoints (aftercorr:6108906)"
+
+[[cluster.jobs]]
+id = 6109504
+label = "A1-long upstream trainer to 300M, 31 evals"
+
+[report]
+url = "https://claude.ai/code/artifact/b7670145-1c80-4829-916f-d42c3b3c03aa"
