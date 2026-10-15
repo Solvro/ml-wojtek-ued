@@ -43,7 +43,8 @@ setup, unchanged).
 - Network: upstream `train.py build_ppo_params` — Playground's Go1
   `network_factory` (policy and value 512-256-128, `state` / `privileged_state`
   keys), brax defaults SiLU and tanh-normal.
-- Arena `accel_deploy`: 12x12 m (`patch_radius` 6.0), `coarse_n` 25 (keeps
+- Arena `accel_deploy`: 12x12 m tiles (`patch_radius` 6.0, 2 m gaps, 16x16
+  tiles; [tiled arena](environment.md#tiled-arena)), `coarse_n` 25 (keeps
   the ~0.5 m feature size), `cell_size` 0.05 (241x241 grid); the rest as
   benchmark. vx up to 1.2 m/s leaves the 6x6 m v10 patch in ~2.5 s of a 6 s
   level. Build: `just build-deploy-arena` (its own files,
@@ -53,8 +54,8 @@ setup, unchanged).
   - `terrain`: upstream's tile-curriculum block (flat row, feature spawns,
     type caps, `pad_radius` 0.3) is replaced by our accel arena block
     (`enable`, `arena: accel_deploy`, `pad_radius` 0.55);
-  - `sim.backend` = `jax` (per-env hfield swaps; warp collides every env
-    with env 0's level);
+  - `sim.num_envs` (set per run); backend (`auto`: warp on a GPU) and warp
+    buffers are upstream's, since every env shares the tiled arena;
   - our env-side patches: spawn-pose closure fix, fall-cause metrics
     ([environment.md](environment.md#upstream-sync));
   - training loop: ACCEL/DR levels on `FunctionalEnv`, `level_steps` 300

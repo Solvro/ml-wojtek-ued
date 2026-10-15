@@ -81,7 +81,7 @@ sbatch --job-name=eval_accel_top_k --export=ALL,MODE=eval,ALGO=accel_top_k,EVAL_
 sbatch --job-name=eval_ppo_dr --export=ALL,MODE=eval,ALGO=ppo_dr,EVAL_ARGS="run=ppo_dr_seed_1234_envnum_8192 wandb_params.name=ppo_dr_seed_1234_envnum_8192_eval_levels" slurm.sh
 ```
 
-Defaults (`num_levels=10000`, `episodes_per_level=8`, `chunk_size=512`,
+Defaults (`num_levels=10000`, `episodes_per_level=8`, `chunk_size=256`,
 `cvar_alpha=0.25`) are already H100-scale ([configuration.md](configuration.md)
 has the full field list); add `step=N` to `EVAL_ARGS` to pin a specific
 checkpoint instead of the latest (`max_to_keep=5` — only the last 5 survive).

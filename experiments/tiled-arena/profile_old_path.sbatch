@@ -8,9 +8,11 @@
 #SBATCH --time=02:30:00
 #SBATCH --output=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued/logs/%x_%j.out
 #SBATCH --error=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued/logs/%x_%j.out
-# Profile brax_ued's per-iteration cost: per-env hfield swap on jax vs one
-# shared level on jax / warp, benchmark and deploy profiles, 8192 envs.
-# Builds the robot model and both arenas into COPY first.
+# Profile brax_ued's per-iteration cost before the tiled arena: per-env
+# hfield swap on jax vs one shared level on jax / warp, benchmark and deploy
+# profiles, 8192 envs. Ran as job 6109828 on a copy of 4b91bce with
+# profile_old_path.py at src/scripts/profile_brax_ued.py (it needs that
+# commit's FunctionalEnv). Builds the robot model and both arenas into COPY.
 set -euo pipefail
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1 JAX_PLATFORMS=cuda WANDB_MODE=disabled
