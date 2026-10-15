@@ -50,6 +50,13 @@ def test_hold_command_keeps_height_and_blocks_resample() -> None:
     assert info["command"][0] == 0.5
 
 
+def test_hold_command_blocks_go1_countdown() -> None:
+    info = {"command": jnp.zeros(3), "steps_until_next_cmd": jnp.int32(1)}
+    held = hold_command(info, jnp.ones(3))
+    np.testing.assert_allclose(held["command"], np.ones(3))
+    assert held["steps_until_next_cmd"] > 1000
+
+
 def test_hold_command_without_resample_counter() -> None:
     held = hold_command({"command": jnp.zeros(3)}, jnp.ones(3))
     np.testing.assert_allclose(held["command"], np.ones(3))

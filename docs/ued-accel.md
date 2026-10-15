@@ -564,8 +564,9 @@ just render-video --checkpoint artifacts/checkpoints/<run>.pkl \
   deterministic policy, `--command VX VY WZ` held every step (default
   0.3 m/s forward, 0.2 rad/s yaw: an arc; on 24 screened d=1 levels the
   robot got 1.1-3.2 m from spawn in 20 s, so it stays on the 3 m arena).
-  The command's height entry keeps the reset draw; `steps_since_cmd` is
-  zeroed so the env never resamples.
+  The command's height entry keeps the reset draw; the resample counter
+  is pinned every step (Wojtek `steps_since_cmd` = 0, Go1
+  `steps_until_next_cmd` = 2^30) so the env never resamples.
 - `--seconds` (default 20) must fit in one episode (1000 steps = 20 s for
   Wojtek): a fall or truncation auto-resets the robot to spawn, which the
   clip would show as a jump. Pick levels whose printed fall list is empty;

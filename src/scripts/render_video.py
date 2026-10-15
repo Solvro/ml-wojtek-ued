@@ -101,8 +101,12 @@ def check_arena(spec_path: Path, config: HFieldConfig) -> None:
 def hold_command(info: dict[str, Any], command: jax.Array) -> dict[str, Any]:
     held = {**info, "command": info["command"].at[:3].set(command)}
     if "steps_since_cmd" in held:
-        # stops the env resampling the command every resample_steps
+        # stops Wojtek resampling the command every resample_steps
         held["steps_since_cmd"] = jnp.zeros_like(held["steps_since_cmd"])
+    if "steps_until_next_cmd" in held:
+        # stops Go1 resampling when its countdown reaches 0
+        counter = held["steps_until_next_cmd"]
+        held["steps_until_next_cmd"] = jnp.full_like(counter, 2**30)
     return held
 
 
