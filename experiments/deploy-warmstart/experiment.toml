@@ -36,5 +36,17 @@ note = "lower = better"
 [cluster]
 ssh_host = "wcss"
 
+[[cluster.jobs]]
+id = 6109816
+label = "eval_brax baseline: imported A1-long, no training (array index 3)"
+
+[[cluster.jobs]]
+id = 6109817
+label = "train seeds 0-2"
+
+[[cluster.jobs]]
+id = 6109818
+label = "eval_brax seeds 0-2 (aftercorr:6109817)"
+
 [report]
 url = ""

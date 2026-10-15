@@ -343,6 +343,8 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   `level/<param>` = mean physical value (`ParamSpace.physical`, robot
   units), `level/slope_deg_abs` / `level/step_height_m_abs` = mean |value|
   of the signed parameters, `level/genome_dist` = mean |genome - `flat`|.
+- `--init_from <run>.pkl`: warm start from a brax_ued or imported
+  upstream checkpoint ([deploy.md](deploy.md#warm-start)).
 - `--env_override <file.json>` (TRAINING_ONLY env keys merged onto the
   profile's, [deploy.md](deploy.md#profile)), `--clipping_epsilon` (PPO
   clip, default 0.2).

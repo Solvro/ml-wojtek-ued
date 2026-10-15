@@ -119,6 +119,27 @@ just export --checkpoint artifacts/brax_ued/<run>.pkl [--out <dir>]
   random obs (< 1e-4); `deploy.runtime.WojtekPolicy` on the written files vs
   an env-derived reference over a 32-step closed loop (< 1e-3).
 
+## Upstream checkpoints and warm start {#warm-start}
+
+- `just import-upstream --checkpoint <w01-tek run>/checkpoints/<step> --out
+  <name>.pkl --mode accel --name <name> --profile deploy [brax_ued flags]`
+  (`scripts/import_upstream.py`): a w01-tek `train.py` checkpoint (brax
+  orbax + `ppo_network_config.json`, `run.json` two levels up) becomes a
+  brax_ued `.pkl` (normalizer, policy, value) + sidecar for the given
+  flags, with `imported_from` (checkpoint, run name, env steps).
+- Refused before writing: any CONSUMED env key differing from the run's
+  `run.json`, actor or critic obs size, action size, network kwargs,
+  policy/value parameter shapes, normalizer keys. A critic mismatch is not
+  papered over by re-initialising the value net.
+- The import exports like any deploy checkpoint (`just export`); for
+  w01-tek's `terrain_blind_v4_4d` run of experiments/deploy-ab the
+  `policy.npz` is identical to upstream's own export and `policy_meta.json`
+  differs only in `checkpoint`/`run_name`.
+- `brax_ued.py --init_from <name>.pkl`: the student starts from that
+  checkpoint's normalizer, policy and value (fresh optimizer state);
+  refused if its sidecar's network or any parameter shape differs. The
+  sidecar records `init_from`.
+
 ## Running it {#run}
 
 w01-tek `ros/` (see its `ros/README.md`); `policy:=` takes a local directory
