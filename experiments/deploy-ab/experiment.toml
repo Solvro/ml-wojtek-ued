@@ -37,5 +37,21 @@ note = "no fall and >= 1 m travel"
 [cluster]
 ssh_host = "wcss"
 
+[[cluster.jobs]]
+id = 6108905
+label = "build assets (cpu)"
+
+[[cluster.jobs]]
+id = 6108906
+label = "arms A2-A6 (afterok:6108905)"
+
+[[cluster.jobs]]
+id = 6108907
+label = "A1 upstream trainer (afterok:6108905)"
+
+[[cluster.jobs]]
+id = 6108908
+label = "eval_brax on final checkpoints (aftercorr:6108906)"
+
 [report]
 url = ""
