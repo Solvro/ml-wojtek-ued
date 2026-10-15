@@ -46,6 +46,7 @@ With the `param` level space two more sets:
 """
 
 import argparse
+import copy
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -60,6 +61,7 @@ from brax.training.agents.ppo import networks as ppo_networks
 from config.hfield_config import HFieldConfig
 from hfield.level_space import PARAMS, ParamSpace, make_level_space
 from scripts.brax_ued import (
+    ARENAS,
     ROBOT_SCALE,
     check_spec_arena,
     load_run,
@@ -68,6 +70,7 @@ from scripts.brax_ued import (
     min_travel,
     spec_network,
 )
+from utils.env_overrides import merge_overrides
 
 DIFFICULTIES = (0.25, 0.5, 0.75, 1.0)
 # command-conditioned success: no fall and the command tracked, so stand,
@@ -435,8 +438,51 @@ def evaluate(ctx: dict[str, Any]) -> tuple[dict[str, float], dict[str, Any]]:
     return metrics, raw
 
 
+# --command_box: one uniform draw inside the box, every special draw off
+NO_SPECIAL_DRAWS = {
+    "zero_prob": 0.0,
+    "pure_wz_prob": 0.0,
+    "pure_vy_prob": 0.0,
+    "arc_prob": 0.0,
+    "pure_slow_prob": 0.0,
+    "pure_fast_prob": 0.0,
+    "pure_back_prob": 0.0,
+    "terrain_bias": {"enable": False},
+}
+
+
+def eval_spec(
+    spec: dict[str, Any], arena: str | None, command_box: list[float] | None
+) -> dict[str, Any]:
+    """The checkpoint's spec with an eval-only arena and command box: both
+    are training-only to the policy (the command is an input), so the
+    network evaluated is the trained one."""
+    if (arena or command_box) and spec["robot"] != "wojtek":
+        raise ValueError("--arena / --command_box edit Wojtek's env config only")
+    spec = copy.deepcopy(spec)
+    if arena:
+        geometry = ARENAS[arena]
+        scale = ROBOT_SCALE[spec["robot"]]
+        spec["arena"] = geometry["arena"]
+        spec["hfield"]["patch_radius"] = geometry["patch_radius"] * scale
+        spec["hfield"]["coarse_n"] = geometry["coarse_n"]
+        spec["env_overrides"]["terrain"]["arena"] = geometry["arena"]
+    if command_box:
+        vx_lo, vx_hi, vy_lo, vy_hi, wz_lo, wz_hi, height = command_box
+        box = {
+            "vx": [vx_lo, vx_hi],
+            "vy": [vy_lo, vy_hi],
+            "wz": [wz_lo, wz_hi],
+            "height": [height, height],
+            **NO_SPECIAL_DRAWS,
+        }
+        spec["env_overrides"] = merge_overrides(spec["env_overrides"], {"command": box})
+    return spec
+
+
 def build(args: argparse.Namespace) -> dict[str, Any]:
     spec, params = load_run(Path(args.checkpoint))
+    spec = eval_spec(spec, args.arena, args.command_box)
     check_spec_arena(spec)
     env = make_env(spec, args.chunk_envs, train=False)
     make_policy = ppo_networks.make_inference_fn(spec_network(spec))
@@ -469,6 +515,20 @@ def main() -> None:
     p.add_argument("--min_travel", type=float, default=1.0)
     p.add_argument("--alphas", type=float, nargs="+", default=[0.1, 0.25])
     p.add_argument("--seed", type=int, default=1234)
+    p.add_argument(
+        "--arena",
+        choices=list(ARENAS),
+        default=None,
+        help="evaluate on this profile's arena instead of the checkpoint's",
+    )
+    p.add_argument(
+        "--command_box",
+        type=float,
+        nargs=7,
+        default=None,
+        metavar=("VX_LO", "VX_HI", "VY_LO", "VY_HI", "WZ_LO", "WZ_HI", "HEIGHT"),
+        help="eval-only uniform command box, special draws off",
+    )
     args = p.parse_args()
 
     ctx = build(args)

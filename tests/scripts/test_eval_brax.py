@@ -6,12 +6,14 @@ import numpy as np
 import pytest
 
 from config.hfield_config import HFieldConfig
+from deploy.contract import CONSUMED_KEYS
 from scripts import eval_brax
-from scripts.brax_ued import ROBOT_SCALE
+from scripts.brax_ued import ROBOT_SCALE, parse_args, run_spec
 from scripts.eval_brax import (
     TRACK_FLOOR_LIN,
     TRACK_FLOOR_YAW,
     TRACK_REL_TOL,
+    eval_spec,
     rollout,
     settled_steps,
     stack_passes,
@@ -19,6 +21,7 @@ from scripts.eval_brax import (
     tracking_errors,
     tracking_summary,
 )
+from scripts.export_policy import build_env
 
 
 def constant(
@@ -233,3 +236,46 @@ def test_suite_reports_cmd_success_per_set_and_their_mean(
     assert raw["suite_cmd_success"].tolist() == suite_rates
     assert metrics["suite/cmd_success_rate"] == pytest.approx(np.mean(suite_rates))
     assert metrics["suite/success_rate"] == 0.0
+
+
+V10_BOX = [0.2, 0.6, -0.2, 0.2, -0.4, 0.4, 0.14]
+
+
+def deploy_spec() -> dict:
+    flags = ["--mode", "accel", "--name", "t", "--profile", "deploy"]
+    return run_spec(parse_args(flags))
+
+
+def test_eval_arena_swaps_geometry_only() -> None:
+    spec = deploy_spec()
+    ours = eval_spec(spec, "benchmark", None)
+    assert ours["arena"] == "accel"
+    assert ours["env_overrides"]["terrain"]["arena"] == "accel"
+    assert ours["hfield"]["patch_radius"] == 3.0
+    assert ours["hfield"]["coarse_n"] == 13
+    assert spec["arena"] == "accel_deploy", "the checkpoint's spec is untouched"
+    assert ours["network"] == spec["network"]
+
+
+def test_command_box_keeps_every_other_consumed_key() -> None:
+    spec = deploy_spec()
+    base = build_env(spec)._config.to_dict()
+    boxed = build_env(eval_spec(spec, None, V10_BOX))._config.to_dict()
+    for key in CONSUMED_KEYS - {"command"}:
+        assert boxed[key] == base[key], key
+
+
+def test_command_box_draws_stay_inside_the_box() -> None:
+    env = build_env(eval_spec(deploy_spec(), None, V10_BOX))
+    states = jax.vmap(env.reset)(jax.random.split(jax.random.key(0), 256))
+    cmd = np.asarray(states.info["command"])
+    lo = np.array([0.2, -0.2, -0.4, 0.14])
+    hi = np.array([0.6, 0.2, 0.4, 0.14])
+    assert np.all(cmd >= lo - 1e-6) and np.all(cmd <= hi + 1e-6)
+    assert np.all(cmd[:, 0] > 0.0), "no stand or backward draws"
+
+
+def test_eval_overrides_are_refused_for_go1() -> None:
+    spec = run_spec(parse_args(["--mode", "accel", "--name", "t", "--robot", "go1"]))
+    with pytest.raises(ValueError, match="Wojtek"):
+        eval_spec(spec, "benchmark", None)
