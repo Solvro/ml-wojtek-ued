@@ -28,7 +28,7 @@ def default_config() -> config_dict.ConfigDict:
         sim_dt=0.004,
         # Physics backend. auto picks warp on a CUDA host and jax elsewhere.
         # naconmax_per_env scales with the training batch; njmax is per
-        sim=config_dict.create(
+                sim=config_dict.create(
             backend="auto", naconmax_per_env=32, njmax=320, num_envs=1
         ),
         episode_length=250,  # 5 s: stand, jump, land, recover
@@ -116,8 +116,8 @@ class WojtekJump(WojtekEnv):
             self._config.stand_height = float(self._home_qpos[2])
         self._knee_idx = jp.array(KNEE_ACTUATORS)
         self._target_lo = self._ctrlrange[:, 0]
-        self._target_hi = (
-            self._ctrlrange[:, 1].at[self._knee_idx].set(self._config.knee_target_max)
+        self._target_hi = self._ctrlrange[:, 1].at[self._knee_idx].set(
+            self._config.knee_target_max
         )
 
     def _customize_model(self, m):
@@ -177,7 +177,9 @@ class WojtekJump(WojtekEnv):
         airborne = ~jp.any(contact)
         commanded, in_jump, prep = self._phase(info)
         info["been_airborne"] = info["been_airborne"] | (in_jump & airborne)
-        info["landed"] = info["landed"] | (info["been_airborne"] & jp.any(contact))
+        info["landed"] = info["landed"] | (
+            info["been_airborne"] & jp.any(contact)
+        )
 
         rewards, done = self._get_reward(data, info, action, airborne, in_jump, prep)
         # Track the flight apex after the command; reward pays the increments.
@@ -188,7 +190,9 @@ class WojtekJump(WojtekEnv):
         info["last_act"] = action
         info["step_count"] = info["step_count"] + 1
 
-        reward = sum(rewards[k] * self._config.reward.scales[k] for k in rewards)
+        reward = sum(
+            rewards[k] * self._config.reward.scales[k] for k in rewards
+        )
         reward = jp.clip(reward * self.dt, -100.0, 100.0)
         metrics = {
             **state.metrics,
@@ -202,12 +206,15 @@ class WojtekJump(WojtekEnv):
     def _obs_catalog(self, data, info):
         catalog = super()._obs_catalog(data, info)
         countdown = jp.clip(
-            (info["jump_at"] - info["step_count"]) / self._config.countdown_steps,
+            (info["jump_at"] - info["step_count"])
+            / self._config.countdown_steps,
             0.0,
             1.0,
         )
         _, in_jump, _ = self._phase(info)
-        catalog["jump_signal"] = jp.array([countdown, in_jump.astype(jp.float32)])
+        catalog["jump_signal"] = jp.array(
+            [countdown, in_jump.astype(jp.float32)]
+        )
         return catalog
 
     def _get_obs(self, data, info, rng=None):
@@ -233,7 +240,9 @@ class WojtekJump(WojtekEnv):
         # Smoothness costs relax while the maneuver is on: v4 unlearned the
         # crouch because the down-up swing cost more in action_rate/energy
         # than the crouch reward paid.
-        cost_scale = jp.where(prep | in_jump, self._config.active_cost_scale, 1.0)
+        cost_scale = jp.where(
+            prep | in_jump, self._config.active_cost_scale, 1.0
+        )
         z_crouch = z0 - self._config.crouch_depth
 
         return {
@@ -252,10 +261,17 @@ class WojtekJump(WojtekEnv):
             "torques": jp.sum(jp.square(data.actuator_force)),
             "action_rate": cost_scale * jp.sum(jp.square(action - info["last_act"])),
             "action_accel": cost_scale
-            * jp.sum(jp.square(action - 2 * info["last_act"] + info["last_last_act"])),
-            "energy": cost_scale * jp.sum(jp.abs(qvel) * jp.abs(data.actuator_force)),
+            * jp.sum(
+                jp.square(action - 2 * info["last_act"] + info["last_last_act"])
+            ),
+            "energy": cost_scale
+            * jp.sum(jp.abs(qvel) * jp.abs(data.actuator_force)),
             "dof_acc": jp.sum(jp.square(data.qacc[self._vadr])),
-            "dof_vel": jp.sum(jp.square(jp.maximum(jp.abs(qvel) - 2 * jp.pi, 0.0))),
-            "knee_singularity": jp.sum(jp.maximum(knees - KNEE_SINGULARITY, 0.0)),
+            "dof_vel": jp.sum(
+                jp.square(jp.maximum(jp.abs(qvel) - 2 * jp.pi, 0.0))
+            ),
+            "knee_singularity": jp.sum(
+                jp.maximum(knees - KNEE_SINGULARITY, 0.0)
+            ),
             "termination": fall.astype(jp.float32),
         }, fall

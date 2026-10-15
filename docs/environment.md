@@ -5,6 +5,64 @@ Covers `src/wojtek_env/` (the extracted env library) and `src/utils/env.py`
 packaged** — treat it as a stable dependency; research code consumes it, does
 not edit it.
 
+## Upstream sync {#upstream-sync}
+
+- **Synced from w01-tek `e44c1a9`** (`training/wojtek_rl/`, 2026-10-15).
+  Previous copy: extracted 2026-08-11.
+- Upstream modules are copied as-is into the `envs/`, `terrain/`, `tools/`
+  layout; only `wojtek_rl` imports and module-path strings are rewritten.
+  `paths.py`, `gymnasium/`, `tools/check_gym.py` and the `__init__.py` files
+  are ours.
+- Every local delta vs `e44c1a9` (re-apply on the next sync). None is
+  inference-relevant: obs layout, action pipeline, PD/ctrl config and network
+  inputs are upstream's.
+
+| file | delta | why | scope |
+|---|---|---|---|
+| every ported module | `wojtek_rl` imports / module-path strings → `wojtek_env.{envs,terrain,tools}` | package layout | neither |
+| `envs/env.py` | spawn pose: every leg joint, passive four-bar joints included, from the settled closed-loop pose (`_spawn_joint_qpos`, `_dsecond`, see below); `_settle_height_grid` also returns the joints and runs at every construction (~0.7 s CPU), not only under `real_pose_ref`; `_height_ctrl` / `_pose_ref` stay verbatim | upstream leaves the closure open at reset | training-only (reset state) |
+| `envs/env.py` | `_get_reward` also returns `fall_causes`; `step` writes `fall_{min_height,tilt,toggle,base_contact}_at_done` | read by `utils/ppo_helpers.py` | training-only (metrics) |
+| `paths.py` | ours: assets under `assets/wojtek_description/`, `"accel"` in `TERRAIN_KINDS`, no room/HF/policy constants | repo layout; accel arena for UED | training-only |
+| `envs/__init__.py`, `gymnasium/`, `tools/check_gym.py` | ours: re-exports, Gymnasium wrapper | convenience API | training-only |
+- Generated `wojtek_mjx.xml` / `scene_mjx.xml` are byte-identical to upstream
+  `ros/src/wojtek_description/mujoco/` at `e44c1a9`.
+- Model-free upstream unit tests live in `tests/wojtek_env/` (mirrors the
+  package layout); tests that build an MJX env were not ported.
+
+### What the e44c1a9 sync changed for existing experiments
+
+- **No default changed.** Every new feature ships off (`0.0` / `enable=False`).
+  At default config and with `movement_overrides()`, obs / reward / qpos match
+  the previous copy bit-for-bit over 20 jax-backend CPU steps.
+- New `info` keys on every joystick state: `gyro_bias`, `gyro_vib`,
+  `gyro_vib_gain`, `last_base_vz`, `last_gyro_xy`, `last_qvel_probe`.
+- New `reward/*` metrics (scale 0 by default): `energy_cmd`, `slip_cmd`,
+  `probe_sat`, `probe_slip`, `probe_transient`, `probe_free_transient`,
+  `base_accel`, `tau_ff_swing`, `tau_ff`, `target_sag`. `scripts/brax_ppo.py`
+  logs every env metric, so its wandb runs gain these columns.
+- `biped` task registered (`env_biped.py`; closure is `base` + `env_getup`).
+- `FunctionalEnv` auto-reset only restores `data`/`obs`, not `info`; the
+  per-episode `gyro_bias` draw therefore stays fixed per env slot there (same
+  as every other `info` field).
+
+### New opt-in knobs (joystick, `envs/env.py` / `envs/base.py`)
+
+- `obs_noise.gyro_bias` — per-episode uniform gyro bias, actor obs only.
+- `obs_noise.gyro_vib` / `gyro_vib_decay` — gyro resonator driven by the
+  torque change (`base.gyro_vib_step`, rings at half the control rate);
+  actor obs only.
+- `tau_ff.enable` / `scale` / `rate_weight` — feed-forward torque head:
+  `action_size` becomes 24, the second 12 go to `qfrc_applied` with the same
+  latency as the position targets.
+- `obs.history_len` — `proprio_history` obs component (RMA-style history).
+- Obs components `foot_friction`, `env_factors` (friction, gain / kd / force
+  scale, base mass and CoM offset vs the nominal model) — privileged inputs
+  for RMA; they read the (possibly DR-swapped) `_mjx_model`.
+- Reward: `base_accel` (+ `base_accel_ang_weight`, `base_accel_wz_fade`/
+  `_floor`), `energy_cmd`, `slip_cmd`, `target_sag` (+ `target_sag_wz_fade`),
+  `tau_ff_swing`, `tau_ff`, `probe_*` diagnostics,
+  `feet_landing_wz_fade`/`_floor`, `terrain_gate.flat_pitch_spin_exempt`.
+
 ## Tasks and the registry
 
 `wojtek_env/envs/registry.py` maps task name → (env class, default config):
@@ -12,6 +70,8 @@ not edit it.
 - `joystick` — velocity-command locomotion (`WojtekJoystick`). Default task.
 - `getup` — recover to standing (`WojtekGetup`).
 - `jump` — jump task (`WojtekJump`).
+- `biped` — rear up onto the hind legs and hold (`WojtekBiped`); from
+  upstream, unused by any script here.
 
 ```python
 from wojtek_env.envs import registry
@@ -40,7 +100,7 @@ task-independent ones for `scripts/ppo_dr.py`/`accel.py`/`accel_top_k.py`:
 - `real_pose_ref` — judge pose/height against the kinematic standing family
   instead of commanded ctrl targets (removes a PD-sag-dependent penalty
   floor; sim2real correctness fix, not just a shaping knob).
-- Spawn pose (`WojtekJoystick.reset`, local edit to the extracted env): every
+- Spawn pose (`WojtekJoystick.reset`, local patch on top of upstream): every
   leg joint, passive four-bar joints included, comes from the settled
   closed-loop pose for the commanded height (`_spawn_joint_qpos`, tabled per
   `DSECOND_TABLE` rung by `_settle_height_grid`). Previously only the
