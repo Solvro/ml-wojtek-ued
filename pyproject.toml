@@ -28,6 +28,8 @@ dependencies = [
     "hydra-core>=1.3.5",
     "wandb>=0.28.2",
     "orbax>=0.1.9",
+    # mp4 writer for render_video.py; already in the lock via playground
+    "mediapy==1.2.7",
 ]
 
 [project.optional-dependencies]
