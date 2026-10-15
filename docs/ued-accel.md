@@ -534,6 +534,57 @@ network and deterministic policy as eval_brax; no physics DR.
   `ROBOT`, `PREFIX` as `eval_brax.sbatch`; `lem-cpu-short`, 16 cores (CPU
   only; Lem CPU nodes share the GPU nodes' AlmaLinux 9, so the venv runs).
 
+## Demo videos — `scripts/render_video.py` {#render-video}
+
+mp4 clips of a `brax_ued.py` checkpoint walking generated levels, for demos
+(not an eval: no metrics beyond a printed fall time and travel per clip).
+
+```sh
+just render-video --checkpoint artifacts/checkpoints/<run>.pkl \
+  --level 0.5:<seed> --level 0.75:<seed> --level 1.0:<seed>
+```
+
+- Env, network and level space are built as in `eval_brax.py`: pass the
+  checkpoint's training flags (`--robot`, `--level_space` (default
+  `param`), `--amplitude`, `--coarse_n`, `--pad_radius`, `--pad_taper`;
+  defaults = `brax_ued.py`'s). The `.pkl` holds only params; a checkpoint
+  whose observation sizes differ from the built env fails before rollout.
+- Needs the `accel` arena built with the same geometry as the run, e.g.
+  `PYTHONPATH=src uv run python -m hfield.arena hfield_params.amplitude=0.3
+  hfield_params.coarse_n=13 hfield_params.pad_radius=0.55
+  hfield_params.pad_taper=0.2` (plain `just build-accel-arena` builds
+  `pad_radius` 0.6, which the env refuses).
+- `--level D:SEED` (repeatable): `space.scaled(default_rng(SEED), 1, D)`,
+  one clip each, named `<checkpoint stem>_d<D>_s<SEED>.mp4`; `demo.mp4` in
+  the same `--out_dir` (default `artifacts/videos`) = all clips in order.
+- Rollout on MJX (eval env: no physics DR, no `no_progress` cut, pushes on),
+  deterministic policy, `--command VX VY WZ` held every step (default
+  0.3 m/s forward, 0.2 rad/s yaw: an arc; on 24 screened d=1 levels the
+  robot got 1.1-3.2 m from spawn in 20 s, so it stays on the 3 m arena).
+  The command's height entry keeps the reset draw; `steps_since_cmd` is
+  zeroed so the env never resamples.
+- `--seconds` (default 20) must fit in one episode (1000 steps = 20 s for
+  Wojtek): a fall or truncation auto-resets the robot to spawn, which the
+  clip would show as a jump. Pick levels whose printed fall list is empty;
+  screen candidates with this single-env rollout, not a vmapped batch:
+  the batch's MJX numerics differ enough to flip falls (`d=1.0` seed 19
+  passed batched, fell twice single-env).
+- Levels with a strong slope clip at ±`amplitude` (0.3 m) within ~1 m of
+  the pad (d=1 slope up to -20°), leaving a flat pit floor; for a demo,
+  prefer low-slope levels whose rough/stairs/gaps persist outward.
+- Rendering: the recorded `qpos` replayed through `mujoco.Renderer`
+  (`--width`/`--height`, default 1280x720, `--fps` 30, frames at the
+  nearest control step), camera tracking the free-joint body; mp4 via
+  `mediapy` (needs `ffmpeg` on `PATH`). `MUJOCO_GL`: `cgl` on macOS,
+  `egl` on a GPU node, `osmesa` on a CPU node (recipe defaults to cgl/egl).
+- Cost (Apple M-series, CPU jax): ~1 min compile, then ~1 min per 20 s
+  clip.
+- Team demo (2026-10-15): `v10_wojtek_accel_seed4` (best of the 5 v10
+  Wojtek ACCEL seeds by final eval: `random/d1.0` success .423,
+  `param/uniform` .412, suite .584, flat .936), `--level 1.0:17` (rough
+  8.5 cm / 0.33 m wavelength, stairs -3.2 cm, gaps 2.3 cm, slope 1.2°):
+  no fall, 2.89 m from spawn after 20 s.
+
 ## Paper tables — `scripts/paper_tables.py` {#paper-tables}
 
 Builds the workshop paper's tables from `eval_brax.py` outputs
