@@ -442,8 +442,12 @@ policy, no physics DR, no `no_progress` cut. Success = no fall and >=
   no fall and the env's sampled command tracked — mean body-frame
   |v_xy - cmd_xy| < 0.25 m/s (x `ROBOT_SCALE`) and |wz - cmd_wz| <
   0.5 rad/s, after the first 1 s (`TRACK_*` in `eval_brax.py`). Deploy
-  commands include stand, spin and backward draws that never reach
-  `min_travel`, which caps `success_rate` below 1. `track_lin_err` /
+  commands include stand, spin and slow draws whose |v_xy| x 6 s is below
+  `min_travel` (~19% of draws on accel_deploy), which caps `success_rate`
+  below 1. Travel is distance from spawn, so backward walks can reach it.
+  The tolerances are absolute: a robot that stands still passes ~27% of
+  deploy command draws (|v_xy| < 0.25 and |wz| < 0.5), so read
+  `cmd_success_rate` against that floor. `track_lin_err` /
   `track_yaw_err` = mean errors over episodes without a fall; npz adds
   `<set>_lin_err`, `<set>_yaw_err` per random/param set.
 - `--level_space param` adds `param/uniform` (2048 levels drawn from the

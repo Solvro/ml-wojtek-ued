@@ -26,7 +26,7 @@ that levels genuinely differ in difficulty.
 Every set also reports `cmd_success_rate`: no fall and the sampled command
 tracked (mean body-frame |v_xy - cmd_xy| < `TRACK_LIN_TOL` m/s and
 |wz - cmd_wz| < `TRACK_YAW_TOL` rad/s after the first `TRACK_SKIP_S`), so
-stand, spin and backward commands count; `track_lin_err` / `track_yaw_err`
+stand, spin and slow commands count; `track_lin_err` / `track_yaw_err`
 average the errors over episodes without a fall.
 
 With the `param` level space two more sets:
@@ -66,7 +66,7 @@ from scripts.brax_ued import (
 
 DIFFICULTIES = (0.25, 0.5, 0.75, 1.0)
 # command-conditioned success: no fall and the command tracked, so stand,
-# spin and backward commands (which never reach min_travel) can succeed.
+# spin and slow commands (|v_xy| x level time < min_travel) can succeed.
 # Errors are means over the episode after TRACK_SKIP_S (start-up transient);
 # the linear tolerance scales with the robot like min_travel.
 TRACK_LIN_TOL = 0.25
