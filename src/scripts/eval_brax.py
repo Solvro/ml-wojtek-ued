@@ -24,10 +24,13 @@ levels. `level_success_corr` (pass A vs pass B per-level success) checks
 that levels genuinely differ in difficulty.
 
 Every set also reports `cmd_success_rate`: no fall and the sampled command
-tracked (mean body-frame |v_xy - cmd_xy| < `TRACK_LIN_TOL` m/s and
-|wz - cmd_wz| < `TRACK_YAW_TOL` rad/s after the first `TRACK_SKIP_S`), so
-stand, spin and slow commands count; `track_lin_err` / `track_yaw_err`
-average the errors over episodes without a fall.
+tracked, judged like the deploy tracking reward (`tracking_relative`):
+mean body-frame |v_xy - cmd_xy| / max(|cmd_xy|, `TRACK_FLOOR_LIN`) and
+|wz - cmd_wz| / max(|cmd_wz|, `TRACK_FLOOR_YAW`) both below `TRACK_REL_TOL`,
+after the first `TRACK_SKIP_S`. Stand, spin and slow commands count; a
+robot that stands still passes 12.4% of deploy command draws, nearly all
+of them zero commands. `track_lin_err` / `track_yaw_err` average the
+absolute errors over episodes without a fall.
 
 With the `param` level space two more sets:
 
@@ -67,10 +70,13 @@ from scripts.brax_ued import (
 DIFFICULTIES = (0.25, 0.5, 0.75, 1.0)
 # command-conditioned success: no fall and the command tracked, so stand,
 # spin and slow commands (|v_xy| x level time < min_travel) can succeed.
-# Errors are means over the episode after TRACK_SKIP_S (start-up transient);
-# the linear tolerance scales with the robot like min_travel.
-TRACK_LIN_TOL = 0.25
-TRACK_YAW_TOL = 0.5
+# Relative error with the deploy reward's floors (tracking_rel_floor_lin /
+# _ang): an absolute 0.25 m/s, 0.5 rad/s let a stand-still robot pass 26.9%
+# of deploy command draws, this lets it pass 12.4%. The linear floor scales
+# with the robot like min_travel.
+TRACK_REL_TOL = 0.5
+TRACK_FLOOR_LIN = 0.3
+TRACK_FLOOR_YAW = 0.7
 TRACK_SKIP_S = 1.0
 SUITE_STRENGTHS = (1, 2, 3, 4)
 
@@ -139,28 +145,32 @@ Episodes = dict[str, np.ndarray]
 
 
 def tracking_errors(
-    cmd: jax.Array, vel: jax.Array, skip: int
-) -> tuple[jax.Array, jax.Array]:
-    """Mean |cmd - vel| per env: linear (vx, vy) norm and yaw rate.
-
-    cmd, vel: (envs, steps, 3) as (vx, vy, wz), body frame."""
-    err = (cmd - vel)[:, skip:]
-    lin = jnp.linalg.norm(err[..., :2], axis=-1).mean(axis=1)
-    return lin, jnp.abs(err[..., 2]).mean(axis=1)
+    cmd: np.ndarray, vel: np.ndarray, skip: int, lin_floor: float
+) -> Episodes:
+    """Per env, means after `skip` steps: absolute (`lin_err` m/s,
+    `yaw_err` rad/s) and relative to max(|cmd|, floor) (`lin_rel`,
+    `yaw_rel`). cmd, vel: (envs, steps, 3) as (vx, vy, wz), body frame."""
+    cmd, err = cmd[:, skip:], (cmd - vel)[:, skip:]
+    lin = np.linalg.norm(err[..., :2], axis=-1)
+    yaw = np.abs(err[..., 2])
+    lin_ref = np.maximum(np.linalg.norm(cmd[..., :2], axis=-1), lin_floor)
+    yaw_ref = np.maximum(np.abs(cmd[..., 2]), TRACK_FLOOR_YAW)
+    return {
+        "lin_err": lin.mean(axis=1),
+        "yaw_err": yaw.mean(axis=1),
+        "lin_rel": (lin / lin_ref).mean(axis=1),
+        "yaw_rel": (yaw / yaw_ref).mean(axis=1),
+    }
 
 
 def rollout(ctx: dict[str, Any], hfields: np.ndarray, key: jax.Array) -> Episodes:
-    """Per (level, episode): fell, final travel, mean linear and yaw command
-    tracking errors. hfields: (levels, N)."""
+    """Per (level, episode): fell, final travel and the `tracking_errors`.
+    hfields: (levels, N)."""
     args = ctx["args"]
     per_chunk = max(1, args.chunk_envs // args.episodes)
     skip = round(TRACK_SKIP_S / ctx["dt"])
-    out: dict[str, list[np.ndarray]] = {
-        "fell": [],
-        "travel": [],
-        "lin_err": [],
-        "yaw_err": [],
-    }
+    lin_floor = TRACK_FLOOR_LIN * ROBOT_SCALE[ctx["spec"]["robot"]]
+    out: dict[str, list[np.ndarray]] = {}
     for start in range(0, len(hfields), per_chunk):
         chunk = jnp.repeat(
             jnp.asarray(hfields[start : start + per_chunk]), args.episodes, axis=0
@@ -178,13 +188,16 @@ def rollout(ctx: dict[str, Any], hfields: np.ndarray, key: jax.Array) -> Episode
             length=args.level_steps,
         )
         log = data.extras["log"]
-        lin_err, yaw_err = tracking_errors(log["cmd"], log["vel"], skip)
-        out["fell"].append(np.asarray(log["fell"].max(axis=1)))
-        out["travel"].append(
-            np.asarray(jnp.linalg.norm(log["xy"][:, -1] - start_xy, axis=-1))
-        )
-        out["lin_err"].append(np.asarray(lin_err))
-        out["yaw_err"].append(np.asarray(yaw_err))
+        travel = jnp.linalg.norm(log["xy"][:, -1] - start_xy, axis=-1)
+        chunk_out = {
+            "fell": np.asarray(log["fell"].max(axis=1)),
+            "travel": np.asarray(travel),
+            **tracking_errors(
+                np.asarray(log["cmd"]), np.asarray(log["vel"]), skip, lin_floor
+            ),
+        }
+        for k, v in chunk_out.items():
+            out.setdefault(k, []).append(v)
     shape = (len(hfields), args.episodes)
     return {k: np.concatenate(v).reshape(shape) for k, v in out.items()}
 
@@ -202,20 +215,18 @@ def bootstrap_ci(
     return float(np.percentile(samples, 2.5)), float(np.percentile(samples, 97.5))
 
 
-def tracked(episodes: Episodes, robot: str) -> np.ndarray:
+def tracked(episodes: Episodes) -> np.ndarray:
     return (
         (episodes["fell"] == 0)
-        & (episodes["lin_err"] < TRACK_LIN_TOL * ROBOT_SCALE[robot])
-        & (episodes["yaw_err"] < TRACK_YAW_TOL)
+        & (episodes["lin_rel"] < TRACK_REL_TOL)
+        & (episodes["yaw_rel"] < TRACK_REL_TOL)
     )
 
 
-def tracking_summary(
-    prefix: str, passes: list[Episodes], robot: str
-) -> dict[str, float]:
+def tracking_summary(prefix: str, passes: list[Episodes]) -> dict[str, float]:
     both = {k: np.stack([p[k] for p in passes]) for k in passes[0]}
     standing = both["fell"] == 0
-    out = {f"{prefix}/cmd_success_rate": float(tracked(both, robot).mean())}
+    out = {f"{prefix}/cmd_success_rate": float(tracked(both).mean())}
     # errors over episodes without a fall: a fallen robot's velocity says
     # nothing about tracking
     if standing.any():
@@ -239,7 +250,7 @@ def summarize(
         f"{prefix}/success_rate": float(mean.mean()),
         f"{prefix}/fall_rate": float(0.5 * (a["fell"].mean() + b["fell"].mean())),
         f"{prefix}/mean_travel": float(0.5 * (a["travel"].mean() + b["travel"].mean())),
-        **tracking_summary(prefix, passes, ctx["spec"]["robot"]),
+        **tracking_summary(prefix, passes),
     }
     lo, hi = bootstrap_ci(lambda i: float(mean[i].mean()), n, rng)
     out[f"{prefix}/success_rate_ci_low"], out[f"{prefix}/success_rate_ci_high"] = lo, hi
