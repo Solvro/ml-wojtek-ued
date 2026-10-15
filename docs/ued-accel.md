@@ -444,8 +444,11 @@ policy, no physics DR, no `no_progress` cut. Success = no fall and >=
   `lin_rel = |v_xy - cmd_xy| / max(|cmd_xy|, 0.3 m/s x ROBOT_SCALE)`,
   `yaw_rel = |wz - cmd_wz| / max(|cmd_wz|, 0.7 rad/s)` (the deploy reward's
   `tracking_rel_floor_lin` / `_ang`). Tracked = episode means of both
-  < 0.5, i.e. within 50% of the command, after the first 1 s (`TRACK_*`
-  in `eval_brax.py`). Deploy commands include stand, spin and slow draws
+  < 0.5, i.e. within 50% of the command (`TRACK_*` in `eval_brax.py`).
+  Steps within 1 s of the reset or of a command change are a start-up
+  transient and not scored: the env resamples every 250 steps (5 s), so a
+  6 s level scores 1-5 s and the second command's last second is all
+  transient. Deploy commands include stand, spin and slow draws
   whose |v_xy| x 6 s is below `min_travel` (~19% of draws on
   accel_deploy), which caps `success_rate` below 1. Travel is distance
   from spawn, so backward walks can reach it.

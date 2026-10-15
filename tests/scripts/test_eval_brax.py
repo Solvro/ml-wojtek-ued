@@ -1,3 +1,6 @@
+import argparse
+
+import jax
 import numpy as np
 import pytest
 
@@ -6,6 +9,8 @@ from scripts.eval_brax import (
     TRACK_FLOOR_LIN,
     TRACK_FLOOR_YAW,
     TRACK_REL_TOL,
+    rollout,
+    settled_steps,
     stack_passes,
     tracked,
     tracking_errors,
@@ -44,6 +49,53 @@ def test_tracking_errors_skip_the_start_up_transient() -> None:
     assert settled["yaw_rel"] == pytest.approx([0.5])
     whole = tracking_errors(cmd, vel, 0, TRACK_FLOOR_LIN)
     assert whole["lin_err"] == pytest.approx([0.25])
+
+
+def resampled(lag: int) -> tuple[np.ndarray, np.ndarray]:
+    """Command 0.5 m/s forward for 6 steps, then 1 rad/s spin for 6; the
+    robot follows each command `lag` steps late, standing in between."""
+    cmd = np.zeros((1, 12, 3))
+    cmd[:, :6, 0] = 0.5
+    cmd[:, 6:, 2] = 1.0
+    vel = np.zeros_like(cmd)
+    vel[:, lag:6, 0] = 0.5
+    vel[:, 6 + lag :, 2] = 1.0
+    return cmd, vel
+
+
+def test_settled_steps_restart_the_skip_at_every_command_change() -> None:
+    settled = settled_steps(resampled(0)[0], skip=2)
+    expected = [False, False, True, True, True, True] * 2
+    assert settled[0].tolist() == expected
+
+
+def test_settled_steps_ignore_a_resample_that_draws_the_same_command() -> None:
+    cmd, _ = constant([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], steps=6)
+    assert settled_steps(cmd, skip=2)[0].tolist() == [False] * 2 + [True] * 4
+
+
+def test_post_resample_transient_is_not_scored() -> None:
+    cmd, vel = resampled(lag=2)
+    settled = judged(cmd, vel, skip=2)
+    assert settled["lin_rel"] == pytest.approx([0.0])
+    assert settled["yaw_rel"] == pytest.approx([0.0])
+    whole = judged(cmd, vel, skip=0)
+    assert whole["lin_rel"] == pytest.approx([2 / 12])
+    assert whole["yaw_rel"] == pytest.approx([2 / 12])
+
+
+def test_an_episode_with_no_settled_step_is_never_tracked() -> None:
+    cmd, vel = constant([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], steps=3)
+    run = judged(cmd, vel, skip=3)
+    assert np.isnan(run["lin_rel"]).all()
+    assert not tracked(run).any()
+
+
+def test_rollout_refuses_levels_shorter_than_the_transient() -> None:
+    args = argparse.Namespace(level_steps=50, chunk_envs=8, episodes=2)
+    ctx = {"args": args, "dt": 0.02, "spec": {"robot": "wojtek"}}
+    with pytest.raises(ValueError, match="--level_steps 50"):
+        rollout(ctx, np.zeros((1, 4)), jax.random.key(0))
 
 
 @pytest.mark.parametrize(
