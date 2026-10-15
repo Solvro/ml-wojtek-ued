@@ -31,6 +31,45 @@ def test_tracking_errors_skip_the_start_up_transient() -> None:
     assert lin_all == pytest.approx([0.25])
 
 
+def rollout_tracked(cmd: list[float], vel: list[float]) -> bool:
+    lin, yaw = tracking_errors(
+        jnp.tile(jnp.array(cmd), (1, 4, 1)), jnp.tile(jnp.array(vel), (1, 4, 1)), 0
+    )
+    episode = {
+        "fell": np.zeros((1, 1)),
+        "lin_err": np.asarray(lin).reshape(1, 1),
+        "yaw_err": np.asarray(yaw).reshape(1, 1),
+    }
+    return bool(tracked(episode, "wojtek").all())
+
+
+@pytest.mark.parametrize(
+    ("cmd", "vel", "expected"),
+    [
+        ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], True),
+        ([0.0, 0.0, 0.0], [0.5, 0.0, 0.0], False),
+        ([0.0, 0.0, 1.0], [0.0, 0.0, 1.0], True),
+        ([0.0, 0.0, 1.0], [0.0, 0.0, 0.0], False),
+        ([0.0, 0.0, 1.0], [0.0, 0.0, -1.0], False),
+        ([-0.5, 0.0, 0.0], [-0.5, 0.0, 0.0], True),
+        ([-0.5, 0.0, 0.0], [0.5, 0.0, 0.0], False),
+    ],
+    ids=[
+        "zero-stands",
+        "zero-walks-off",
+        "spin-tracked",
+        "spin-stands",
+        "spin-wrong-way",
+        "backward-tracked",
+        "backward-walks-forward",
+    ],
+)
+def test_command_kinds_are_judged_by_signed_velocity_error(
+    cmd: list[float], vel: list[float], expected: bool
+) -> None:
+    assert rollout_tracked(cmd, vel) is expected
+
+
 def test_standing_still_on_a_stand_command_counts_as_tracked() -> None:
     assert tracked(episodes(fell=0, lin_err=0.0, yaw_err=0.0), "wojtek").all()
 
