@@ -324,6 +324,16 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   uniform (DR) levels.
 - `--robot go1`: Playground's Go1 instead of Wojtek, see
   [Go1](#go1).
+- `--profile {benchmark,deploy}` (default `benchmark` = everything above,
+  the v10 setup). `deploy`: w01-tek `terrain_blind_v4_4d`'s env, DR and SiLU
+  network on the 12x12 m `accel_deploy` arena, exportable to the robot —
+  [deploy.md](deploy.md#profile).
+- Sidecar: with `--checkpoint_dir`, `<name>.json` is written beside
+  `<name>.pkl` at launch (profile, robot, arena, `HFieldConfig`, level
+  space, resolved env overrides, DR, network, flags, obs sizes, git commit);
+  every consumer rebuilds env and network from it
+  ([deploy.md](deploy.md#sidecar)). `brax_ued.py` also checks the built
+  arena's geometry against the run before training.
 - Eval every `eval_every` iterations: deterministic policy on fresh uniform
   levels at difficulties 0.25/0.5/0.75/1.0 — `eval/d<d>/success_rate` (no
   fall and >= `min_travel` m from spawn), fall rate, travel, forward vs
@@ -339,16 +349,17 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   student PPO update), `elapsed_s` (wall clock since launch, compile
   included). The run summary ends with `final/elapsed_h`, `final/sim_steps`,
   `final/student_train_steps` (`paper_tables.py` compute table).
-- WCSS: `brax_ued.sbatch` array (tasks 0-2 dr, 3-5 accel, seeds 0-2); assets
-  must be built beforehand since tasks start together.
-- The arena must match the run's geometry or `terrain_env.load` refuses it
-  (`pad_radius` mismatch); build it with the run's flags, as for
-  [render_video.py](#render-video).
+- WCSS: `brax_ued.sbatch` array (tasks 0-2 dr, 3-5 accel, seeds 0-2),
+  `PROFILE=deploy` for the deploy profile; assets must be built beforehand
+  since tasks start together.
+- The arena must match the run's geometry (`hfield.arena.check_arena`:
+  `pad_radius`, height scale, grid size); the error names the
+  `just build-accel-arena arena=<kind> hfield_params...` command for it.
 
 ## Level spaces — `hfield/level_space.py` {#level-spaces}
 
-`brax_ued.py` and `eval_brax.py` take `--level_space {grid,param}`; every
-mode samples, mutates and renders levels through it.
+`brax_ued.py` takes `--level_space {grid,param}` (eval scripts read it from
+the sidecar); every mode samples, mutates and renders levels through it.
 
 - `grid` (default, v7 runs): the original `coarse_n x coarse_n` control-point
   genome. i.i.d. noise, so levels at one scale are statistically alike: the
@@ -380,7 +391,8 @@ mode samples, mutates and renders levels through it.
   NSEEDS + seed offset; default seeds 0-2, extra seeds e.g. `NSEEDS=2
   SEED0=3`) and `SRC` (`<dir>/src` of a frozen copy with the
   built `assets/` beside it - `wojtek_env.paths` resolves assets from
-  `src/..` - so queued jobs keep the submitted code).
+  `src/..` - so queued jobs keep the submitted code; put
+  `git rev-parse HEAD > <dir>/GIT_COMMIT` there for the sidecar).
 - `robot_scale` (`ParamSpace`, eval suite): every length range (amplitude,
   wavelength, stairs, gaps, blocks, gap depth/period) times the robot's size
   relative to Wojtek; slopes unchanged. Envelopes stay in Wojtek units.
@@ -388,7 +400,7 @@ mode samples, mutates and renders levels through it.
 ## Go1 — `robots/go1.py` {#go1}
 
 Second robot for the benchmark: open serial chain (Go1) vs Wojtek's closed
-chain. `--robot go1` in `brax_ued.py` / `eval_brax.py`, `ROBOT=go1` on WCSS
+chain. `--robot go1` in `brax_ued.py` (evals read it from the sidecar), `ROBOT=go1` on WCSS
 (run prefix `v9_go1`).
 
 - Playground `Go1JoystickRoughTerrain` (feet-only collisions, its reward,
@@ -408,7 +420,8 @@ chain. `--robot go1` in `brax_ued.py` / `eval_brax.py`, `ROBOT=go1` on WCSS
 
 ## Final eval — `scripts/eval_brax.py` {#eval-brax}
 
-Loads a `brax_ued.py` checkpoint (`--checkpoint <run>.pkl`), deterministic
+Loads a `brax_ued.py` checkpoint (`--checkpoint <run>.pkl`; robot, level
+space, arena and network from its sidecar `<run>.json`), deterministic
 policy, no physics DR, no `no_progress` cut. Success = no fall and >=
 `min_travel` m from spawn after `level_steps`.
 
@@ -533,8 +546,9 @@ network and deterministic policy as eval_brax; no physics DR.
   slowest), Go1 ~7 min / 0.4 CPU-h.
 - Writes `<name>.json` and `<name>.npz` (`<variant>_<set>_fell/_travel`,
   levels x episodes) to `--out_dir`; wandb tags `sim2sim`, robot.
+- Needs a `param`-space checkpoint (read from the sidecar).
 - WCSS: `slurm/eval_sim2sim.sbatch`, same `MODES`/seed array layout, `SRC`,
-  `ROBOT`, `PREFIX` as `eval_brax.sbatch`; `lem-cpu-short`, 16 cores (CPU
+  `PREFIX` as `eval_brax.sbatch`; `lem-cpu-short`, 16 cores (CPU
   only; Lem CPU nodes share the GPU nodes' AlmaLinux 9, so the venv runs).
 
 ## Demo videos — `scripts/render_video.py` {#render-video}
@@ -547,19 +561,17 @@ just render-video --checkpoint artifacts/checkpoints/<run>.pkl \
   --level 0.5:<seed> --level 0.75:<seed> --level 1.0:<seed>
 ```
 
-- Env, network and level space are built as in `eval_brax.py`: pass the
-  checkpoint's training flags (`--robot`, `--level_space` (default
-  `param`), `--amplitude`, `--coarse_n`, `--pad_radius`, `--pad_taper`;
-  the rest default to `brax_ued.py`'s). The `.pkl` holds only params; a checkpoint
-  whose observation sizes differ from the built env fails before rollout.
-- Needs the `accel` arena built with the same geometry as the run, e.g.
-  `just build-accel-arena hfield_params.amplitude=0.3
-  hfield_params.coarse_n=13 hfield_params.pad_radius=0.55
-  hfield_params.pad_taper=0.2` (plain `just build-accel-arena` builds
-  `HFieldConfig`'s defaults: amplitude 0.12, `pad_radius` 0.6). For
-  `--robot wojtek` the script checks the arena's spec (`pad_radius`, height
-  scale, grid size) against the flags first and fails with this command
-  filled in; an amplitude mismatch would otherwise run silently.
+- Env, network, robot, level space and arena come from the checkpoint's
+  sidecar `<run>.json` ([deploy.md](deploy.md#sidecar)); pre-sidecar
+  checkpoints need `just write-sidecar` first. A sidecar whose obs sizes
+  differ from the checkpoint fails before rollout.
+- Needs the run's arena built with its geometry (v10: `just
+  build-accel-arena hfield_params.amplitude=0.3 hfield_params.coarse_n=13
+  hfield_params.pad_radius=0.55 hfield_params.pad_taper=0.2`; deploy
+  profile: `just build-deploy-arena`). For Wojtek the script checks the
+  arena's spec (`pad_radius`, height scale, grid size) first and fails with
+  the command filled in; an amplitude mismatch would otherwise run
+  silently.
 - `--level D:SEED` (repeatable): `space.scaled(default_rng(SEED), 1, D)`,
   one clip each, named `<checkpoint stem>_d<D>_s<SEED>.mp4`; `demo.mp4` in
   the same `--out_dir` (default `artifacts/videos`) = all clips in order.
