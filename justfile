@@ -75,6 +75,11 @@ build:
 build-accel-arena *args:
     uv run python -m hfield.arena {{ args }}
 
+# Write the 12x12 m "accel_deploy" arena that `brax_ued.py --profile deploy` loads
+[group('build')]
+build-deploy-arena:
+    just build-accel-arena arena=accel_deploy hfield_params.patch_radius=6.0 hfield_params.cell_size=0.05 hfield_params.amplitude=0.3 hfield_params.coarse_n=25 hfield_params.pad_radius=0.55 hfield_params.pad_taper=0.2
+
 # --- training ---
 
 # Run the PPO training script (pass hydra overrides, e.g. `just train training_params.epochs=8`)
@@ -118,3 +123,15 @@ eval-sim *args:
 [group('eval')]
 render-video *args:
     MUJOCO_GL="${MUJOCO_GL:-$([ "$(uname)" = Darwin ] && echo cgl || echo egl)}" uv run python src/scripts/render_video.py {{ args }}
+
+# --- deploy ---
+
+# Export a `brax_ued.py --profile deploy` checkpoint to the robot's policy.npz + policy_meta.json (`just export --checkpoint run.pkl [--out dir]`)
+[group('deploy')]
+export *args:
+    JAX_PLATFORMS=cpu uv run python src/scripts/export_policy.py {{ args }}
+
+# Write the sidecar <run>.json of a pre-sidecar brax_ued.py checkpoint (`just write-sidecar --checkpoint run.pkl <its brax_ued.py flags>`)
+[group('eval')]
+write-sidecar *args:
+    uv run python src/scripts/write_sidecar.py {{ args }}

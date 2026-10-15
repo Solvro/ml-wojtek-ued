@@ -1,8 +1,8 @@
 """Video of a `brax_ued.py` checkpoint walking generated levels.
 
-Env, network and level space are built the way `eval_brax.py` builds them, so
-pass the checkpoint's training flags (`--robot`, `--level_space`, arena
-sizes). The deterministic policy runs on MJX under a held velocity command;
+Env, network and level space are rebuilt from the checkpoint's sidecar
+(`<run>.json`, written by `brax_ued.py`). The deterministic policy runs on
+MJX under a held velocity command;
 the recorded states are replayed through an offscreen MuJoCo renderer with a
 camera tracking the base. One clip per `--level D:SEED` (a `scaled` level of
 difficulty D drawn from rng seed SEED), plus `demo.mp4` = all clips in order.
@@ -10,7 +10,6 @@ Needs the built assets; MUJOCO_GL=cgl on macOS, egl/osmesa headless.
 """
 
 import argparse
-import json
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -20,14 +19,18 @@ import jax.numpy as jnp
 import mediapy
 import mujoco
 import numpy as np
-from brax.io import model as brax_model
 from brax.training.agents.ppo import networks as ppo_networks
 
 from config.hfield_config import HFieldConfig
 from hfield.level_space import make_level_space
-from scripts.brax_ued import ROBOT_SCALE, hfield_config, make_env, make_network
+from scripts.brax_ued import (
+    ROBOT_SCALE,
+    check_spec_arena,
+    load_run,
+    make_env,
+    spec_network,
+)
 from utils.env import FunctionalEnv
-from wojtek_env import paths
 
 # mujoco is a C extension that ty cannot introspect
 mj: Any = mujoco
@@ -56,48 +59,6 @@ def frame_steps(n_steps: int, ctrl_dt: float, fps: int) -> np.ndarray:
     return np.minimum(steps, n_steps - 1)
 
 
-def check_checkpoint(params: Any, env: FunctionalEnv) -> None:
-    normalizer = params[0]
-    actor = int(normalizer.mean["state"].shape[-1])
-    critic = int(normalizer.mean["privileged_state"].shape[-1])
-    expected = (env.observation_size.actor, env.observation_size.critic)
-    if (actor, critic) != expected:
-        raise ValueError(
-            f"checkpoint observations (actor {actor}, critic {critic}) do not "
-            f"match the env built from these flags {expected}; pass the "
-            "--robot / env flags the checkpoint was trained with"
-        )
-
-
-def check_arena(spec_path: Path, config: HFieldConfig) -> None:
-    rebuild = (
-        "build it with `just build-accel-arena "
-        f"hfield_params.amplitude={config.amplitude} "
-        f"hfield_params.coarse_n={config.coarse_n} "
-        f"hfield_params.pad_radius={config.pad_radius} "
-        f"hfield_params.pad_taper={config.pad_taper}`"
-    )
-    if not spec_path.exists():
-        raise FileNotFoundError(f"no accel arena at {spec_path}; {rebuild}")
-    spec = json.loads(spec_path.read_text())
-    built = {
-        "pad_radius": spec["pad_radius"],
-        "amplitude": spec["hfield"]["elevation_z"] / 2,
-        "grid": spec["hfield"]["nrow"],
-    }
-    wanted = {
-        "pad_radius": config.pad_radius,
-        "amplitude": config.amplitude,
-        "grid": config.grid_size,
-    }
-    # amplitude sets the hfield's height scale: a mismatch runs silently
-    if not all(np.isclose(built[k], wanted[k]) for k in wanted):
-        raise ValueError(
-            f"the accel arena at {spec_path} was built with {built}, these "
-            f"flags need {wanted}; re{rebuild}"
-        )
-
-
 def hold_command(info: dict[str, Any], command: jax.Array) -> dict[str, Any]:
     held = {**info, "command": info["command"].at[:3].set(command)}
     if "steps_since_cmd" in held:
@@ -111,10 +72,14 @@ def hold_command(info: dict[str, Any], command: jax.Array) -> dict[str, Any]:
 
 
 def make_rollout(
-    env: FunctionalEnv, params: Any, command: jax.Array, n_steps: int
+    env: FunctionalEnv,
+    spec: dict[str, Any],
+    params: Any,
+    command: jax.Array,
+    n_steps: int,
 ) -> Rollout:
     """(key, hfield) -> per-step qpos before the step, and fell flags."""
-    make_policy = ppo_networks.make_inference_fn(make_network(env))
+    make_policy = ppo_networks.make_inference_fn(spec_network(spec))
     policy = make_policy(params, deterministic=True)
 
     def step(state: Any, hfield: jax.Array) -> tuple[Any, tuple[jax.Array, ...]]:
@@ -151,12 +116,13 @@ def render_frames(
     qpos: np.ndarray,
     steps: np.ndarray,
     args: argparse.Namespace,
+    scale: float,
 ) -> Iterator[np.ndarray]:
     model.hfield_data[:] = hfield
     model.vis.global_.offwidth = max(model.vis.global_.offwidth, args.width)
     model.vis.global_.offheight = max(model.vis.global_.offheight, args.height)
     data = mj.MjData(model)
-    camera = tracking_camera(model, ROBOT_SCALE[args.robot])
+    camera = tracking_camera(model, scale)
     # the renderer uploads the hfield at creation, so build it per level
     with mj.Renderer(model, args.height, args.width) as renderer:
         for i in steps:
@@ -168,7 +134,9 @@ def render_frames(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--checkpoint", required=True, help="brax_ued.py .pkl params")
+    p.add_argument(
+        "--checkpoint", required=True, help="brax_ued.py .pkl, sidecar .json beside it"
+    )
     p.add_argument("--out_dir", default="artifacts/videos")
     p.add_argument(
         "--level",
@@ -189,24 +157,17 @@ def parse_args() -> argparse.Namespace:
         metavar=("VX", "VY", "WZ"),
         help="held command (m/s, m/s, rad/s); the default arc stays on the arena",
     )
-    p.add_argument("--amplitude", type=float, default=0.3)
-    p.add_argument("--level_space", default="param", choices=["grid", "param"])
-    p.add_argument("--robot", default="wojtek", choices=list(ROBOT_SCALE))
-    p.add_argument("--coarse_n", type=int, default=13)
-    p.add_argument("--pad_radius", type=float, default=0.55)
-    p.add_argument("--pad_taper", type=float, default=0.2)
     p.add_argument("--seed", type=int, default=0, help="reset key")
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    config = hfield_config(args)
-    if args.robot == "wojtek":
-        check_arena(paths.terrain_paths("accel")["spec"], config)
-    env = make_env(args, config, num_envs=1, train=False)
-    params = brax_model.load_params(args.checkpoint)
-    check_checkpoint(params, env)
+    spec, params = load_run(Path(args.checkpoint))
+    config = HFieldConfig(**spec["hfield"])
+    check_spec_arena(spec)
+    env = make_env(spec, num_envs=1, train=False)
+    scale = ROBOT_SCALE[spec["robot"]]
     base: Any = env._env.unwrapped
     n_steps = round(args.seconds / base.dt)
     if n_steps > env._env.episode_length:
@@ -215,13 +176,9 @@ def main() -> None:
             f"episode length {env._env.episode_length}; the env would reset"
         )
     space = make_level_space(
-        args.level_space,
-        config,
-        n_edits=1,
-        edit_scale=0.0,
-        robot_scale=ROBOT_SCALE[args.robot],
+        spec["level_space"], config, n_edits=1, edit_scale=0.0, robot_scale=scale
     )
-    rollout = make_rollout(env, params, jnp.asarray(args.command), n_steps)
+    rollout = make_rollout(env, spec, params, jnp.asarray(args.command), n_steps)
     steps = frame_steps(n_steps, base.dt, args.fps)
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -237,7 +194,9 @@ def main() -> None:
             name = f"{Path(args.checkpoint).stem}_d{difficulty}_s{seed}.mp4"
             print(f"{name}: falls at {np.round(falls, 2)} s, travel {travel:.2f} m")
             with mediapy.VideoWriter(out / name, size, fps=args.fps) as clip:
-                for frame in render_frames(base.mj_model, hfield, qpos, steps, args):
+                for frame in render_frames(
+                    base.mj_model, hfield, qpos, steps, args, scale
+                ):
                     clip.add_image(frame)
                     demo.add_image(frame)
 

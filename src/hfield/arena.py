@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from pathlib import Path
 from typing import cast
 
 import hydra
@@ -134,10 +135,12 @@ def build_accel_arena(config: HFieldConfig, seed: int = 0) -> terrain.Arena:
     return terrain.Arena(spec=spec, boxes=(), hfield_data=hfield_data, lookup=lookup)
 
 
-def write_accel_arena(config: HFieldConfig | None = None, seed: int = 0) -> None:
+def write_accel_arena(
+    config: HFieldConfig | None = None, seed: int = 0, kind: str = "accel"
+) -> None:
     config = config or HFieldConfig()
     arena = build_accel_arena(config, seed=seed)
-    out = paths.terrain_paths("accel")
+    out = paths.terrain_paths(kind)
     terrain.write_hfield_bin(out["hfield"], arena.hfield_data)
     hfield_file = os.path.relpath(out["hfield"], _robot_meshdir()).replace(os.sep, "/")
     out["scene"].write_text(build_accel_scene_xml(config, hfield_file))
@@ -158,10 +161,41 @@ def write_accel_arena(config: HFieldConfig | None = None, seed: int = 0) -> None
         print(f"wrote {p} ({p.stat().st_size / 1e6:.2f} MB)")
 
 
+def check_arena(spec_path: Path, config: HFieldConfig, kind: str) -> None:
+    rebuild = (
+        f"build it with `just build-accel-arena arena={kind} "
+        f"hfield_params.patch_radius={config.patch_radius} "
+        f"hfield_params.cell_size={config.cell_size} "
+        f"hfield_params.amplitude={config.amplitude} "
+        f"hfield_params.coarse_n={config.coarse_n} "
+        f"hfield_params.pad_radius={config.pad_radius} "
+        f"hfield_params.pad_taper={config.pad_taper}`"
+    )
+    if not spec_path.exists():
+        raise FileNotFoundError(f"no {kind} arena at {spec_path}; {rebuild}")
+    spec = json.loads(spec_path.read_text())
+    built = {
+        "pad_radius": spec["pad_radius"],
+        "amplitude": spec["hfield"]["elevation_z"] / 2,
+        "grid": spec["hfield"]["nrow"],
+    }
+    wanted = {
+        "pad_radius": config.pad_radius,
+        "amplitude": config.amplitude,
+        "grid": config.grid_size,
+    }
+    # amplitude sets the hfield's height scale: a mismatch runs silently
+    if not all(np.isclose(built[k], wanted[k]) for k in wanted):
+        raise ValueError(
+            f"the {kind} arena at {spec_path} was built with {built}, this "
+            f"run needs {wanted}; re{rebuild}"
+        )
+
+
 @hydra.main(version_base=None, config_name="arena_config")
 def main(cfg: ArenaConfig) -> None:
     hfield_config = cast(HFieldConfig, OmegaConf.to_object(cfg.hfield_params))
-    write_accel_arena(hfield_config, seed=cfg.seed)
+    write_accel_arena(hfield_config, seed=cfg.seed, kind=cfg.arena)
 
 
 if __name__ == "__main__":

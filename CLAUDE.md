@@ -17,6 +17,7 @@ it when the code changes.**
 | Config fields, Hydra overrides | [docs/configuration.md](docs/configuration.md) |
 | Layout rules, tooling, adding features, gotchas | [docs/development.md](docs/development.md) |
 | Running training/eval on the cluster | [docs/slurm_recommended.md](docs/slurm_recommended.md) |
+| Deploy profile, checkpoint sidecar, export to the robot (`src/deploy/`) | [docs/deploy.md](docs/deploy.md) |
 
 ## Where code lives
 
@@ -28,6 +29,10 @@ it when the code changes.**
   [docs/environment.md](docs/environment.md#upstream-sync).
 - `src/{config,modules,utils,hfield,ued}/`, `src/scripts/` — research code.
   Add new work here as sibling packages.
+- `src/deploy/` — robot export: `contract.py` (port of w01-tek
+  `deploy_contract.py`), `runtime.py` (the robot's `policy.py`, verbatim,
+  ruff-excluded — never edit), `upstream_snapshot.py` (regenerates
+  `tests/deploy/upstream_terrain_blind_v4_4d.json`).
 - `src/ued/` — the ACCEL algorithm, split by role (`types`, `regret`, `levels`,
   `stopper`, `curriculum`). Keep the split; don't recreate a `helpers` grab-bag.
 

@@ -47,8 +47,14 @@ include = ["src/scripts/eval_sim2sim.py", "tests/**"]
 # its members; mujoco.mjx is pure Python and stays checked
 analysis.replace-imports-with-any = ["mujoco"]
 
+[[tool.ty.overrides]]
+include = ["src/deploy/upstream_snapshot.py"]
+# wojtek_rl is the w01-tek checkout main() puts on sys.path at run time
+rules = { unresolved-import = "ignore" }
+
 [tool.ruff]
-extend-exclude = ["src/wojtek_env"]
+# deploy/runtime.py is the robot's code, copied verbatim from w01-tek
+extend-exclude = ["src/wojtek_env", "src/deploy/runtime.py"]
 
 [build-system]
 requires = ["hatchling>=1.26"]

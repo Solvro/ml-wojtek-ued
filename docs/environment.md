@@ -22,7 +22,7 @@ not edit it.
 | every ported module | `wojtek_rl` imports / module-path strings → `wojtek_env.{envs,terrain,tools}` | package layout | neither |
 | `envs/env.py` | spawn pose: every leg joint, passive four-bar joints included, from the settled closed-loop pose (`_spawn_joint_qpos`, `_dsecond`, see below); `_settle_height_grid` also returns the joints and runs at every construction (~0.7 s CPU), not only under `real_pose_ref`; `_height_ctrl` / `_pose_ref` stay verbatim | upstream leaves the closure open at reset | training-only (reset state) |
 | `envs/env.py` | `_get_reward` also returns `fall_causes`; `step` writes `fall_{min_height,tilt,toggle,base_contact}_at_done` | read by `utils/ppo_helpers.py` | training-only (metrics) |
-| `paths.py` | ours: assets under `assets/wojtek_description/`, `"accel"` in `TERRAIN_KINDS`, no room/HF/policy constants | repo layout; accel arena for UED | training-only |
+| `paths.py` | ours: assets under `assets/wojtek_description/`, `"accel"` and `"accel_deploy"` in `TERRAIN_KINDS`, no room/HF/policy constants | repo layout; accel arenas for UED | training-only |
 | `envs/__init__.py`, `gymnasium/`, `tools/check_gym.py` | ours: re-exports, Gymnasium wrapper | convenience API | training-only |
 - Generated `wojtek_mjx.xml` / `scene_mjx.xml` are byte-identical to upstream
   `ros/src/wojtek_description/mujoco/` at `e44c1a9`.
@@ -207,9 +207,11 @@ gain/kd actuator scale — the library's baseline domain randomization. Passing
 a `dr_cfg` dict (shape mirrors `randomize._DEFAULT_DR`) turns on extra,
 independently-gated fields: `com_offset`, `joint_gains` (per-actuator instead
 of one shared scale), `dof` (damping/armature/frictionloss), `foot_friction`,
-`motor_strength`. None of this repo's trainer scripts expose `dr_cfg`
-overrides yet — `scripts/ppo_dr.py` (see [ppo.md](ppo.md#domain-randomization-scriptsppo_drpy))
-uses the baseline five-field form via `FunctionalEnv(domain_randomize=True)`.
+`motor_strength`. `FunctionalEnv(..., dr_config=...)` passes one through;
+`brax_ued.py --profile deploy` uses upstream `terrain_blind_v4_4d`'s
+([deploy.md](deploy.md#profile)). `scripts/ppo_dr.py` (see [ppo.md](ppo.md#domain-randomization-scriptsppo_drpy))
+and the benchmark profile use the baseline five-field form via
+`FunctionalEnv(domain_randomize=True)`.
 
 `terrain/terrain_wrapper.py`'s `wrap_for_terrain_brax_training` also accepts a
 `randomization_fn` and applies it through mujoco_playground's
