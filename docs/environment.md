@@ -314,15 +314,24 @@ assets are built with it (`hfield/arena.py`).
   on the level's flat pad (`pad_radius`, ± `pad_jitter` 0.15 m).
 - Between neighbouring patches: a flat `gap` (the neutral plane, height 0),
   `reach - patch_radius` rounded up to an even number of cells, at least 2.
-  `reach` (default 8 m = 1.3 m/s max command x 6 s level) is how far a robot
-  can travel from its spawn within one level, so it cannot stand on a
-  neighbour's level. Benchmark: gap 5 m, 3521² nodes (176 m, 50 MB);
-  deploy: gap 2 m, 4481² nodes (224 m, 80 MB); Go1: `reach` x 2.5, gap
-  12.5 m.
-- `TileLayout.leaked(xy, tile_xy)`: past `patch_radius + gap` (Chebyshev)
-  from the own centre = on another tile. `brax_ued.py` logs
-  `tile_leak_frac` (envs that got there during the iteration); longer
-  episodes (`--level_steps` above 300) need a larger `reach`.
+  `reach` (default 10 m) bounds how far from its tile centre a robot reads
+  terrain within one level, so it cannot read a neighbour's level. Budget
+  (`utils.env.TravelBounds`): spawn jitter + `steps x ctrl_dt x` max command
+  speed + sensing (feet 0.35 m, or the height scan's far corner 1.48 m when
+  any obs reads it; the critic does). Deploy, 300 steps: 0.15 + 6 x 1.30
+  (vx 1.2, vy 0.5) + 1.48 = 9.43 m; benchmark (fast walk 1.2 m/s): 8.93 m.
+  Benchmark: gap 7 m, 4161² nodes (208 m, 69 MB); deploy: gap 4 m, 5121²
+  nodes (256 m, 105 MB); Go1: `reach` x 2.5, gap 17.5 m.
+- `TileLayout.check_reach`: every script that puts several levels on the
+  arena (`brax_ued`, `eval_brax`, `eval_sim2sim`, `eval_levels`,
+  `accel_top_k`, `ppo_dr_terrain`) fails at startup when its steps per
+  level exceed the budget; training counts the critic's scan, eval only the
+  deterministic policy's obs and feet. 1000-step levels need ~28 m: not
+  supported (`eval_sim` runs one level, neighbours flat).
+- `TileLayout.leaked(xy, tile_xy, sensing)`: base past `patch_radius + gap
+  - sensing` (Chebyshev) from the own centre = reads another tile.
+  `brax_ued.py` logs `tile_leak_frac` (envs that got there during the
+  iteration, with the critic's sensing).
 - vs the old per-level arena: inside the patch identical; past the patch
   edge the robot meets the flat gap where it met the flat apron before. The
   lookup there now reads that flat ground (the old lookup clamped to the

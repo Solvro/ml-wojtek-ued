@@ -171,6 +171,10 @@ def train(cfg: PpoDrTerrainConfig) -> None:
         )
     )
     layout = TileLayout(hfield_config)
+    steps = cfg.environment_params.steps_in_episode
+    layout.check_reach(
+        env.travel.reach(steps, env.travel.sensing), f"steps_in_episode={steps}"
+    )
     assemble = jax.jit(layout.assemble)
     # fresh levels every iteration, one per tile, envs spread over them
     envs_num = cfg.environment_params.envs_num

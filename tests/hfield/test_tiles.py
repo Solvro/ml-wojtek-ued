@@ -27,7 +27,7 @@ def distinct_levels(layout: TileLayout, k: int) -> np.ndarray:
 
 
 @pytest.mark.parametrize(
-    ("profile", "gap", "nodes"), [("benchmark", 5.0, 3521), ("deploy", 2.0, 4481)]
+    ("profile", "gap", "nodes"), [("benchmark", 7.0, 4161), ("deploy", 4.0, 5121)]
 )
 def test_profile_gap_covers_reach(profile: str, gap: float, nodes: int) -> None:
     layout = profile_layout(profile)
@@ -39,8 +39,8 @@ def test_profile_gap_covers_reach(profile: str, gap: float, nodes: int) -> None:
 
 def test_go1_gap_scales_with_the_robot() -> None:
     layout = profile_layout("benchmark", "go1")
-    assert layout.config.reach == pytest.approx(20.0)
-    assert layout.gap == pytest.approx(12.5)
+    assert layout.config.reach == pytest.approx(25.0)
+    assert layout.gap == pytest.approx(17.5)
 
 
 def test_gap_has_a_flat_node_when_reach_is_inside_the_patch() -> None:
@@ -110,3 +110,18 @@ def test_leaked_once_past_the_gap() -> None:
     across = centre + jnp.array([0.0, -layout.leak_radius - 0.01])
     assert not bool(layout.leaked(inside, centre))
     assert bool(layout.leaked(across, centre))
+
+
+def test_leaked_counts_what_the_robot_reads_ahead() -> None:
+    layout = TileLayout(SMALL)
+    centre = jnp.asarray(layout.centres()[0])
+    xy = centre + jnp.array([layout.leak_radius - 0.5, 0.0])
+    assert not bool(layout.leaked(xy, centre, sensing=0.4))
+    assert bool(layout.leaked(xy, centre, sensing=0.6))
+
+
+def test_check_reach_refuses_past_the_gap() -> None:
+    layout = TileLayout(SMALL)
+    layout.check_reach(layout.leak_radius, "at the edge")
+    with pytest.raises(ValueError, match=r"past the gap.*HFieldConfig.reach >= 2"):
+        layout.check_reach(layout.leak_radius + 0.1, "past the gap")

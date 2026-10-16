@@ -4,8 +4,8 @@
 Cell `i` holds level `i` (the `grid_size x grid_size` patch a level renders
 to) at its centre, surrounded by half a `gap` of flat ground (`0.5`, the
 neutral plane). The gap is `reach - patch_radius`: a robot spawned on its
-pad can travel `reach` m within one level before it would stand on the
-neighbouring tile, so lanes do not see each other's levels.
+pad reads terrain (feet, height scan) at most `reach` m from it within one
+level, so lanes do not see each other's levels (`check_reach`).
 
 Every env collides with the same `hfield_data`, so it is shared (unbatched)
 under vmap, which is what the warp backend needs (docs/environment.md).
@@ -102,6 +102,21 @@ class TileLayout:
         centres = jnp.asarray(self.centres()[:levels])
         return jnp.repeat(centres, envs_per_level, axis=0)
 
-    def leaked(self, xy: jax.Array, tile_xy: jax.Array) -> jax.Array:
-        """Whether a robot at `xy` stands past its own tile's gap."""
-        return jnp.max(jnp.abs(xy - tile_xy), axis=-1) > self.leak_radius
+    def leaked(
+        self, xy: jax.Array, tile_xy: jax.Array, sensing: float = 0.0
+    ) -> jax.Array:
+        """Whether a robot at `xy` reads terrain past its own tile's gap, from
+        up to `sensing` m away (height scan, feet)."""
+        offset = jnp.max(jnp.abs(xy - tile_xy), axis=-1)
+        return offset + sensing > self.leak_radius
+
+    def check_reach(self, reach: float, what: str) -> None:
+        """Fail when an env can read terrain `reach` m (Chebyshev) from its
+        tile centre, past the gap, on a neighbouring lane's level."""
+        if reach > self.leak_radius:
+            raise ValueError(
+                f"{what}: a robot can read terrain {reach:.2f} m from its tile "
+                f"centre, past this arena's {self.leak_radius:.2f} m, on a "
+                "neighbouring lane's level. Run fewer steps per level, or set "
+                f"HFieldConfig.reach >= {math.ceil(reach)} and rebuild the arena"
+            )

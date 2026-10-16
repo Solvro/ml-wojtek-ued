@@ -204,6 +204,10 @@ def train(cfg: AccelConfig) -> None:
     hfield_config = cast(HFieldConfig, OmegaConf.to_object(cfg.hfield_params))
     hfield_manager = HFieldManager(hfield_config)
     layout = TileLayout(hfield_config)
+    steps = cfg.environment_params.steps_in_episode
+    layout.check_reach(
+        env.travel.reach(steps, env.travel.sensing), f"steps_in_episode={steps}"
+    )
     assemble = jax.jit(layout.assemble)
     lanes, per_lane = cfg.accel_params.num_lanes, cfg.accel_params.envs_per_lane
     tile_xy = layout.tile_xy(lanes, per_lane).reshape(lanes, per_lane, 2)

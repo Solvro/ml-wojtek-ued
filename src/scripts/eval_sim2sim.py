@@ -604,6 +604,9 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     config = HFieldConfig(**spec["hfield"])
     layout = TileLayout(config)
     env = make_env(spec, levels_per_chunk(args, layout) * args.episodes, train=False)
+    # scored on the deterministic policy: its own obs and feet, not the critic
+    reach = env.travel.reach(args.level_steps, env.travel.actor_sensing)
+    layout.check_reach(reach, f"--level_steps {args.level_steps}")
     base = cast(Any, env)._env.unwrapped
     physics = CpuPhysics(base.mj_model, worker_count())
     make_policy = ppo_networks.make_inference_fn(spec_network(spec))

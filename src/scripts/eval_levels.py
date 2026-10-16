@@ -144,6 +144,8 @@ def main(cfg: EvalLevelsConfig) -> None:
         ),
         seed=cfg.seed,
     )
+    reach = env.travel.reach(cfg.steps, env.travel.actor_sensing)
+    TileLayout(hfield_config).check_reach(reach, f"steps={cfg.steps}")
 
     template = A2C(
         hidden_dims=meta["hidden_dims"],

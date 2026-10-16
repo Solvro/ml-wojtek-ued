@@ -99,7 +99,7 @@ Plain dataclass (`config/hfield_config.py`); the level genome envelope. See
 | `n_edits` | `4` | control points touched per mutation |
 | `edit_scale` | `0.1` | max ± change to an edited control point |
 | `tiles` | `16` | tiles per side of the shared arena, one level each (256) |
-| `reach` | `8.0` | m a robot can travel from spawn within a level; the gap between tiles is `reach - patch_radius` ([tiled arena](environment.md#tiled-arena)) |
+| `reach` | `10.0` | m from its tile centre a robot can read terrain (feet, height scan) within a level; the gap between tiles is `reach - patch_radius` ([tiled arena](environment.md#tiled-arena)) |
 | `grid_size` | *(property)* | `round(2·patch_radius/cell_size)+1`, fine node count of one level |
 
 `patch_radius`, `cell_size`, `amplitude`, `base_z`, `tiles`, `reach` set the

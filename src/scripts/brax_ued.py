@@ -568,7 +568,8 @@ def run_levels(
         episode_return = episode_return + data.reward.sum(axis=1)
         fell_any = jnp.maximum(fell_any, data.extras["log"]["fell"].max(axis=1))
         xy = data.extras["log"]["xy"]
-        leaked = leaked | layout.leaked(xy, tile_xy[:, None]).any(axis=1)
+        reads = layout.leaked(xy, tile_xy[:, None], env.travel.sensing)
+        leaked = leaked | reads.any(axis=1)
         logs.append(jax.tree.map(jnp.mean, data.extras["log"]))
     lane_regret = np.asarray(regret.reshape(args.num_lanes, -1).mean(axis=1))
     lane_returns = np.asarray(episode_return.reshape(args.num_lanes, -1))
@@ -592,7 +593,7 @@ def run_levels(
         "forward_vel": log["forward_vel"],
         **{f"reward_term/{k}": v for k, v in log["reward_terms"].items()},
         "travel": float(travel.mean()),
-        # envs that reached another lane's tile: their regret saw its level
+        # envs whose feet or height scan reached another lane's level
         "tile_leak_frac": float(leaked.mean()),
         "lane_roughness": mean_abs_height(ctx["space"].config, rendered),
         "levels": levels,
@@ -818,6 +819,8 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         )
     num_envs = args.num_lanes * args.envs_per_lane
     env = make_env(spec, num_envs, train=True)
+    reach = env.travel.reach(args.level_steps, env.travel.sensing)
+    layout.check_reach(reach, f"--level_steps {args.level_steps}")
     eval_env = make_env(spec, 2 * min(args.eval_levels, layout.n_tiles), train=False)
     if args.checkpoint_dir:
         checkpoint = Path(args.checkpoint_dir) / f"{args.name}.pkl"

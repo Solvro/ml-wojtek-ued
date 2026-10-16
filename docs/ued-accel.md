@@ -457,7 +457,7 @@ chain. `--robot go1` in `brax_ued.py` (evals read it from the sidecar), `ROBOT=g
 - `GO1_SCALE = 2.5` (standing trunk 0.258 m vs Wojtek 0.10 m) scales the
   arena (`hfield_config`, `reach` included), level lengths, commands and
   `min_travel`. Sidecars from before the tiled arena lack `reach` and get
-  Wojtek's 8 m (a 0.5 m gap for Go1).
+  Wojtek's 10 m (a 2.5 m gap for Go1, which `check_reach` refuses).
 - Physics DR: Playground's `go1/randomize.py`.
 - Needs `mujoco_menagerie` under Playground's `external_deps` (meshes);
   `ensure_menagerie_exists()` clones it, by hand on WCSS (no AVX on login).

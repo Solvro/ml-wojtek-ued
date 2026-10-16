@@ -1,5 +1,6 @@
 import contextlib
 import dataclasses
+import math
 import os
 from typing import Any, NamedTuple, cast
 
@@ -12,8 +13,9 @@ from mujoco_playground._src.locomotion.go1 import randomize as go1_randomize
 
 from config.hfield_config import HFieldConfig
 from modules.ppo_modules import Obs
-from robots.go1 import Go1Terrain
+from robots.go1 import GO1_SCALE, SCAN_X, SCAN_Y, Go1Terrain
 from wojtek_env.envs import randomize, registry
+from wojtek_env.terrain.terrain_env import SPAWN_EDGE_MARGIN
 
 
 class ObsSize(NamedTuple):
@@ -50,6 +52,68 @@ def hfield_geometry(base: Any) -> HFieldGeometry | None:
     if base._terrain.lookup.shape != (geometry.nrow, geometry.ncol):
         return None
     return geometry
+
+
+class TravelBounds(NamedTuple):
+    """How far from its tile centre an env can read terrain after a reset."""
+
+    jitter: float  # m, spawn offset from the tile centre (Chebyshev)
+    speed: float  # m/s, fastest planar command
+    # m from the base: feet, or the height scan if any obs reads it (critic)
+    sensing: float
+    # the same for a deterministic policy rollout: feet and the actor's obs
+    actor_sensing: float
+    dt: float  # s per env step
+
+    def reach(self, steps: int, sensing: float) -> float:
+        return self.jitter + steps * self.dt * self.speed + sensing
+
+
+def max_command_speed(command: Any) -> float:
+    """Fastest planar speed (m/s) Wojtek's command sampler can draw."""
+    box = math.hypot(max(map(abs, command.vx)), max(map(abs, command.vy)))
+    bias = command.terrain_bias
+    # each mode redraws vx from its own range and zeroes vy
+    modes = {
+        "arc_prob": "arc_vx",
+        "pure_slow_prob": "slow_vx",
+        "pure_fast_prob": "fast_vx",
+        "pure_back_prob": "back_vx",
+    }
+    straight = [
+        max(map(abs, command[vx]))
+        for prob, vx in modes.items()
+        if command.get(prob, 0.0) > 0 or (bias.enable and bias.get(prob, 0.0) > 0)
+    ]
+    return max([box, *straight])
+
+
+def scan_reach(x_range: Any, y_range: Any) -> float:
+    return math.hypot(max(map(abs, x_range)), max(map(abs, y_range)))
+
+
+def travel_bounds(base: Any) -> TravelBounds:
+    if isinstance(base, Go1Terrain):
+        low, high = base._cmd_low, base._cmd_high
+        speed = math.hypot(
+            float(max(abs(low[0]), abs(high[0]))),
+            float(max(abs(low[1]), abs(high[1]))),
+        )
+        feet = GO1_SCALE * SPAWN_EDGE_MARGIN
+        # Go1's scan is critic-only
+        sensing = max(feet, GO1_SCALE * scan_reach(SCAN_X, SCAN_Y))
+        return TravelBounds(0.0, speed, sensing, feet, base.dt)
+    c = base._config
+    hs = c.height_scan
+    scan = scan_reach(hs.x_range, hs.y_range) if hs.enable else 0.0
+    actor_scan = any(k.startswith("height_scan") for k in c.obs.state)
+    return TravelBounds(
+        jitter=float(c.terrain.pad_jitter),
+        speed=max_command_speed(c.command),
+        sensing=max(SPAWN_EDGE_MARGIN, scan),
+        actor_sensing=max(SPAWN_EDGE_MARGIN, scan if actor_scan else 0.0),
+        dt=base.dt,
+    )
 
 
 # CUDA graphs mjx's warp FFI keeps per callable (its default: 32)
@@ -110,6 +174,7 @@ class FunctionalEnv:
         self._has_lookup = go1_hfield is None
         self._hfield_geometry = hfield_geometry(base) if self._has_lookup else None
         self.action_size = base.action_size
+        self.travel = travel_bounds(base)
         self._domain_randomize = dr_fn if domain_randomize else None
 
         probe = self._env.reset(jax.random.key(seed))
