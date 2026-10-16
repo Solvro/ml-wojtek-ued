@@ -1,5 +1,6 @@
 import contextlib
 import dataclasses
+import os
 from typing import Any, NamedTuple, cast
 
 import jax
@@ -51,6 +52,19 @@ def hfield_geometry(base: Any) -> HFieldGeometry | None:
     return geometry
 
 
+def require_warp_memory() -> None:
+    # warp allocates its collision scratch outside JAX's memory pool on every
+    # step; with JAX's default 75% preallocation it runs out mid-run
+    # (upstream w01-tek: mandatory on terrain)
+    if os.environ.get("XLA_PYTHON_CLIENT_PREALLOCATE", "").lower() != "false":
+        raise RuntimeError(
+            "sim.backend=warp needs XLA_PYTHON_CLIENT_PREALLOCATE=false in the "
+            "environment before the process starts (the justfile and the "
+            "slurm/ scripts export it); otherwise warp runs out of GPU memory "
+            "mid-run. Or run on sim.backend=jax"
+        )
+
+
 class FunctionalEnv:
     def __init__(
         self,
@@ -71,6 +85,8 @@ class FunctionalEnv:
             base = cast(Any, Go1Terrain(go1_hfield))
             dr_fn = go1_randomize.domain_randomize
         length = episode_length or base._config.episode_length
+        if getattr(base, "_backend", "jax") == "warp":
+            require_warp_memory()
 
         self._env = brax_training.EpisodeWrapper(base, length, action_repeat=1)
         # Go1 reads heights straight from hfield_data; Wojtek keeps a lookup

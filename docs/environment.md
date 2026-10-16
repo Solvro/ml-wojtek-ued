@@ -283,7 +283,14 @@ Two things must follow the swap, or the level only exists on paper:
   `accel_arena_overrides` leaves `sim.backend` at `auto` (warp on a GPU, jax
   on CPU) with upstream's terrain buffers (`naconmax_per_env` 116, `njmax`
   1024). Never vmap `hfield_data` with `in_axes=0`: nothing can detect it
-  inside the vmap. `src/scripts/check_hfield_batch.py` checks it per backend
+  inside the vmap.
+- **Warp memory** — warp allocates its collision scratch (EPA buffers,
+  ~0.3-0.7 GB per call at 8192 envs) outside JAX's pool, so with JAX's
+  default 75% preallocation a run dies with a CUDA OOM after a few
+  iterations (seen 2026-10-16, job 6109872). `FunctionalEnv` refuses warp
+  unless `XLA_PYTHON_CLIENT_PREALLOCATE=false`; the justfile, `slurm.sh` and
+  `slurm/*.sbatch` export it. Upstream's presets ask for
+  `XLA_PYTHON_CLIENT_PREALLOC=false`, which is not a variable JAX reads. `src/scripts/check_hfield_batch.py` checks it per backend
   (flat/pit tiles; `--compare` = jax vs warp; `--bench_envs N` times it).
 
 ## Tiled arena {#tiled-arena}

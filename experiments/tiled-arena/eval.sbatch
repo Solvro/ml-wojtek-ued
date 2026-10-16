@@ -15,7 +15,7 @@
 # sidecar with sim.backend and warp's buffers edited.
 set -euo pipefail
 
-export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1 JAX_PLATFORMS=cuda WANDB_MODE=online
+export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1 JAX_PLATFORMS=cuda XLA_PYTHON_CLIENT_PREALLOCATE=false WANDB_MODE=online
 COPY="${COPY:?set COPY=<frozen copy dir>}"
 export PYTHONPATH="$COPY/src"
 PY="$HOME/workspace/ml-wojtek-ued/.venv/bin/python"

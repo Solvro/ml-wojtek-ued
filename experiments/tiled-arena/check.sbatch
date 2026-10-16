@@ -13,7 +13,7 @@
 # profiles on warp and the benchmark profile on jax.
 set -euo pipefail
 
-export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1 JAX_PLATFORMS=cuda WANDB_MODE=disabled
+export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1 JAX_PLATFORMS=cuda XLA_PYTHON_CLIENT_PREALLOCATE=false WANDB_MODE=disabled
 COPY="${COPY:?set COPY=<frozen copy dir>}"
 export PYTHONPATH="$COPY/src"
 PY="$HOME/workspace/ml-wojtek-ued/.venv/bin/python"
@@ -23,10 +23,11 @@ cd "$COPY"
 status=0
 "$PY" src/scripts/check_hfield_batch.py --compare --tiles 16 --envs_per_tile 4 \
   --steps 150 || status=1
-for run in "warp benchmark" "warp deploy" "jax benchmark"; do
-  read -r backend profile <<<"$run"
-  echo "=== profile $backend $profile"
-  "$PY" src/scripts/profile_brax_ued.py --backend "$backend" --profile "$profile" ||
-    status=1
+# RUNS: backend:profile pairs to profile
+read -ra RUNS <<<"${RUNS:-warp:benchmark warp:deploy jax:benchmark}"
+for run in "${RUNS[@]}"; do
+  echo "=== profile $run"
+  "$PY" src/scripts/profile_brax_ued.py --backend "${run%%:*}" \
+    --profile "${run##*:}" || status=1
 done
 exit "$status"
