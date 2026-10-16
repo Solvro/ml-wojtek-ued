@@ -38,15 +38,31 @@ ssh_host = "wcss"
 
 [[cluster.jobs]]
 id = 6109816
-label = "eval_brax baseline: imported A1-long, no training (array index 3)"
+label = "eval_brax of the imported 305M A1-long (native, no training)"
 
 [[cluster.jobs]]
 id = 6109817
-label = "train seeds 0-2"
+label = "train from 305M, cancelled at ~8 min (plan changed to 1.5B)"
 
 [[cluster.jobs]]
-id = 6109818
-label = "eval_brax seeds 0-2 (aftercorr:6109817)"
+id = 6109841
+label = "upstream train.py restore 305M -> +1.2B steps"
+
+[[cluster.jobs]]
+id = 6109842
+label = "import last upstream checkpoint + export + v10 arena build (cpu)"
+
+[[cluster.jobs]]
+id = 6109843
+label = "train seeds 0-2 from the 1.5B import"
+
+[[cluster.jobs]]
+id = 6109844
+label = "eval baseline 1.5B (native + v10box) and v10 seed4 (v10box)"
+
+[[cluster.jobs]]
+id = 6109845
+label = "eval seeds 0-2 (native + v10box, aftercorr:6109843)"
 
 [report]
-url = ""
+url = "https://claude.ai/code/artifact/cc0573b2-d8f2-47e2-b5af-855e6cfc64ef"

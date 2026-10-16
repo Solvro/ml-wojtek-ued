@@ -246,6 +246,33 @@ def write_sidecar(
     return path
 
 
+def all_finite(tree: Any) -> bool:
+    return all(bool(jnp.all(jnp.isfinite(x))) for x in jax.tree.leaves(tree))
+
+
+def last_finite_path(checkpoint: Path) -> Path:
+    return checkpoint.with_name(f"{checkpoint.stem}_last_finite.pkl")
+
+
+def check_finite(
+    params: Any, last_finite: Any, checkpoint: Path | None, where: str
+) -> None:
+    # NaN params never recover (deploy-warmstart seed 2 ran 10M steps on them)
+    if all_finite(params):
+        return
+    saved = "no --checkpoint_dir, nothing saved"
+    if checkpoint is not None:
+        path = last_finite_path(checkpoint)
+        brax_model.save_params(str(path), last_finite)
+        sidecar_path(path).write_text(sidecar_path(checkpoint).read_text())
+        saved = f"the last finite params are in {path}"
+    raise FloatingPointError(
+        f"{where}: the student's normalizer, policy or value params are "
+        f"non-finite after its PPO update; {saved}. Rerun with another --seed "
+        "or a lower learning rate, or --init_from the last finite params"
+    )
+
+
 def load_run(checkpoint: Path) -> tuple[dict[str, Any], Any]:
     """A checkpoint's sidecar and params, checked against each other."""
     path = sidecar_path(checkpoint)
@@ -268,6 +295,11 @@ def load_run(checkpoint: Path) -> tuple[dict[str, Any], Any]:
         raise ValueError(
             f"{checkpoint} has observation sizes {got}, its sidecar {path} says "
             f"{want}; the two files come from different runs"
+        )
+    if not all_finite(params):
+        raise ValueError(
+            f"{checkpoint} has non-finite params: its run diverged. Use "
+            f"{last_finite_path(checkpoint)} if brax_ued.py wrote one"
         )
     return spec, params
 
@@ -382,10 +414,6 @@ class Student:
 
     def inference_params(self) -> tuple[Any, Any, Any]:
         return (self.normalizer, self.params.policy, self.params.value)
-
-    def finite(self) -> bool:
-        leaves = jax.tree.leaves((self.normalizer, self.params))
-        return all(bool(jnp.isfinite(x).all()) for x in leaves)
 
     def std_ratios(self) -> dict[str, float]:
         """Per obs block, max and min of the obs std over the warm start's."""
@@ -1028,9 +1056,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 STD_RATIO_LIMIT = 10.0
 
 
-def student_problem(student: Student, log: dict[str, Any]) -> str | None:
-    if not student.finite():
-        return "the student's parameters or obs normalizer went non-finite"
+def normalizer_problem(log: dict[str, Any]) -> str | None:
     for key, value in log.items():
         if not key.startswith("normalizer/std_ratio"):
             continue
@@ -1042,13 +1068,12 @@ def student_problem(student: Student, log: dict[str, Any]) -> str | None:
     return None
 
 
-def save_checkpoint(args: argparse.Namespace, student: Student, env_steps: int) -> str:
-    if not args.checkpoint_dir:
+def save_checkpoint(checkpoint: Path | None, student: Student, env_steps: int) -> str:
+    if checkpoint is None:
         return "none (no --checkpoint_dir)"
-    path = Path(args.checkpoint_dir) / f"{args.name}.pkl"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    brax_model.save_params(str(path), student.inference_params())
-    return f"{path} at {env_steps} env steps"
+    checkpoint.parent.mkdir(parents=True, exist_ok=True)
+    brax_model.save_params(str(checkpoint), student.inference_params())
+    return f"{checkpoint} at {env_steps} env steps"
 
 
 def main() -> None:
@@ -1080,6 +1105,10 @@ def main() -> None:
     sims_per_iteration = 2 if args.mode == "paired" else 1
     env_steps, it, start = 0, 0, time.time()
     sim_steps, student_train_steps = 0, 0
+    checkpoint = (
+        Path(args.checkpoint_dir) / f"{args.name}.pkl" if args.checkpoint_dir else None
+    )
+    last_finite = ctx["student"].inference_params()
     saved_at = "none (no eval yet)"
     while env_steps < args.num_timesteps:
         out: dict[str, Any]
@@ -1094,6 +1123,11 @@ def main() -> None:
         sim_steps += sims_per_iteration * steps_per_iteration
         # replay == 1 exactly when the student's PPO updated on this data
         student_train_steps += out["replay"] * steps_per_iteration
+        params = ctx["student"].inference_params()
+        check_finite(
+            params, last_finite, checkpoint, f"iteration {it}, env_steps {env_steps}"
+        )
+        last_finite = params
         regret = np.asarray(out.pop("regret"))
         out["level_roughness_m"] = float(np.mean(out.pop("lane_roughness")))
         out.update(level_composition(ctx["space"], out.pop("levels")))
@@ -1113,7 +1147,7 @@ def main() -> None:
             "elapsed_s": time.time() - launch,
         }
         log.update(ctx["student"].std_ratios())
-        problem = student_problem(ctx["student"], log)
+        problem = normalizer_problem(log)
         if problem:
             run.log(log)
             raise FloatingPointError(
@@ -1124,7 +1158,7 @@ def main() -> None:
         if it % args.eval_every == 0 or env_steps >= args.num_timesteps:
             log.update(evaluate(ctx, np.random.default_rng(1234)))
             # a crash keeps the latest evaluated policy (not only the final one)
-            saved_at = save_checkpoint(args, ctx["student"], env_steps)
+            saved_at = save_checkpoint(checkpoint, ctx["student"], env_steps)
         run.log(log)
         print(
             {k: round(v, 3) if isinstance(v, float) else v for k, v in log.items()},

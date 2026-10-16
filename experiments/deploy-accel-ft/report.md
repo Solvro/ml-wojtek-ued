@@ -55,8 +55,14 @@ v10box (v10 arena, forward commands): d1.0 success base 66.8, A 63.8, B
 - MJX blows up on single envs (warp: ~1-5 env steps per 2.46M; 92% of DR
   iterations, 7% of ACCEL ones). The blown-up obs enter brax's running obs
   normalizer, whose warm-started count (1.5e9) never washes them out.
-- T6 `deploy_ws_accel_seed2` (jax): healthy at iteration 55, nan everywhere
-  at 56, no loss or regret precursor.
+- T6 `deploy_ws_accel_seed2` (jax): healthy at iteration 55, nan at 56.
+  T6's report places the nan in iteration 55's PPO update; but iteration 56
+  logged a normal fall rate (7.2e-5/step, then 0 from 57 on), so its
+  rollout ran on finite params for most of the iteration and went nan
+  inside it: consistent with an env blow-up, not with params nan from its
+  start. No per-update losses were kept, so an update-side nan inside
+  iteration 56 is not excluded; PR #26's param guard and this env guard
+  cover both.
 - Launch 1 (`dft_*`, code 0fb3708) ended nan steps but not the exploding
   finite ones: A seed 1 and all C seeds collapsed within one iteration of a
   blow-up; obs std ratios vs the base normalizer x1.04 (healthy), x2045,
@@ -65,6 +71,9 @@ v10box (v10 arena, forward commands): d1.0 success base 66.8, A 63.8, B
   any step with a non-finite state or |qvel| > 200; brax_ued stops if an
   obs std leaves [0.1, 10]x of the `--init_from` one (launch 2: 0.96-1.20).
   Training-only; `tests/deploy` passes unchanged.
+- Code after merging PR #26 differs from the launch-2 copy only in
+  brax_ued's training loop and `load_run`'s nan refusal, so the launch-2
+  evals stand for the merged code.
 
 ## Proposals (measured: 0.47 GPU-h train + 0.31 GPU-h evals per 300M run)
 

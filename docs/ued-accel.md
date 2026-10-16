@@ -347,6 +347,13 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   every consumer rebuilds env and network from it
   ([deploy.md](deploy.md#sidecar)). `brax_ued.py` also checks the built
   arena's geometry against the run before training.
+- Non-finite guard, every iteration: NaN/Inf in the student's normalizer,
+  policy or value stops the run (`FloatingPointError` naming iteration and
+  `env_steps`); with `--checkpoint_dir` the previous iteration's params go to
+  `<name>_last_finite.pkl` (+ sidecar); `<name>.pkl` keeps the last
+  evaluated policy.
+  `load_run` refuses a checkpoint with non-finite params (eval, export,
+  render, `--init_from`).
 - Eval every `eval_every` iterations: deterministic policy on `eval_levels`
   fresh uniform levels (2 episodes each, in chunks of at most `tiles²`
   levels) at difficulties 0.25/0.5/0.75/1.0 — `eval/d<d>/success_rate` (no
@@ -357,11 +364,11 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   policy.
 - Divergence guard: diverged env steps are ended in the env
   ([environment.md](environment.md#functionalenv--the-training-bridge)) and
-  logged as `diverged_per_step`. After every iteration the student's
-  parameters and obs normalizer must be finite and, with `--init_from`,
-  every obs std within 10x of the warm start's (`normalizer/std_ratio_{max,min}/{state,privileged_state}`,
-  logged every iteration), else the run stops with `FloatingPointError`
-  naming the last checkpoint.
+  logged as `diverged_per_step`. With `--init_from`, every obs std must
+  stay within 10x of the warm start's
+  (`normalizer/std_ratio_{max,min}/{state,privileged_state}`, logged every
+  iteration), else the run stops with `FloatingPointError` naming the last
+  evaluated checkpoint.
 - PPO, every training iteration: `ppo/<metric>` = mean of brax's loss
   metrics over the iteration's updates (`total_loss`, `policy_loss`,
   `v_loss`, `entropy_loss`, `kl_mean`, `policy_dist_*`), `ppo/grad_norm`

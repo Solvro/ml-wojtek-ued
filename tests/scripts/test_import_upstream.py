@@ -16,9 +16,9 @@ from scripts.brax_ued import (
     Student,
     load_run,
     make_network,
+    normalizer_problem,
     parse_args,
     run_spec,
-    student_problem,
 )
 from utils.env import ObsSize
 
@@ -96,7 +96,7 @@ def test_import_round_trips_through_export(tmp_path: Path) -> None:
     _, params = load_run(out)
     upstream = ppo_checkpoint.load(str(fake_upstream(tmp_path / "again")))
     for ours, theirs in zip(
-        jax.tree.leaves(params[1:]), jax.tree.leaves(upstream[1:]), strict=True
+        jax.tree.leaves(params), jax.tree.leaves(upstream), strict=True
     ):
         np.testing.assert_array_equal(ours, theirs)
     meta = export_policy.export(out, tmp_path / "deploy")
@@ -151,15 +151,6 @@ def test_learning_rate_sets_the_first_adam_step(learning_rate: float) -> None:
     np.testing.assert_allclose(steps, learning_rate, rtol=1e-3)
 
 
-def test_finite_flags_one_non_finite_parameter() -> None:
-    s = student(deploy_size())
-    assert s.finite()
-    leaves, treedef = jax.tree.flatten(s.params)
-    leaves[0] = leaves[0].at[0].set(np.nan)
-    s.params = jax.tree.unflatten(treedef, leaves)
-    assert not s.finite()
-
-
 def test_warm_start_takes_every_imported_param(tmp_path: Path) -> None:
     out = tmp_path / "imported.pkl"
     run_import(fake_upstream(tmp_path), out)
@@ -204,16 +195,16 @@ def warm_student(tmp_path: Path) -> Student:
 def test_std_ratios_need_a_warm_start() -> None:
     s = student(deploy_size())
     assert s.std_ratios() == {}
-    assert student_problem(s, s.std_ratios()) is None
+    assert normalizer_problem(s.std_ratios()) is None
 
 
-def test_a_poisoned_obs_std_is_a_student_problem(tmp_path: Path) -> None:
+def test_a_poisoned_obs_std_is_a_normalizer_problem(tmp_path: Path) -> None:
     s = warm_student(tmp_path)
     ratios = s.std_ratios()
     assert set(ratios.values()) == {1.0}
-    assert student_problem(s, ratios) is None
+    assert normalizer_problem(ratios) is None
     normalizer: Any = s.normalizer
     std = {**normalizer.std, "state": normalizer.std["state"].at[3].multiply(20.0)}
     s.normalizer = normalizer.replace(std=std)
-    problem = student_problem(s, s.std_ratios())
+    problem = normalizer_problem(s.std_ratios())
     assert problem is not None and "std_ratio_max/state" in problem
