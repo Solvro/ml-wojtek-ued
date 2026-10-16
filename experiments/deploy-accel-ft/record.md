@@ -44,3 +44,11 @@ Approved by the coordinator: ~18 GPU-h total incl. launch 1.
 | 2026-10-16 12:15 | 6111934 | base eval_brax (native + v10box) |
 | 2026-10-16 12:15 | 6111935 | train array 0-8, 300M steps |
 | 2026-10-16 12:15 | 6111936 | eval_brax array 0-8, aftercorr 6111935 |
+
+## Results (launch 2, 300M)
+
+- No arm beats the base (criterion above); no export. B: cmd +2.7 [+2.1,
+  +3.4] passes, success +0.8 [+0.0, +1.6] fails. A worse everywhere. C:
+  success +1.3, fall −9.3, cmd +0.1. Details: `report.md`, page
+  https://claude.ai/code/artifact/8d375cee-c869-4b66-a942-8331da0f9d4d
+- Cost: 10.6 GPU-h total (sacct).

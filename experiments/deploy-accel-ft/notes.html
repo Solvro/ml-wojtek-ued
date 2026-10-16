@@ -1,0 +1,48 @@
+<section>
+  <h2>Reading the result</h2>
+  <ul>
+    <li><b>No arm beats the base under the pre-registered criterion</b>, per seed or pooled. Nothing is exported: the policy to upload stays the base, which is not ours.</li>
+    <li><b>B (ACCEL, lr 1e-4) is the only arm that clears a primary metric</b>: d1.0 command-conditioned success +2.7 points [+2.1, +3.4], all three seeds 44.0–44.8 vs 41.6, CIs apart. d1.0 success is +0.8 [+0.0, +1.6], CIs overlapping, so it fails the second primary metric. v10box: +1.7 success, +2.3 cmd.</li>
+    <li><b>A (T6's flags, lr 3e-4) is worse than the base everywhere</b>: d1.0 cmd −1.1, success −1.6, v10box success −3.0, suite −5.0. The only change from A to B is the learning rate, so 3e-4 is too high for a fine-tune of this policy.</li>
+    <li><b>C (DR, lr 3e-4) wins on terrain, not on tracking</b>: d1.0 fall rate −9.3 points, success +1.3 [+0.6, +2.0], v10box success +6.8, cmd unchanged (+0.1). DR trains on the eval distribution itself.</li>
+    <li><b>Flat guard</b>: every arm reads 3–5 points below the base on flat (base 75.0 [70.9, 79.1], 64 levels). The set is too small to resolve a 2-point guard; d0.25 (2048 levels) drops 1.6–2.3 points, A fails it.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Why ACCEL does not move terrain success</h2>
+  <ul>
+    <li>ACCEL's buffer stays next to flat. Second half of training: mean genome distance from flat 0.045 (A) / 0.050 (B) vs DR's 0.345; training success 0.73 / 0.72 vs DR 0.29, while d1.0 eval success is ~0.32.</li>
+    <li>The easy generator (control points within <code>generator_scale</code> 0.1 of flat) plus 2 edits of ±0.1 never reaches d1.0 terrain in 300M steps. B's gain is in command tracking on easy terrain, which is what it trained on.</li>
+    <li>In-training eval vs the base: A stays at or below it (success −2 to −3 points from 50M on). B's cmd success rises after ~150M (+4 to +5 points at 200–250M, +2.5 at 300M); its success ends +1 to +2. C's success sits 1–2 points above from ~150M, its cmd at the base.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>T6 seed 2 collapse and launch 1</h2>
+  <ul>
+    <li>Both are one mechanism. MJX blows up on single envs now and then: on warp ~1–5 env steps per 2.46M-step iteration (DR: 92% of iterations; ACCEL: 7%). The blown-up obs reach brax's running obs normalizer. The base carries a count of 1.5e9, so the poisoned variance never washes out.</li>
+    <li><code>deploy_ws_accel_seed2</code> (T6, jax): iteration 55 healthy (reward 0.0515, train success 0.73, falls 8e-5), iteration 56 nan everywhere, no loss or regret precursor.</li>
+    <li>Launch 1 (code <code>0fb3708</code>) already ended nan steps, but not the exploding finite steps before them. A seed 1 and all three C seeds collapsed within one iteration of a blow-up (dr seed 0: mean forward velocity 96 m/s in that iteration). Obs std vs the base normalizer, all in joint-velocity dims: ×1.04 in a healthy run, ×2045 (A seed 1), ×640753 (C seed 1). Launch 1 was cancelled at 50–150M.</li>
+    <li>Fix (launch 2, <code>b84a645</code>): <code>FunctionalEnv</code> ends any step with a non-finite state or |qvel| &gt; 200 (random actions peak at ~75); brax_ued stops if any obs std leaves 0.1–10× of the warm start's (launch 2 stayed within 0.96–1.20); PPO losses and grad norm are logged. Training-only: the deploy snapshot test passes unchanged.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Proposals</h2>
+  <p>Cost per 300M-step run, measured: 0.47 GPU-h training + 0.31 GPU-h for both final evals.</p>
+  <ul>
+    <li><b>1. Harder ACCEL at lr 1e-4, with its matched DR control.</b> <code>--generator mixed --mutation grow</code> (fresh levels from DR-mixed, edits grow roughness), lr 1e-4, plus DR at lr 1e-4 (C ran at 3e-4, so B vs C mixes curriculum and learning rate). 6 runs × 300M: ~4.7 GPU-h. Recommended first.</li>
+    <li><b>2. SFL scoring.</b> Proposal 1 with <code>--score learnability</code> (levels where p(1−p) peaks, the closest score to the success metric). 3 runs: ~2.4 GPU-h.</li>
+    <li><b>3. Continue B to 1B.</b> <code>--init_from</code> each B seed's 300M checkpoint for 700M more (fresh Adam state and buffer). Tests whether the tracking gain grows and success follows. 3 runs: ~3.6 GPU-h.</li>
+    <li>Not needed: freezing the imported normalizer (the divergence guard holds it within 1.2×).</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Cost</h2>
+  <ul>
+    <li>Launch 1 (cancelled): 2.98 GPU-h training + 0.31 base eval. Launch 2: 4.29 training + 0.30 base eval + 2.75 evals. Total 10.6 GPU-h on lem-gpu-short (H100), within the approved ~18.</li>
+    <li>Throughput on warp, deploy profile, 8192 envs: ~185k env steps/s including in-training evals; 300M in 28 min wall clock.</li>
+  </ul>
+</section>

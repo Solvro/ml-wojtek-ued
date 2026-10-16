@@ -87,4 +87,4 @@ id = 6111936
 label = "launch 2: eval_brax 0-8, aftercorr train"
 
 [report]
-url = ""
+url = "https://claude.ai/code/artifact/8d375cee-c869-4b66-a942-8331da0f9d4d"
