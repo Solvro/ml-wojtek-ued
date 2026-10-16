@@ -28,8 +28,9 @@ class EvalLevelsConfig:
     artifacts_dir: str = "artifacts"
     num_levels: int = 10000
     episodes_per_level: int = 8
-    # chunk_size * episodes_per_level = 4096 envs/jit call, H100-scale like above
-    chunk_size: int = 512
+    # levels per jit call, at most the arena's tiles (hfield_params.tiles**2);
+    # x episodes_per_level = 2048 envs
+    chunk_size: int = 256
     steps: int = 400
     # success = no fall and at least this far (m) from spawn at the end
     min_travel: float = 1.0

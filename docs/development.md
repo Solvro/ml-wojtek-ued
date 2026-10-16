@@ -61,7 +61,8 @@ global convention. Tests live in `tests/`, mirroring `src/`
   methods pure-given-an-rng.
 - New env task → register it in `wojtek_env/envs/registry.py` (that is the one
   library file you edit, since it is the extension point).
-- Changing the level envelope (`patch_radius`/`cell_size`/`amplitude`/`base_z`)
+- Changing the level envelope or arena layout
+  (`patch_radius`/`cell_size`/`amplitude`/`base_z`/`tiles`/`reach`)
   → rebuild the arena with the same override, e.g.
   `just build-accel-arena hfield_params.amplitude=0.30` (no args rebuilds at
   `HFieldConfig` defaults); genome-only fields (`coarse_n`/`n_edits`/`edit_scale`) need no

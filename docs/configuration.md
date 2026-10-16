@@ -98,11 +98,13 @@ Plain dataclass (`config/hfield_config.py`); the level genome envelope. See
 | `pad_taper` | `0.3` | m, ramp width pad → full terrain |
 | `n_edits` | `4` | control points touched per mutation |
 | `edit_scale` | `0.1` | max ± change to an edited control point |
-| `grid_size` | *(property)* | `round(2·patch_radius/cell_size)+1`, fine node count |
+| `tiles` | `16` | tiles per side of the shared arena, one level each (256) |
+| `reach` | `10.0` | m from its tile centre a robot can read terrain (feet, height scan) within a level; the gap between tiles is `reach - patch_radius` ([tiled arena](environment.md#tiled-arena)) |
+| `grid_size` | *(property)* | `round(2·patch_radius/cell_size)+1`, fine node count of one level |
 
-`patch_radius`, `cell_size`, `amplitude`, `base_z` set the compile-time envelope
-(static `hfield_size`); changing them needs a fresh arena
-(`just build-accel-arena`). `coarse_n`/`n_edits`/`edit_scale` shape the genome
+`patch_radius`, `cell_size`, `amplitude`, `base_z`, `tiles`, `reach` set the
+compile-time arena (static `hfield_size`, node count); changing them needs a
+fresh arena (`just build-accel-arena`). `coarse_n`/`n_edits`/`edit_scale` shape the genome
 and mutations and can vary freely between runs.
 
 `patch_radius=3.0` (was `6.0`): at `ctrl_dt=0.02`/`steps_in_episode=200` a

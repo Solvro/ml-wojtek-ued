@@ -16,6 +16,8 @@ export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1
 # fail instead of silently falling back to CPU when CUDA init fails
 # (seen: CUDA_ERROR_MPS_CONNECTION_FAILED on some Lem nodes)
 export JAX_PLATFORMS=cuda
+# warp allocates its collision scratch outside JAX's pool (utils/env.py)
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
 # SRC=<dir>/src, a frozen copy with the built assets/ beside it (wojtek_env
 # resolves assets from src/..), keeps queued jobs on the submitted code
 SRC="${SRC:-$HOME/workspace/ml-wojtek-ued/src}"

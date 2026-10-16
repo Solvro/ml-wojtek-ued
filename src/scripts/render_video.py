@@ -2,9 +2,9 @@
 
 Env, network and level space are rebuilt from the checkpoint's sidecar
 (`<run>.json`, written by `brax_ued.py`). The deterministic policy runs on
-MJX under a held velocity command;
-the recorded states are replayed through an offscreen MuJoCo renderer with a
-camera tracking the base. One clip per `--level D:SEED` (a `scaled` level of
+MJX (tile 0 of the arena) under a held velocity command; the recorded
+states are replayed through an offscreen MuJoCo renderer, on a one-tile copy
+of the arena, with a camera tracking the base. One clip per `--level D:SEED` (a `scaled` level of
 difficulty D drawn from rng seed SEED), plus `demo.mp4` = all clips in order.
 Needs the built assets; MUJOCO_GL=cgl on macOS, egl/osmesa headless.
 """
@@ -20,9 +20,13 @@ import mediapy
 import mujoco
 import numpy as np
 from brax.training.agents.ppo import networks as ppo_networks
+from mujoco_playground._src.locomotion.go1 import base as go1_base
 
 from config.hfield_config import HFieldConfig
+from hfield.arena import single_tile, single_tile_spec
 from hfield.level_space import make_level_space
+from hfield.tiles import TileLayout
+from robots.go1 import Go1Terrain, scene_xml
 from scripts.brax_ued import (
     ROBOT_SCALE,
     check_spec_arena,
@@ -35,7 +39,7 @@ from utils.env import FunctionalEnv
 # mujoco is a C extension that ty cannot introspect
 mj: Any = mujoco
 
-Rollout = Callable[[jax.Array, jax.Array], tuple[jax.Array, jax.Array]]
+Rollout = Callable[[jax.Array, jax.Array, jax.Array], tuple[jax.Array, jax.Array]]
 
 
 def parse_level(text: str) -> tuple[float, int]:
@@ -78,7 +82,8 @@ def make_rollout(
     command: jax.Array,
     n_steps: int,
 ) -> Rollout:
-    """(key, hfield) -> per-step qpos before the step, and fell flags."""
+    """(key, arena hfield_data, tile_xy) -> per-step qpos before the step,
+    and fell flags."""
     make_policy = ppo_networks.make_inference_fn(spec_network(spec))
     policy = make_policy(params, deterministic=True)
 
@@ -89,14 +94,31 @@ def make_rollout(
         return nxt, (state.data.qpos, done * (1.0 - info["truncation"]))
 
     @jax.jit
-    def rollout(key: jax.Array, hfield: jax.Array) -> tuple[jax.Array, jax.Array]:
-        _, state = env.reset(key, hfield)
+    def rollout(
+        key: jax.Array, hfield: jax.Array, tile_xy: jax.Array
+    ) -> tuple[jax.Array, jax.Array]:
+        _, state = env.reset(key, hfield, tile_xy=tile_xy)
         _, (qpos, fell) = jax.lax.scan(
             lambda s, _: step(s, hfield), state, None, n_steps
         )
         return qpos, fell
 
     return rollout
+
+
+def render_model(base: Any, config: HFieldConfig) -> Any:
+    """The env's scene with its arena cut to one tile, the level at the
+    origin (`single_tile`)."""
+    if isinstance(base, Go1Terrain):
+        xml = scene_xml(single_tile(config))
+        return mj.MjModel.from_xml_string(xml, assets=go1_base.get_assets())
+    return single_tile_spec(Path(base._terrain.files["scene"]), config).compile()
+
+
+def level_on_single_tile(config: HFieldConfig, hfield: np.ndarray) -> np.ndarray:
+    """A rendered level as the `render_model` arena's hfield_data."""
+    layout = TileLayout(single_tile(config))
+    return np.asarray(layout.assemble(jnp.asarray(hfield)[None]))
 
 
 def tracking_camera(model: Any, scale: float) -> Any:
@@ -179,6 +201,9 @@ def main() -> None:
         spec["level_space"], config, n_edits=1, edit_scale=0.0, robot_scale=scale
     )
     rollout = make_rollout(env, spec, params, jnp.asarray(args.command), n_steps)
+    layout = TileLayout(config)
+    tile_xy = layout.tile_xy(1, 1)[0]
+    model = render_model(base, config)
     steps = frame_steps(n_steps, base.dt, args.fps)
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -187,15 +212,23 @@ def main() -> None:
         for difficulty, seed in args.level:
             level = space.scaled(np.random.default_rng(seed), 1, difficulty)
             hfield = space.render(level)[0]
-            qpos, fell = rollout(jax.random.key(args.seed), jnp.asarray(hfield))
+            arena = layout.assemble(jnp.asarray(hfield)[None])
+            qpos, fell = rollout(jax.random.key(args.seed), arena, tile_xy)
             qpos, fell = np.asarray(qpos), np.asarray(fell)
+            # the render model holds the level at the origin
+            qpos[:, :2] -= np.asarray(tile_xy)
             falls = np.flatnonzero(fell) * base.dt
             travel = np.linalg.norm(qpos[-1, :2] - qpos[0, :2])
             name = f"{Path(args.checkpoint).stem}_d{difficulty}_s{seed}.mp4"
             print(f"{name}: falls at {np.round(falls, 2)} s, travel {travel:.2f} m")
             with mediapy.VideoWriter(out / name, size, fps=args.fps) as clip:
                 for frame in render_frames(
-                    base.mj_model, hfield, qpos, steps, args, scale
+                    model,
+                    level_on_single_tile(config, hfield),
+                    qpos,
+                    steps,
+                    args,
+                    scale,
                 ):
                     clip.add_image(frame)
                     demo.add_image(frame)

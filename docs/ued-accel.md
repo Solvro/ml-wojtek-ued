@@ -44,19 +44,26 @@ Pure given an rng; no hidden state beyond the config:
 
 ### Why swapping a level is free
 
-`hfield_data` is a `jax.Array` leaf of `mjx.Model`, so it is swappable and
-vmappable per env **with no MJX recompilation**; `hfield_size` is static. This
-is the whole reason a heightfield works as an ACCEL genome at RL scale — the
-mechanism (`tree_replace` in `FunctionalEnv`) is in
-[environment.md](environment.md#hfield-mutability). Caveat: per-env levels
-only reach the physics on the `jax` backend — on `warp` every env in a batch
-collides with the first env's level (same section).
+`hfield_data` is a `jax.Array` leaf of `mjx.Model`, so it is swappable
+**with no MJX recompilation**; `hfield_size` is static. This is the whole
+reason a heightfield works as an ACCEL genome at RL scale. Every level of an
+iteration goes on its own tile of one shared arena (`hfield/tiles.py`), and
+every env collides with that one `hfield_data` — the only layout the warp
+backend handles. Mechanism (`tree_replace` in `FunctionalEnv`) and tile
+geometry: [environment.md](environment.md#hfield-mutability),
+[tiled arena](environment.md#tiled-arena). A level's semantics are
+unchanged: genome → `render` → the same `grid_size²` patch, now written into
+its tile by `TileLayout.assemble`.
 
 ### Arena assets {#arena}
 
 `hfield/arena.py` writes the static **"accel"** MJCF arena the ACCEL env loads:
-a flat (`data = 0.5`) heightfield sized to the config envelope, box "apron"
-strips around it, plus the spec/lookup sidecars — via `terrain.py`'s writers.
+a flat (`data = 0.5`) heightfield with `tiles x tiles` level patches and
+their gaps (`TileLayout`), box "apron" strips around it, plus the
+spec/lookup sidecars — via `terrain.py`'s writers. The spec records the
+layout (`tile_layout`: tiles per side, level grid, gap); `check_arena`
+refuses an arena built for another layout, or a single-level arena from
+before the tiles, with the rebuild command.
 Two far corner nodes are pinned to `0`/`1`: MuJoCo rescales a loaded hfield
 to span `[0, 1]`, so an all-`0.5` file compiles to `0` and sinks the static
 ground to `-amplitude`. That broke `real_pose_ref` (its standing-height settle
@@ -64,9 +71,8 @@ runs on the static model, so every commanded height mapped to the most
 extended pose and zero action tripped the four-bar toggle fall within
 ~0.35 s) and any rollout without an `hfield_data` swap.
 Run with `just build-accel-arena` before `just accel`/`just accel-top-k`. The
-per-iteration level
-is swapped into this arena's `hfield_data` at rollout time; the static asset
-just fixes the compile-time envelope.
+per-iteration levels are assembled into this arena's `hfield_data` at
+rollout time; the static asset just fixes the compile-time envelope.
 
 `hfield/playground.py` is a standalone offscreen render demo (`python -m
 hfield.playground [--levels N] [--seed N]`) that builds a chain of generated +
@@ -247,7 +253,8 @@ can no longer challenge the student", i.e. curriculum saturation.
 ## Trainer scripts — `scripts/accel.py` / `scripts/accel_top_k.py`
 
 Both build the same optax/jit/`FunctionalEnv` stack as `scripts/ppo.py` (with
-the `accel` terrain arena and an `hfield_data`-swapping env, plus
+the `accel` tiled arena (`accel.py`: every env on tile 0's level;
+`accel_top_k.py`: lane i on tile i, so `num_lanes` <= `tiles²`), plus
 `utils.env_overrides.movement_overrides()`/`terrain_overrides()` —
 [ppo.md](ppo.md#shared-env-overrides--utilsenv_overridespy)), plus:
 `LevelBuffer` seeded by `fill_buffer` (`initial_fill_ratio`), a `Curator`
@@ -279,10 +286,16 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
 32 minibatches, discount 0.97) and drives `FunctionalEnv`, because
 `ppo.train` fixes each env's model for the whole run and cannot swap levels.
 
-- Outer iteration: `num_lanes` levels x `envs_per_lane` envs, reset onto
-  their level (plus a fresh physics DR draw), stepped `level_steps` in
-  20-step unrolls; when training, a PPO update follows every unroll.
-  Lane regret = mean positive GAE advantage over the iteration.
+- Outer iteration: `num_lanes` levels (at most the arena's `tiles²`, 256)
+  written into tiles 0..num_lanes-1 of the shared arena, `envs_per_lane`
+  envs reset onto each tile (plus a fresh physics DR draw), stepped
+  `level_steps` in 20-step unrolls; when training, a PPO update follows
+  every unroll. Lane regret = mean positive GAE advantage over the
+  iteration. `tile_leak_frac`: envs that reached a neighbouring tile
+  ([tiled arena](environment.md#tiled-arena)).
+- Physics backend: warp on a GPU (`sim.backend` auto), jax on CPU; v10 and
+  earlier runs trained on jax (their sidecars pin it). Throughput, measured
+  on an H100: [Throughput](#throughput).
 - `--mode dr`: fresh uniform levels at full difficulty, train every
   iteration.
 - `--mode dr_easy`: DR over ACCEL's easy generator (control points within
@@ -334,8 +347,9 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   every consumer rebuilds env and network from it
   ([deploy.md](deploy.md#sidecar)). `brax_ued.py` also checks the built
   arena's geometry against the run before training.
-- Eval every `eval_every` iterations: deterministic policy on fresh uniform
-  levels at difficulties 0.25/0.5/0.75/1.0 — `eval/d<d>/success_rate` (no
+- Eval every `eval_every` iterations: deterministic policy on `eval_levels`
+  fresh uniform levels (2 episodes each, in chunks of at most `tiles²`
+  levels) at difficulties 0.25/0.5/0.75/1.0 — `eval/d<d>/success_rate` (no
   fall and >= `min_travel` m from spawn), fall rate, travel, forward vs
   commanded speed.
 - Curriculum composition (`--level_space param` only), every iteration over
@@ -359,8 +373,28 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   `PROFILE=deploy` for the deploy profile; assets must be built beforehand
   since tasks start together.
 - The arena must match the run's geometry (`hfield.arena.check_arena`:
-  `pad_radius`, height scale, grid size); the error names the
+  `pad_radius`, height scale, level grid, tiles, gap); the error names the
   `just build-accel-arena arena=<kind> hfield_params...` command for it.
+
+## Throughput {#throughput}
+
+H100, 8192 envs (256 lanes x 32), `scripts/profile_brax_ued.py`; full
+numbers and the old loop's profile in `experiments/tiled-arena/report.md`.
+
+- v10 loop (jax, per-env hfield swap): 12.9k env steps/s, ~9.7k end to
+  end. Physics is 98% of an iteration; the per-env swap itself costs
+  nothing (a shared level on jax is the same 12.9k).
+- Tiled arena on warp: 263k (benchmark) / 257k (deploy) env steps/s; a
+  training iteration (2.46M steps, 15 unroll + PPO update pairs) ~10.8 s
+  = ~227k steps/s; `evaluate` 17-23 s (jax: 106 s).
+- 32M steps of `--mode accel` in ~5 min wall clock, ~2 min of it
+  compilation (`t7_tiled_wojtek_accel_seed0`).
+- Warp is not jax: a jax-trained v10 policy scores 1.5-3 points higher on
+  terrain under warp and stands 7-11 mm higher; compare runs within one
+  backend. On jax the tiled arena reproduces v10's final eval inside its
+  95% CIs.
+- Whole-device GPU memory: ~16 GB on warp (JAX preallocation off), so
+  larger batches fit.
 
 ## Level spaces — `hfield/level_space.py` {#level-spaces}
 
@@ -410,16 +444,20 @@ chain. `--robot go1` in `brax_ued.py` (evals read it from the sidecar), `ROBOT=g
 (run prefix `v9_go1`).
 
 - Playground `Go1JoystickRoughTerrain` (feet-only collisions, its reward,
-  blind actor), on the jax backend, with:
-  - the ACCEL arena: one `hfield` geom `floor` (geom 0, so Playground's
-    friction DR hits it), sized by `HFieldConfig`;
+  blind actor), on the jax backend (not validated on warp), with:
+  - the tiled ACCEL arena, written by `scene_xml` (no asset files): one
+    `hfield` geom `floor` (geom 0, so Playground's friction DR hits it),
+    sized by `HFieldConfig`; `reset` spawns on `spawn_xy`, the tile centre
+    `FunctionalEnv` sets;
   - forward commands: Wojtek's `vx (0.2, 0.6)`, `vy (-0.2, 0.2)` times
     `GO1_SCALE`, `wz (-0.4, 0.4)`;
   - Wojtek's fall rule at Go1's size: trunk below 0.6 x 0.258 m above the
     terrain under it, or gravity z > -0.4;
   - critic gets a clean 5x5 height scan (Wojtek's grid x `GO1_SCALE`).
 - `GO1_SCALE = 2.5` (standing trunk 0.258 m vs Wojtek 0.10 m) scales the
-  arena (`hfield_config`), level lengths, commands and `min_travel`.
+  arena (`hfield_config`, `reach` included), level lengths, commands and
+  `min_travel`. Sidecars from before the tiled arena lack `reach` and get
+  Wojtek's 10 m (a 2.5 m gap for Go1, which `check_reach` refuses).
 - Physics DR: Playground's `go1/randomize.py`.
 - Needs `mujoco_menagerie` under Playground's `external_deps` (meshes);
   `ensure_menagerie_exists()` clones it, by hand on WCSS (no AVX on login).
@@ -429,12 +467,14 @@ chain. `--robot go1` in `brax_ued.py` (evals read it from the sidecar), `ROBOT=g
 Loads a `brax_ued.py` checkpoint (`--checkpoint <run>.pkl`; robot, level
 space, arena and network from its sidecar `<run>.json`), deterministic
 policy, no physics DR, no `no_progress` cut. Success = no fall and >=
-`min_travel` m from spawn after `level_steps`.
+`min_travel` m from spawn after `level_steps`. Levels run in chunks of
+`min(chunk_envs / episodes, tiles²)` levels, level i of a chunk on tile i;
+the backend is the sidecar's (v10 and earlier: jax).
 
 - `random/d<d>`: `num_levels` (2048) genome levels, the same genomes at
   each difficulty 0.25/0.5/0.75/1.0.
 - `suite/<terrain>_<k>`: held-out structured terrains no method trains on,
-  written straight into `hfield_data`, radial so heading does not matter:
+  written straight into a tile, radial so heading does not matter:
   stairs up/down (2k cm steps every 0.3 m), slopes up/down (5k°), trenches
   (10 cm deep, 5k cm wide, every 0.5 m), waves (±2k cm, 0.6 m), random
   blocks (±2k cm, 0.3 m cells); k = 1..4. Heights clip at ±`amplitude`.
@@ -502,9 +542,10 @@ network and deterministic policy as eval_brax; no physics DR.
   `jax.pure_callback` (`cpu_physics`); `mjx.step` raises inside it, so a
   missed physics path fails loudly. Reset stays on MJX (it only places the
   robot).
-- `CpuPhysics`: one `MjModel` copy + `MjData` per thread
-  (`sched_getaffinity` threads), contiguous env slices, `hfield_data`
-  reloaded when the next env is on another level. Per env and control
+- `CpuPhysics`: one `MjModel` copy (of the tiled arena) + `MjData` per
+  thread (`sched_getaffinity` threads), contiguous env slices;
+  `set_arena` takes each unroll's arena `hfield_data`, which every thread
+  copies in once. Per env and control
   period it sets qpos/qvel/act/warmstart/time/applied forces, runs
   `mj_step` (latency: `prev` ctrl for `delay` substeps, then `new`), and
   writes back the state plus frames, sensors (mapped by sensor name) and
@@ -598,7 +639,7 @@ just render-video --checkpoint artifacts/checkpoints/<run>.pkl \
   build-accel-arena hfield_params.amplitude=0.3 hfield_params.coarse_n=13
   hfield_params.pad_radius=0.55 hfield_params.pad_taper=0.2`; deploy
   profile: `just build-deploy-arena`). For Wojtek the script checks the
-  arena's spec (`pad_radius`, height scale, grid size) first and fails with
+  arena's spec (`pad_radius`, height scale, tile layout) first and fails with
   the command filled in; an amplitude mismatch would otherwise run
   silently.
 - `--level D:SEED` (repeatable): `space.scaled(default_rng(SEED), 1, D)`,
@@ -620,7 +661,10 @@ just render-video --checkpoint artifacts/checkpoints/<run>.pkl \
 - Levels with a strong slope clip at ±`amplitude` (0.3 m) within ~1 m of
   the pad (d=1 slope up to -20°), leaving a flat pit floor; for a demo,
   prefer low-slope levels whose rough/stairs/gaps persist outward.
-- Rendering: the recorded `qpos` replayed through `mujoco.Renderer`
+- The level runs on tile 0 of the arena (the rest flat). Rendering
+  replays the recorded `qpos`, shifted to the origin, on a one-tile copy
+  of the scene (`hfield.arena.single_tile_spec`; Go1: `scene_xml` of
+  `single_tile`), through `mujoco.Renderer`
   (`--width`/`--height`, default 1280x720, `--fps` 30, frames at the
   nearest control step), camera tracking the free-joint body; mp4 via
   `mediapy` (needs `ffmpeg` on `PATH`). `MUJOCO_GL`: `cgl` on macOS,

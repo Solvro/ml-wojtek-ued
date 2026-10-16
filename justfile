@@ -1,4 +1,7 @@
 export PYTHONPATH := "src"
+# warp (sim.backend auto on a GPU) allocates outside JAX's pool; utils/env.py
+# refuses warp without this
+export XLA_PYTHON_CLIENT_PREALLOCATE := "false"
 
 # List available recipes
 default:

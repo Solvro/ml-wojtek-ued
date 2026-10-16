@@ -9,7 +9,8 @@ from wojtek_env.envs import registry
 SNAPSHOT = json.loads(
     (Path(__file__).parent / "upstream_terrain_blind_v4_4d.json").read_text()
 )
-# training-only keys --profile deploy sets its own way (docs/deploy.md)
+# training-only keys --profile deploy sets its own way (docs/deploy.md); sim
+# only in num_envs, which brax_ued sets per run
 DEVIATIONS = {"terrain", "sim"}
 
 
@@ -39,13 +40,11 @@ def test_training_only_keys_match_upstream_except_documented() -> None:
         assert ours[key] == upstream[key], key
 
 
-def test_sim_deviates_only_in_backend() -> None:
+def test_sim_matches_upstream_but_the_batch_size() -> None:
+    # the shared tiled arena lets every env run on upstream's warp backend
     ours = resolved_env_config(deploy_spec()["env_overrides"])["sim"]
-    upstream = SNAPSHOT["env_config"]["sim"]
     del ours["num_envs"]
-    assert ours.pop("backend") == "jax"
-    upstream.pop("backend")
-    assert ours == upstream
+    assert ours == SNAPSHOT["env_config"]["sim"]
 
 
 def test_terrain_is_the_deploy_accel_arena() -> None:

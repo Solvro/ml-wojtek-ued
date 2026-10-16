@@ -14,7 +14,7 @@ from spawn after `level_steps`:
   reference.
 - `suite/<terrain>_<k>`: a held-out structured suite no method trains on -
   radially symmetric stairs up/down, slopes up/down, trenches, waves and
-  random blocks at four strengths, written straight into `hfield_data`.
+  random blocks at four strengths, written straight into the arena tiles.
 
 Every level is rolled out in two independent passes (`episodes` each).
 CVaR_alpha is cross-fitted: levels ranked worst-alpha on one pass are scored
@@ -59,6 +59,7 @@ from brax.training.agents.ppo import networks as ppo_networks
 
 from config.hfield_config import HFieldConfig
 from hfield.level_space import PARAMS, ParamSpace, make_level_space
+from hfield.tiles import TileLayout
 from scripts.brax_ued import (
     ROBOT_SCALE,
     check_spec_arena,
@@ -188,7 +189,6 @@ def rollout(ctx: dict[str, Any], hfields: np.ndarray, key: jax.Array) -> Episode
     """Per (level, episode): fell, final travel and the `tracking_errors`.
     hfields: (levels, N)."""
     args = ctx["args"]
-    per_chunk = max(1, args.chunk_envs // args.episodes)
     skip = round(TRACK_SKIP_S / ctx["dt"])
     if args.level_steps <= skip:
         raise ValueError(
@@ -197,19 +197,22 @@ def rollout(ctx: dict[str, Any], hfields: np.ndarray, key: jax.Array) -> Episode
             f"use more than {skip}"
         )
     lin_floor = TRACK_FLOOR_LIN * ROBOT_SCALE[ctx["spec"]["robot"]]
+    layout = ctx["layout"]
+    per_chunk = levels_per_chunk(args, layout)
     out: dict[str, list[np.ndarray]] = {}
     for start in range(0, len(hfields), per_chunk):
-        chunk = jnp.repeat(
-            jnp.asarray(hfields[start : start + per_chunk]), args.episodes, axis=0
-        )
+        levels = jnp.asarray(hfields[start : start + per_chunk])
+        arena = ctx["assemble"](levels)
+        tile_xy = layout.tile_xy(levels.shape[0], args.episodes)
         key, reset_key, act_key = jax.random.split(key, 3)
-        _, state = ctx["reset"](jax.random.split(reset_key, chunk.shape[0]), chunk)
+        reset_keys = jax.random.split(reset_key, tile_xy.shape[0])
+        _, state = ctx["reset"](reset_keys, arena, tile_xy)
         start_xy = state.data.qpos[:, :2]
         state, data = ctx["unroll"](
             ctx["params"],
             state,
             act_key,
-            chunk,
+            arena,
             None,
             deterministic=True,
             length=args.level_steps,
@@ -227,6 +230,11 @@ def rollout(ctx: dict[str, Any], hfields: np.ndarray, key: jax.Array) -> Episode
             out.setdefault(k, []).append(v)
     shape = (len(hfields), args.episodes)
     return {k: np.concatenate(v).reshape(shape) for k, v in out.items()}
+
+
+def levels_per_chunk(args: argparse.Namespace, layout: TileLayout) -> int:
+    """Levels per batch: `chunk_envs` envs, at most one level per tile."""
+    return min(max(1, args.chunk_envs // args.episodes), layout.n_tiles)
 
 
 def cross_fit_cvar(a: np.ndarray, b: np.ndarray, alpha: float) -> float:
@@ -438,15 +446,25 @@ def evaluate(ctx: dict[str, Any]) -> tuple[dict[str, float], dict[str, Any]]:
 def build(args: argparse.Namespace) -> dict[str, Any]:
     spec, params = load_run(Path(args.checkpoint))
     check_spec_arena(spec)
-    env = make_env(spec, args.chunk_envs, train=False)
+    config = HFieldConfig(**spec["hfield"])
+    layout = TileLayout(config)
+    num_envs = levels_per_chunk(args, layout) * args.episodes
+    env = make_env(spec, num_envs, train=False)
+    # scored on the deterministic policy: its own obs and feet, not the critic
+    reach = env.travel.reach(args.level_steps, env.travel.actor_sensing)
+    layout.check_reach(reach, f"--level_steps {args.level_steps}")
     make_policy = ppo_networks.make_inference_fn(spec_network(spec))
     base: Any = env._env.unwrapped
     return {
         "args": args,
         "spec": spec,
-        "config": HFieldConfig(**spec["hfield"]),
+        "config": config,
+        "layout": layout,
+        "assemble": jax.jit(layout.assemble),
         "params": params,
-        "reset": jax.jit(jax.vmap(lambda k, h: env.reset(k, h))),
+        "reset": jax.jit(
+            jax.vmap(lambda k, h, t: env.reset(k, h, tile_xy=t), in_axes=(0, None, 0))
+        ),
         "unroll": make_unroll(env, make_policy, None),
         "dt": base.dt,
     }
