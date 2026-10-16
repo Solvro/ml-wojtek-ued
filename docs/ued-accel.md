@@ -350,8 +350,16 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
 - Eval every `eval_every` iterations: deterministic policy on `eval_levels`
   fresh uniform levels (2 episodes each, in chunks of at most `tiles²`
   levels) at difficulties 0.25/0.5/0.75/1.0 — `eval/d<d>/success_rate` (no
-  fall and >= `min_travel` m from spawn), fall rate, travel, forward vs
-  commanded speed.
+  fall and >= `min_travel` m from spawn), `eval/d<d>/cmd_success_rate`
+  (eval_brax's command tracking, `utils/tracking.py`), fall rate, travel,
+  forward vs commanded speed. With `--checkpoint_dir`, `<name>.pkl` is
+  rewritten after every eval, so a crashed run keeps its last evaluated
+  policy.
+- Non-finite guard: after every iteration the student's parameters and obs
+  normalizer must be finite, else the run stops with `FloatingPointError`
+  naming the last checkpoint; diverged env steps are ended in the env
+  ([environment.md](environment.md#functionalenv--the-training-bridge)) and
+  logged as `nonfinite_per_step`.
 - Curriculum composition (`--level_space param` only), every iteration over
   the levels the student ran on (replayed, explored or PAIRED-generated):
   `level/<param>` = mean physical value (`ParamSpace.physical`, robot
@@ -361,7 +369,7 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   upstream checkpoint ([deploy.md](deploy.md#warm-start)).
 - `--env_override <file.json>` (TRAINING_ONLY env keys merged onto the
   profile's, [deploy.md](deploy.md#profile)), `--clipping_epsilon` (PPO
-  clip, default 0.2).
+  clip, default 0.2), `--learning_rate` (Adam, default 3e-4).
 - Reward terms, every iteration: `reward_term/<name>` = mean of the env's
   `reward/<name>` metric over the iteration's training steps, raw (before
   `reward.scales` and the x `ctrl_dt`).
@@ -492,7 +500,7 @@ the backend is the sidecar's (v10 and earlier: jax).
   `lin_rel = |v_xy - cmd_xy| / max(|cmd_xy|, 0.3 m/s x ROBOT_SCALE)`,
   `yaw_rel = |wz - cmd_wz| / max(|cmd_wz|, 0.7 rad/s)` (the deploy reward's
   `tracking_rel_floor_lin` / `_ang`). Tracked = episode means of both
-  < 0.5, i.e. within 50% of the command (`TRACK_*` in `eval_brax.py`).
+  < 0.5, i.e. within 50% of the command (`TRACK_*` in `utils/tracking.py`).
   Steps within 1 s of the reset or of a command change are a start-up
   transient and not scored: the env resamples every 250 steps (5 s), so a
   6 s level scores 1-5 s and the second command's last second is all

@@ -135,10 +135,28 @@ def test_checkpoint_without_run_json_is_refused(tmp_path: Path) -> None:
         run_import(checkpoint, tmp_path / "x.pkl")
 
 
-def student(size: ObsSize) -> Student:
+def student(size: ObsSize, learning_rate: float = 3e-4) -> Student:
     env = SimpleNamespace(observation_size=size, action_size=12)
     spec = run_spec(parse_args(DEPLOY))
-    return Student(env, spec["network"], jax.random.key(1), 0.3)  # ty: ignore[invalid-argument-type]
+    return Student(env, spec["network"], jax.random.key(1), 0.3, learning_rate)  # ty: ignore[invalid-argument-type]
+
+
+@pytest.mark.parametrize("learning_rate", [3e-4, 1e-4])
+def test_learning_rate_sets_the_first_adam_step(learning_rate: float) -> None:
+    s = student(deploy_size(), learning_rate)
+    grads = jax.tree.map(lambda x: 1e-3 * np.ones_like(x), s.params)
+    updates, _ = s.optimizer.update(grads, s.optimizer.init(s.params))
+    steps = np.concatenate([np.abs(x).ravel() for x in jax.tree.leaves(updates)])
+    np.testing.assert_allclose(steps, learning_rate, rtol=1e-3)
+
+
+def test_finite_flags_one_non_finite_parameter() -> None:
+    s = student(deploy_size())
+    assert s.finite()
+    leaves, treedef = jax.tree.flatten(s.params)
+    leaves[0] = leaves[0].at[0].set(np.nan)
+    s.params = jax.tree.unflatten(treedef, leaves)
+    assert not s.finite()
 
 
 def test_warm_start_takes_every_imported_param(tmp_path: Path) -> None:

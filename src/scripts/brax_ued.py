@@ -47,7 +47,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import equinox as eqx
 import jax
@@ -85,6 +85,7 @@ from utils.env_overrides import (
     terrain_task_overrides,
 )
 from utils.ppo_helpers import body_velocity
+from utils.tracking import TRACK_FLOOR_LIN, TRACK_SKIP_S, tracked, tracking_errors
 from wojtek_env import paths
 
 PPO: dict[str, Any] = {
@@ -325,6 +326,7 @@ class Student:
         network: dict[str, Any],
         key: jax.Array,
         clipping_epsilon: float,
+        learning_rate: float = PPO["learning_rate"],
     ):
         self.clipping_epsilon = clipping_epsilon
         obs_size = env.observation_size
@@ -345,7 +347,7 @@ class Student:
         )
         self.optimizer = optax.chain(
             optax.clip_by_global_norm(PPO["max_grad_norm"]),
-            optax.adam(PPO["learning_rate"]),
+            optax.adam(learning_rate),
         )
         self.opt_state = self.optimizer.init(self.params)
         self.update = jax.jit(self._update)
@@ -377,6 +379,10 @@ class Student:
 
     def inference_params(self) -> tuple[Any, Any, Any]:
         return (self.normalizer, self.params.policy, self.params.value)
+
+    def finite(self) -> bool:
+        leaves = jax.tree.leaves((self.normalizer, self.params))
+        return all(bool(jnp.isfinite(x).all()) for x in leaves)
 
     def _loss(self, params, normalizer, data, key):
         return ppo_losses.compute_ppo_loss(
@@ -442,7 +448,7 @@ def make_unroll(env: FunctionalEnv, make_policy: Any, dr_in_axes: Any):
         _, state, reward, done, info = env.step(
             jax.random.key(0), state, action, hfield, dr_model
         )
-        return state, reward, done, info["truncation"]
+        return state, reward, done, info["truncation"], info["nonfinite"]
 
     # the arena's hfield_data is shared by every env (warp needs it unbatched)
     v_step = jax.vmap(step_one, in_axes=(0, 0, None, dr_in_axes))
@@ -456,7 +462,7 @@ def make_unroll(env: FunctionalEnv, make_policy: Any, dr_in_axes: Any):
             key, act_key = jax.random.split(key)
             action, extras = policy(state.obs, act_key)
             cmd = state.info["command"][:, :3]
-            next_state, reward, done, truncation = v_step(
+            next_state, reward, done, truncation, nonfinite = v_step(
                 state, action, hfield, dr_model
             )
             linvel = jax.vmap(body_velocity)(next_state.data)
@@ -472,6 +478,7 @@ def make_unroll(env: FunctionalEnv, make_policy: Any, dr_in_axes: Any):
                     "state_extras": {"truncation": truncation},
                     "log": {
                         "fell": done * (1.0 - truncation),
+                        "nonfinite": nonfinite,
                         "reward": reward,
                         "cmd_vx": cmd[:, 0],
                         "forward_vel": linvel[:, 0],
@@ -613,6 +620,8 @@ def run_levels(
         "train_success": float(success.mean()),
         "learnability_mean": float(learnability.mean()),
         "falls_per_step": log["fell"],
+        # env steps that diverged and were ended (FunctionalEnv._end_nonfinite)
+        "nonfinite_per_step": log["nonfinite"],
         "reward_per_step": log["reward"],
         "cmd_vx": log["cmd_vx"],
         "forward_vel": log["forward_vel"],
@@ -635,11 +644,14 @@ def evaluate(ctx: dict[str, Any], rng: np.random.Generator) -> dict[str, float]:
             eval_chunk(ctx, rendered[start : start + per_chunk])
             for start in range(0, args.eval_levels, per_chunk)
         ]
-        fell, travel, forward_vel, cmd_vx = (np.concatenate(x) for x in zip(*chunks))
+        fell, travel, forward_vel, cmd_vx, cmd_tracked = (
+            np.concatenate(x) for x in zip(*chunks)
+        )
         tag = f"eval/d{difficulty}"
         out[f"{tag}/success_rate"] = float(
             ((fell == 0) & (travel >= min_travel(args.robot, args.min_travel))).mean()
         )
+        out[f"{tag}/cmd_success_rate"] = float(cmd_tracked.mean())
         out[f"{tag}/fall_rate"] = float(fell.mean())
         out[f"{tag}/mean_travel"] = float(travel.mean())
         out[f"{tag}/forward_vel"] = float(forward_vel.mean())
@@ -649,7 +661,8 @@ def evaluate(ctx: dict[str, Any], rng: np.random.Generator) -> dict[str, float]:
 
 def eval_chunk(ctx: dict[str, Any], rendered: jax.Array) -> tuple[np.ndarray, ...]:
     """Two deterministic episodes per level, levels on the arena's tiles:
-    per env fell, travel, mean forward and commanded velocity."""
+    per env fell, travel, mean forward and commanded velocity, and whether
+    the command was tracked (eval_brax's `cmd_success_rate`)."""
     hfield = ctx["assemble"](rendered)
     tile_xy = ctx["layout"].tile_xy(rendered.shape[0], 2)
     keys = jax.random.split(ctx["next_key"](), tile_xy.shape[0])
@@ -666,11 +679,19 @@ def eval_chunk(ctx: dict[str, Any], rendered: jax.Array) -> tuple[np.ndarray, ..
     )
     log = data.extras["log"]
     travel = jnp.linalg.norm(log["xy"][:, -1] - start_xy, axis=-1)
+    fell = np.asarray(log["fell"].max(axis=1))
+    errors = tracking_errors(
+        np.asarray(log["cmd"]),
+        np.asarray(log["vel"]),
+        round(TRACK_SKIP_S / ctx["dt"]),
+        TRACK_FLOOR_LIN * ROBOT_SCALE[ctx["args"].robot],
+    )
     return (
-        np.asarray(log["fell"].max(axis=1)),
+        fell,
         np.asarray(travel),
         np.asarray(log["forward_vel"].mean(axis=1)),
         np.asarray(log["cmd_vx"].mean(axis=1)),
+        tracked({"fell": fell, **errors}),
     )
 
 
@@ -857,7 +878,9 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         key_state["key"], key = jax.random.split(key_state["key"])
         return key
 
-    student = Student(env, spec["network"], next_key(), args.clipping_epsilon)
+    student = Student(
+        env, spec["network"], next_key(), args.clipping_epsilon, args.learning_rate
+    )
     if args.init_from:
         init_spec, params = load_run(Path(args.init_from))
         if init_spec["network"] != spec["network"]:
@@ -868,7 +891,9 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         student.warm_start(params, args.init_from)
     paired = args.mode == "paired"
     antagonist = (
-        Student(env, spec["network"], next_key(), args.clipping_epsilon)
+        Student(
+            env, spec["network"], next_key(), args.clipping_epsilon, args.learning_rate
+        )
         if paired
         else None
     )
@@ -893,6 +918,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "eval_reset": eval_reset,
         "unroll": make_unroll(env, student.make_policy, dr_in_axes),
         "eval_unroll": make_unroll(eval_env, student.make_policy, None),
+        "dt": cast(Any, eval_env._env.unwrapped).dt,
         "children": np.zeros((0, *space.shape)),
     }
 
@@ -943,6 +969,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="JSON file of TRAINING_ONLY env keys merged onto the profile's",
     )
     p.add_argument("--clipping_epsilon", type=float, default=PPO["clipping_epsilon"])
+    p.add_argument("--learning_rate", type=float, default=PPO["learning_rate"])
     p.add_argument(
         "--init_from",
         default=None,
@@ -963,6 +990,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
+def save_checkpoint(args: argparse.Namespace, student: Student, env_steps: int) -> str:
+    if not args.checkpoint_dir:
+        return "none (no --checkpoint_dir)"
+    path = Path(args.checkpoint_dir) / f"{args.name}.pkl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    brax_model.save_params(str(path), student.inference_params())
+    return f"{path} at {env_steps} env steps"
+
+
 def main() -> None:
     args = parse_args()
     if args.level_steps % PPO["unroll_length"]:
@@ -978,7 +1014,11 @@ def main() -> None:
         tags=["brax-ued", args.mode, args.robot],
         config={
             **vars(args),
-            "ppo": {**PPO, "clipping_epsilon": args.clipping_epsilon},
+            "ppo": {
+                **PPO,
+                "clipping_epsilon": args.clipping_epsilon,
+                "learning_rate": args.learning_rate,
+            },
         },
     )
     ctx = build(args)
@@ -988,6 +1028,7 @@ def main() -> None:
     sims_per_iteration = 2 if args.mode == "paired" else 1
     env_steps, it, start = 0, 0, time.time()
     sim_steps, student_train_steps = 0, 0
+    saved_at = "none (no eval yet)"
     while env_steps < args.num_timesteps:
         out: dict[str, Any]
         if args.mode in ("accel", "plr"):
@@ -1019,18 +1060,24 @@ def main() -> None:
             "student_train_steps": student_train_steps,
             "elapsed_s": time.time() - launch,
         }
+        if not ctx["student"].finite():
+            run.log(log)
+            raise FloatingPointError(
+                f"iteration {it} ({env_steps} env steps): the student's parameters "
+                "or obs normalizer went non-finite in this iteration's update "
+                f"({log['nonfinite_per_step']:.2e} of its env steps diverged and "
+                f"were ended); the last finite checkpoint is {saved_at}"
+            )
         if it % args.eval_every == 0 or env_steps >= args.num_timesteps:
             log.update(evaluate(ctx, np.random.default_rng(1234)))
+            # a crash keeps the latest evaluated policy (not only the final one)
+            saved_at = save_checkpoint(args, ctx["student"], env_steps)
         run.log(log)
         print(
             {k: round(v, 3) if isinstance(v, float) else v for k, v in log.items()},
             flush=True,
         )
         it += 1
-    if args.checkpoint_dir:
-        path = Path(args.checkpoint_dir) / f"{args.name}.pkl"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        brax_model.save_params(str(path), ctx["student"].inference_params())
     run.summary["final/elapsed_h"] = (time.time() - launch) / 3600
     run.summary["final/sim_steps"] = sim_steps
     run.summary["final/student_train_steps"] = student_train_steps

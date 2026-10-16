@@ -266,6 +266,7 @@ class FunctionalEnv:
             state: Any = self._env.reset(key)
         state.info["first_data"] = state.data
         state.info["first_obs"] = state.obs
+        state.info["nonfinite"] = jnp.zeros_like(state.done)
         return self._obs(state), state
 
     def step(
@@ -282,6 +283,7 @@ class FunctionalEnv:
         state = state.replace(done=jnp.zeros_like(state.done))
         with self._swapped_model(hfield_data, dr_model):
             state = cast(Any, self._env.step(state, action))
+        state = self._end_nonfinite(state)
 
         done = state.done
 
@@ -302,6 +304,30 @@ class FunctionalEnv:
         obs = jax.tree.map(where_done, state.info["first_obs"], state.obs)
         state = state.replace(data=data, obs=obs)
         return self._obs(state), state, state.reward, state.done, state.info
+
+    @staticmethod
+    def _end_nonfinite(state: Any) -> Any:
+        # MJX can diverge (nan qacc) on one env; its nan obs would reach the
+        # running obs normalizer and poison every env's policy
+        # (deploy_ws_accel_seed2), so a non-finite step ends the episode
+        done = state.done
+
+        def finite(x: jax.Array) -> jax.Array:
+            return jnp.isfinite(x).reshape(*done.shape, -1).all(axis=-1)
+
+        leaves = [state.data.qpos, state.data.qvel, state.reward]
+        leaves += jax.tree.leaves(state.obs)
+        bad = ~jnp.all(jnp.stack([finite(x) for x in leaves]), axis=0)
+        state.info["nonfinite"] = bad.astype(done.dtype)
+        metrics = {
+            k: jnp.where(bad, 0.0, v) if v.shape == done.shape else v
+            for k, v in state.metrics.items()
+        }
+        return state.replace(
+            done=jnp.where(bad, jnp.ones_like(done), done),
+            reward=jnp.where(bad, 0.0, state.reward),
+            metrics=metrics,
+        )
 
     @staticmethod
     def _obs(state: Any) -> Obs:

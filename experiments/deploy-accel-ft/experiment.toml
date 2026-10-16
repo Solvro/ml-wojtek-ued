@@ -1,0 +1,58 @@
+name = "deploy-accel-ft"
+question = "Does an ACCEL fine-tune of the upstream 1.5B terrain_blind_v4_4d policy beat that base on the deploy arena (warp)?"
+
+envs = ["deploy"]
+conditions = ["accel", "accel_lr1e-4", "dr"]
+seeds = [0, 1, 2]
+total_steps = 1_000_000_000
+
+[wandb]
+entity = "dominikgalus9-wroc-aw-university-of-science-and-technology"
+project = "wojtyla"
+# added through the wandb API once the runs exist
+tag = "deploy-accel-ft"
+run_name = '^dft_(?P<env>deploy)_(?P<condition>accel|accel_lr1e-4|dr)_seed(?P<seed>\d+)$'
+
+[metric]
+keys = ["eval/d1.0/cmd_success_rate"]
+x = ["env_steps"]
+label = "command-conditioned success, uniform levels d=1.0"
+final_window = 0.1
+
+[reference]
+condition = "accel"
+thresholds = [0.5]
+
+# Win criterion (fixed before running, from the T8 brief), on the final
+# eval_brax evals, base re-evaluated on the same backend/arena/levels:
+# - primary: random/d1.0/cmd_success_rate AND random/d1.0/success_rate,
+#   3-seed mean above the base with 95% CIs (levels x seeds bootstrap) not
+#   overlapping the base's (levels bootstrap);
+# - secondary: v10box random/d1.0/success_rate and suite/success_rate;
+# - guard: no drop > 0.02 on flat and random/d0.25 success, d1.0 fall rate
+#   not worse.
+# Go/no-go at ~300M env steps: stop if no A/B seed trends above the base
+# (in-training eval at iteration 0 = the base) on both primary metrics.
+
+[[secondary]]
+key = "eval/d1.0/success_rate"
+label = "success, uniform levels d=1.0"
+
+[[secondary]]
+key = "eval/d0.25/success_rate"
+label = "success, d=0.25 (guard)"
+
+[[secondary]]
+key = "eval/d1.0/fall_rate"
+label = "fall rate, d=1.0 (guard)"
+
+[[secondary]]
+key = "nonfinite_per_step"
+label = "diverged env steps / step"
+note = "ended by FunctionalEnv's non-finite guard"
+
+[cluster]
+ssh_host = "wcss"
+
+[report]
+url = ""

@@ -67,7 +67,8 @@ setup, unchanged).
   accepted (`contract.TRAINING_ONLY_KEYS`), anything that shapes the
   contract (`obs`, `command`, `action_scale`, `pd_*`, ...) is refused at
   parse time. The merged config lands in the sidecar, so export and evals
-  rebuild the same env. `--clipping_epsilon` (default 0.2) sets PPO's clip.
+  rebuild the same env. `--clipping_epsilon` (default 0.2) sets PPO's clip,
+  `--learning_rate` (default 3e-4) Adam's step size.
   `tests/scripts/test_env_override.py` keeps every
   `experiments/deploy-ab/arms/*.json` at upstream's CONSUMED keys and
   network.

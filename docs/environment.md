@@ -235,6 +235,13 @@ usable under `jit`/`vmap`.
 - **Auto-reset semantics.** `step` freezes `data`/`obs` to the episode's first
   values on `done` (via `first_data`/`first_obs` stashed at reset), so a
   vmapped batch stays aligned.
+- **Non-finite guard.** A step whose `qpos`, `qvel`, obs or reward is not
+  finite ends the episode (`done` 1, reward and per-env metrics 0, then the
+  auto-reset above) and sets `info["nonfinite"]` (brax_ued logs
+  `nonfinite_per_step`). Without it one diverged env's nan obs reaches
+  brax's running obs normalizer and turns every env's policy nan. `info`
+  is not reset, so an env whose `info` went nan stays ended until the next
+  `reset`.
 - **Shared tiled arena.** `reset(key, hfield_data, dr_model, tile_xy)` and
   `step(..., hfield_data, dr_model)` take the arena's `hfield_data`
   (`hfield.tiles.TileLayout.assemble`: every level of the iteration on its
