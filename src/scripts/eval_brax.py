@@ -341,6 +341,8 @@ def evaluate(ctx: dict[str, Any]) -> tuple[dict[str, float], dict[str, Any]]:
     space = make_level_space(
         spec["level_space"], config, n_edits=1, edit_scale=0.0, robot_scale=scale
     )
+    if args.flat_only:
+        return flat_set(ctx, space, jax.random.fold_in(key, 1))
     raw["random_levels"] = space.scaled(
         np.random.default_rng(args.seed), args.num_levels, 1.0
     )
@@ -388,10 +390,18 @@ def evaluate(ctx: dict[str, Any]) -> tuple[dict[str, float], dict[str, Any]]:
         metrics.update(param_metrics)
         raw.update(param_raw)
     # own streams, so the sets above keep the levels and keys they had in v8
-    flat = space.scaled(np.random.default_rng(args.seed), args.suite_instances, 0.0)
-    passes = two_passes(ctx, space.render(flat), jax.random.fold_in(key, 1))
-    metrics.update(summarize("flat", passes, ctx))
-    return metrics, raw
+    flat_metrics, flat_raw = flat_set(ctx, space, jax.random.fold_in(key, 1))
+    return {**metrics, **flat_metrics}, {**raw, **flat_raw}
+
+
+def flat_set(
+    ctx: dict[str, Any], space: Any, key: jax.Array
+) -> tuple[dict[str, float], dict[str, Any]]:
+    args = ctx["args"]
+    n = args.flat_levels or args.suite_instances
+    flat = space.scaled(np.random.default_rng(args.seed), n, 0.0)
+    passes = two_passes(ctx, space.render(flat), key)
+    return summarize("flat", passes, ctx), stack_passes("flat", passes)
 
 
 # --command_box: one uniform draw inside the box, every special draw off
@@ -481,6 +491,13 @@ def main() -> None:
     p.add_argument("--min_travel", type=float, default=1.0)
     p.add_argument("--alphas", type=float, nargs="+", default=[0.1, 0.25])
     p.add_argument("--seed", type=int, default=1234)
+    p.add_argument(
+        "--flat_levels",
+        type=int,
+        default=None,
+        help="flat levels (default: --suite_instances)",
+    )
+    p.add_argument("--flat_only", action="store_true", help="evaluate flat only")
     p.add_argument(
         "--arena",
         choices=list(ARENAS),

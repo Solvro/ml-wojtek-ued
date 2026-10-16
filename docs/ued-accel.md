@@ -545,9 +545,11 @@ the backend is the sidecar's (v10 and earlier: jax).
   off; `envelope` = largest |feature| passed at 50% success, `auc` = mean
   success over the ramp. Difficulty 0.25 is too easy to separate methods
   (~89% for anything trained near flat) and is not a headline number.
-- `flat/...`: `suite_instances` flat levels (`scaled(0)`), the no-terrain
-  reference (success, fall rate, travel, CVaR). Runs last on its own
-  rng/key, so every other set keeps its v8 levels and keys.
+- `flat/...`: `--flat_levels` (default `suite_instances`) flat levels
+  (`scaled(0)`), the no-terrain reference (success, fall rate, travel,
+  CVaR). Runs last on its own rng/key, so every other set keeps its v8
+  levels and keys. `--flat_only` evaluates this set alone (64 levels
+  resolve only ±4 points; deploy-accel-ft guards use 1024).
 - 95% bootstrap CIs over levels for mean and CVaR; `level_success_corr`
   between passes; suite CVaR is over the 28 terrain×strength cells.
 - Writes `<name>.json` (metrics) and `<name>.npz` to `--out_dir`, and the
@@ -556,6 +558,7 @@ the backend is the sidecar's (v10 and earlier: jax).
   - `random_d<d>_fell`, `random_d<d>_travel`; `random_levels` (levels x
     genome): the d=1 base genomes of the `random/d*` sets.
   - `suite_success` (28 terrain x strength cells).
+  - `flat_fell`, `flat_travel`, `flat_{lin,yaw}_{err,rel}`.
   - `param` only: `param_uniform_fell`, `param_uniform_travel`,
     `param_uniform_levels` (levels x genome). `_travel` and the genomes are
     new in v10; v8 npz files lack them. WCSS: `eval_brax.sbatch` (same `MODES` task layout

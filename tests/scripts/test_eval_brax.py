@@ -75,6 +75,8 @@ def test_suite_reports_cmd_success_per_set_and_their_mean(
         suite_instances=4,
         min_travel=1.0,
         alphas=[0.25],
+        flat_levels=None,
+        flat_only=False,
     )
     ctx = {
         "args": args,

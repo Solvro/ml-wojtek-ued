@@ -19,7 +19,15 @@ import numpy as np
 
 from utils.tracking import tracked
 
-ARMS = ("accel", "accel_lr1e-4", "dr")
+ARMS = (
+    "accel",
+    "accel_lr1e-4",
+    "dr",
+    "accel_hard_lr1e-4",
+    "dr_lr1e-4",
+    "accel_sfl_lr1e-4",
+    "accel_lr1e-4_1b",
+)
 BASE = "base"
 SEEDS = (0, 1, 2)
 MIN_TRAVEL = 1.0
@@ -61,6 +69,14 @@ def load(runs_dir: Path, arm: str, kind: str) -> list[dict[str, Any]]:
             for d in (0.25, 0.5, 0.75, 1.0)
         }
         sets["param/uniform"] = per_level(npz, "param_uniform")
+        if kind == "final":
+            flat = runs_dir / f"{run_name(arm, seed, 'flat')}.npz"
+            if not flat.exists():
+                raise FileNotFoundError(
+                    f"{flat} missing: the flat guard needs the 1024-level flat "
+                    "eval (eval.sbatch, FLAT_ONLY=1 for an evaluated policy)"
+                )
+            sets["flat"] = per_level(np.load(flat), "flat")
         metrics = json.loads((runs_dir / f"{name}.json").read_text())
         out.append({"seed": seed, "sets": sets, "metrics": metrics})
     return out
@@ -127,9 +143,7 @@ def beats(arm: dict[str, float], base: dict[str, float]) -> bool:
     return arm["mean"] > base["mean"] and arm["ci_low"] > base["ci_high"]
 
 
-def verdict(
-    native: dict[str, Any], base: dict[str, Any], flat: dict[str, Any], seed: Any
-) -> dict[str, Any]:
+def verdict(native: dict[str, Any], base: dict[str, Any], seed: Any) -> dict[str, Any]:
     """seed None = the 3-seed pool."""
 
     def pick(key: str) -> dict[str, float]:
@@ -139,10 +153,10 @@ def verdict(
     primary = {key: beats(pick(key), base[key]["pooled"]) for key in PRIMARY}
     d025 = pick("random/d0.25/success_rate")
     fall = pick("random/d1.0/fall_rate")
-    flat_arm = flat["mean"] if seed is None else flat["per_seed"][seed]
+    flat = pick("flat/success_rate")
     guards = {
         "d0.25 success drop <= 0.02": -d025["diff"] <= GUARD_DROP,
-        "flat success drop <= 0.02": flat["base"] - flat_arm <= GUARD_DROP,
+        "flat success drop <= 0.02": -flat["diff"] <= GUARD_DROP,
         # not worse = the paired difference is not significantly above 0
         "d1.0 fall rate not worse": fall["diff_ci_low"] <= 0.0,
     }
@@ -186,14 +200,10 @@ def main() -> None:
                 "json": js,
             }
             if kind == "final":
-                flat = {
-                    **js["flat/success_rate"],
-                    "base": base["metrics"]["flat/success_rate"],
-                }
                 entry["verdict"] = {
-                    "pooled": verdict(stats, base_stats, flat, None),
+                    "pooled": verdict(stats, base_stats, None),
                     **{
-                        f"seed{r['seed']}": verdict(stats, base_stats, flat, r["seed"])
+                        f"seed{r['seed']}": verdict(stats, base_stats, r["seed"])
                         for r in runs
                     },
                 }

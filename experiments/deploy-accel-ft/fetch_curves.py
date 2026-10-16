@@ -11,7 +11,7 @@ from pathlib import Path
 import wandb
 
 PROJECT = "dominikgalus9-wroc-aw-university-of-science-and-technology/wojtyla"
-RUNS = r"^dft2_deploy_(accel|accel_lr1e-4|dr)_seed[0-9]$"
+RUNS = r"^dft2_deploy_(accel|accel_lr1e-4|dr|accel_hard_lr1e-4|dr_lr1e-4|accel_sfl_lr1e-4|accel_lr1e-4_1b)_seed[0-9]$"
 KEYS = [
     "env_steps",
     "eval/d1.0/success_rate",
@@ -19,7 +19,13 @@ KEYS = [
     "eval/d0.25/success_rate",
     "eval/d1.0/fall_rate",
 ]
-TRAIN_KEYS = ["env_steps", "diverged_per_step", "level/genome_dist", "train_success"]
+TRAIN_KEYS = [
+    "env_steps",
+    "replay",
+    "diverged_per_step",
+    "level/genome_dist",
+    "train_success",
+]
 
 
 def main() -> None:
