@@ -57,8 +57,8 @@ src/
     ppo_dr.py        PPO + baseline domain randomization (`just train-dr`)
     accel.py         ACCEL curriculum, vanilla         (`just accel`)
     accel_top_k.py   ACCEL curriculum, batched-lanes/top-k (`just accel-top-k`)
-    eval.py          evaluate a saved checkpoint       (`just eval --algo <algo>`)
-    eval_levels.py   evaluate across generated levels  (`uv run python src/scripts/eval_levels.py --algo <algo>`)
+    eval.py          evaluate a saved checkpoint       (`just eval algo=<algo>`)
+    eval_levels.py   evaluate across generated levels  (`just eval-levels algo=<algo>`)
 main.py              random-agent MuJoCo-viewer preview
 ```
 
@@ -88,8 +88,8 @@ plateau**, not a fixed step count. Full walkthrough in [ued-accel.md](ued-accel.
 **Eval** (`scripts/eval.py`): each trainer checkpoints under
 `artifacts/<algo>/<run>/` (`<algo>` is one of `ppo`/`ppo_dr`/`accel`/
 `accel_top_k`) and writes a `meta.json` sidecar recording the model shape and
-env construction. `just eval --algo <algo>` rebuilds the `A2C` template and
-`FunctionalEnv` from that sidecar and restores the latest (or `--run`/`--step`
+env construction. `just eval algo=<algo>` rebuilds the `A2C` template and
+`FunctionalEnv` from that sidecar and restores the latest (or `run=`/`step=`
 selected) checkpoint — no Hydra config needed at eval time. Details in
 [ppo.md](ppo.md#checkpoints--utilscheckpointpy).
 
@@ -107,7 +107,7 @@ selected) checkpoint — no Hydra config needed at eval time. Details in
 ## Where to read next
 
 - Get it running → [setup.md](setup.md)
-- The env, tasks, terrain, hfield-swap trick → [environment.md](environment.md)
+- The env, tasks, terrain, shared tiled arena → [environment.md](environment.md)
 - PPO model, rollout, loss, checkpoints → [ppo.md](ppo.md)
 - The ACCEL curriculum + heightfield levels → [ued-accel.md](ued-accel.md)
 - Every config field and Hydra overrides → [configuration.md](configuration.md)

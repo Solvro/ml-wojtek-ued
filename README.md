@@ -3,8 +3,8 @@
 Unsupervised Environment Design (PAIRED/ACCEL) on the Wojtek quadruped: a PPO
 student trained against an adversarial curriculum of procedurally generated
 heightfield levels. Built on `wojtek_env`, an extracted MJX simulation env +
-procedural terrain generator + Gymnasium interface (env only — no ROS, no
-deployment).
+procedural terrain generator + Gymnasium interface. Trained policies export
+to the robot's `policy.npz` + `policy_meta.json` ([docs/deploy.md](docs/deploy.md)).
 
 ## Documentation
 
@@ -29,11 +29,11 @@ Start with [overview.md](docs/overview.md).
 ```bash
 just sync                # uv sync --extra dev
 just build               # wojtek.xml -> wojtek_mjx.xml + scene_mjx.xml
-just build-accel-arena   # write the "accel" terrain arena (needed for ACCEL)
+just build-accel-arena   # write the "accel" terrain arena (needed for ACCEL; see docs/setup.md#tiled-arena-requirements)
 just train               # plain PPO
 just train-dr            # plain PPO + baseline domain randomization
 just accel               # ACCEL curriculum
-just eval --algo ppo     # evaluate the latest checkpoint of an algo
+just eval algo=ppo       # evaluate the latest checkpoint of an algo
 ```
 
 ## Justfile recipes
@@ -44,6 +44,7 @@ just eval --algo ppo     # evaluate the latest checkpoint of an algo
 |---|---|
 | `just sync` | `uv sync --extra dev` |
 | `just install` | `uv lock && uv sync --extra dev` (relock, then sync) |
+| `just fix-mjpython-macos` | macOS: make `mjpython` find libpython (run by `sync`/`install`; [docs](docs/setup.md#mjpython-on-macos)) |
 | `just fmt` | `ruff format` + `ruff check --fix` on `src` |
 | `just lint` | `ruff check` + `ruff format --check` on `src` |
 | `just build` | build the MJX model (`wojtek_mjx.xml` + `scene_mjx.xml`) |
@@ -53,7 +54,7 @@ just eval --algo ppo     # evaluate the latest checkpoint of an algo
 | `just train-dr *args` | PPO training with baseline domain randomization (`scripts/ppo_dr.py`) |
 | `just accel *args` | ACCEL training, single-level-per-iteration variant; needs `build-accel-arena` first |
 | `just accel-top-k *args` | ACCEL training, batched-lanes/top-k variant; needs `build-accel-arena` first |
-| `just eval *args` | evaluate a checkpoint (`--algo` required; `--run`/`--step` default to latest) |
+| `just eval *args` | evaluate a checkpoint (`algo=` required; `run=`/`step=` default to latest) |
 | `just eval-levels *args` | evaluate a checkpoint's generalization across generated levels; needs `build-accel-arena` first |
 | `just eval-sim *args` | watch a checkpoint walk random ACCEL levels in the MuJoCo viewer; needs `build-accel-arena` first |
 | `just render-video *args` | mp4 clips of a `brax_ued.py` checkpoint walking generated levels ([docs](docs/ued-accel.md#render-video)) |
