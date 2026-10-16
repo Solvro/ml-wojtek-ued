@@ -3,6 +3,40 @@
 Train with `brax_ued.py --profile deploy`, export with `just export`, run it
 with w01-tek's ROS stack — in the MuJoCo sim first.
 
+## Current robot policy {#current-policy}
+
+- Policy: `experiments/deploy-accel-ft` arm F, seed 1
+  ([report](../experiments/deploy-accel-ft/report.md)).
+  - ACCEL: `--mode accel --score learnability --generator mixed --mutation
+    grow`, `--learning_rate 1e-4`, 300M steps.
+  - Fine-tune of the imported upstream `terrain_blind_v4_4d` 1.5B base
+    (`--init_from`, [warm start](#warm-start)), deploy profile, warp, tiled
+    deploy arena.
+- Export dir: `dft2_deploy_accel_sfl_lr1e-4_seed1_deploy/`
+  - local (gitignored, in the `jgilewicz/accel-ft` worktree):
+    `artifacts/deploy_accel_ft/dft2_deploy_accel_sfl_lr1e-4_seed1_deploy/`
+    (checkpoint `.pkl` + sidecar beside it)
+  - WCSS: `$PDW/artifacts/deploy_accel_ft/`
+- Native deploy eval, d1.0, 3-seed pool, %, 95% CI (bootstrap over seeds x
+  levels; base: levels), difference paired by level:
+
+  | metric | base 1.5B | F | F − base |
+  |---|---|---|---|
+  | cmd success | 41.6 [40.7, 42.5] | 47.9 | +6.3 [+5.7, +6.8] |
+  | success | 32.1 [31.1, 33.1] | 38.8 | +6.7 [+5.9, +7.4] |
+
+  - every seed beats the base; flat −0.7, d0.25 +0.4, d1.0 fall rate −4.9
+    points (guards passed).
+- Contract: `policy_meta.json` equals the base export's (and upstream's)
+  except `run_name` / `checkpoint` — CONSUMED keys, network and runtime
+  unchanged. Export checks: numpy vs brax inference 1.35e-5, robot runtime
+  vs env reference 2.57e-4.
+- Attribution: the DR control at the same lr (arm E, `--mode dr
+  --learning_rate 1e-4`) ties F (47.9 / 38.8). The gain comes from the lower
+  fine-tune lr plus hard training levels, not from ACCEL alone; lr 3e-4
+  (arms A, C) degrades the base.
+- Run it: [Running it](#run).
+
 ## Upstream contract {#contract}
 
 - The robot runs w01-tek's numpy runtime
@@ -144,25 +178,94 @@ just export --checkpoint artifacts/brax_ued/<run>.pkl [--out <dir>]
 - Fine-tuning the 1.5B upstream base (experiments/deploy-accel-ft, 300M
   steps, warp): lr 3e-4 degrades it; `--learning_rate 1e-4 --mode accel
   --score learnability --generator mixed --mutation grow` beats it on
-  d1.0 success (+6.7 points) and command-conditioned success (+6.3); the
-  plain easy-generator ACCEL buffer stays next to flat and does not.
+  d1.0 success (+6.7 points) and command-conditioned success (+6.3), as
+  does DR at lr 1e-4; the plain easy-generator ACCEL buffer stays next to
+  flat and does not ([current policy](#current-policy)).
 
 ## Running it {#run}
 
-w01-tek `ros/` (see its `ros/README.md`); `policy:=` takes a local directory
-holding `policy.npz` + `policy_meta.json`.
+Read from w01-tek `e44c1a9` (read-only reference): `ros/README.md`,
+`ros/deploy.sh`, `ros/docker/compose.yaml`,
+`ros/deploy/rpi/wojtek-robot-local.conf`, the bringup / sim launch files,
+`wojtek_policy/policy_source.py`. `policy:=` takes a local directory holding
+`policy.npz` + `policy_meta.json`, or a Hugging Face `org/name[@rev]`
+answered from the policy store.
 
-1. Sim first, from `./dev.sh` in w01-tek:
-   `ros2 launch wojtek_pc sim.launch.py policy:=<export dir>` — the plant,
-   ros2_control, `real_io_node` and `policy_node` on MuJoCo; the console
-   reads its command box from the same contract.
-2. Robot: `ros2 launch wojtek_bringup robot.launch.py policy:=<dir on the
-   RPi>` (or `ros2 run wojtek_bringup robot`). The launch feeds the
-   contract's `pd` block (kp 40, kd 1.6, max_torque 32) into the servo
-   xacro. The stack comes up disarmed: zero, stand up, arm by hand.
-- The actor observes the IMU (`gyro`, `gravity`): the robot's IMU path must
-  be live. Upstream's `terrain_blind_v4_4d.yaml` notes the CANdle-hat BMI
-  has to be wired into the policy node before this family runs on hardware.
+1. Sim: make the export dir visible to the dev container, which mounts only
+   `ros/policies` (→ `/ros2_ws/policies`, `WOJTEK_POLICY_STORE`):
+
+   ```sh
+   cp -r <export dir> <w01-tek>/ros/policies/dft2_deploy_accel_sfl_lr1e-4_seed1_deploy
+   ```
+
+   - `./deploy.sh` mirrors `ros/policies/` to the RPi's
+     `~/wojtek_ws/policies/` with `--delete` (and skips the sync only when
+     `ros/policies` is absent), so creating it on a fresh clone prunes the
+     robot's store down to what this PC holds; the pin is re-resolved
+     first only when `HF_ORGANIZATION` is set
+2. Sim first, in the container (`./dev.sh` in `ros/`):
+
+   ```sh
+   ros2 launch wojtek_pc sim.launch.py policy:=/ros2_ws/policies/dft2_deploy_accel_sfl_lr1e-4_seed1_deploy
+   ```
+
+   - the plant (MuJoCo), ros2_control, `real_io_node` and `policy_node`; the
+     console reads its command box from the same contract
+   - `./sim.sh policy:=<dir>` from the host does the same (every
+     `name:=value` passes through); `hw:=mock` runs the node graph only
+   - the launch prints `>> policy dft2_deploy_accel_sfl_lr1e-4_seed1 from
+     local:<dir>; servo settings kp=40 kd=1.6 max_torque=32`
+3. Robot: upstream runs the RPi stack only through `wojtek-robot.service`
+   (RT-pinned; "there's no non-RT way to run it" apart from the `--dry-run`
+   bench). The drop-in `deploy.sh --provision` installs
+   (`deploy/rpi/wojtek-robot-local.conf`) launches `robot.launch.py
+   boot_pose:=folded ... policy:=/home/rpi/policy`, and that file documents
+   deploying a local policy by hand:
+
+   ```sh
+   rsync -a <export dir>/ rpi@10.42.0.2:policies/dft2_deploy_accel_sfl_lr1e-4_seed1_deploy/
+   ssh rpi@10.42.0.2 'ln -sfn /home/rpi/policies/dft2_deploy_accel_sfl_lr1e-4_seed1_deploy /home/rpi/policy'
+   ```
+
+   - then, robot lying folded: `ros2 run wojtek_bringup robot` from
+     `./dev.sh` starts the service for the session (`systemctl start`,
+     stopped on Ctrl-C); if the service already runs (boot autostart),
+     `ssh rpi@10.42.0.2 'sudo systemctl restart wojtek-robot.service'`
+     instead — `start` leaves a running stack on the old policy
+   - servo kp / kd / max_torque come from the contract's `pd` block (kp 40,
+     kd 1.6, max_torque 32; `tau_ff` off, so the drive limit stays 32)
+   - `deploy.sh --policy` takes a Hugging Face reference only (it rejects a
+     local directory); it writes `~/wojtek_ws/policy_override`, which only
+     sets the launch default, so the drop-in's explicit `policy:=` wins
+     (read from `policy_source.active_policy`, not stated upstream).
+     `ros2 run wojtek_bringup robot --policy` does not reach the service
+   - `use_imu` stays `true` (default): `policy_node` holds (no targets)
+     while an IMU-observing policy's IMU data is stale; `use_imu:=false` is
+     bench only. Upstream's `terrain_blind_v4_4d.yaml` says the CANdle-hat
+     BMI has to be wired into the policy node; the real xacro now wires an
+     I2C IMU (Adafruit 5543, since 2026-07-17) by default. Confirm
+     `/imu_sensor_broadcaster/imu` publishes before arming
+
+### First robot tests {#first-tests}
+
+- Arming is a person's decision at the robot, never a script's: the stack
+  comes up DISARMED, and arming is when torque reaches the motors.
+  - pose the robot folded before the service starts (`boot_pose:=folded`
+    sets the encoder offsets at start), or re-zero
+  - `ros2 service call /wojtek/zero std_srvs/srv/Trigger`, then
+    `/wojtek/stand_up` (Trigger), then
+    `/wojtek/arm std_srvs/srv/SetBool "{data: true}"`
+  - wind down: disarm, then `/wojtek/lie_down` (Trigger)
+- Bench first, no torque: `ros2 run wojtek_bringup robot --dry-run --policy
+  /home/rpi/policies/dft2_deploy_accel_sfl_lr1e-4_seed1_deploy` launches
+  `robot.launch.py dry_run:=true` on the RPi without RT (drives never
+  enabled, encoder states still stream, the policy runs). Stop the service
+  first (inferred: both open the drives).
+- Reduced torque next: `max_torque:=2` is upstream's example override "for
+  cautious first tests". `ros2 run wojtek_bringup robot` forwards
+  `name:=value` only with `--dry-run` / `--sim`; on the service it has to
+  be added to the drop-in's `ExecStart` (inferred, not documented
+  upstream; `deploy.sh --provision` reinstalls the drop-in).
 
 ## WCSS
 

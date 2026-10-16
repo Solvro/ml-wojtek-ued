@@ -63,7 +63,8 @@ their gaps (`TileLayout`), box "apron" strips around it, plus the
 spec/lookup sidecars — via `terrain.py`'s writers. The spec records the
 layout (`tile_layout`: tiles per side, level grid, gap); `check_arena`
 refuses an arena built for another layout, or a single-level arena from
-before the tiles, with the rebuild command.
+before the tiles, with the rebuild command
+([setup.md](setup.md#tiled-arena-requirements)).
 Two far corner nodes are pinned to `0`/`1`: MuJoCo rescales a loaded hfield
 to span `[0, 1]`, so an all-`0.5` file compiles to `0` and sinks the static
 ground to `-amplitude`. That broke `real_pose_ref` (its standing-height settle
@@ -397,16 +398,18 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   since tasks start together.
 - The arena must match the run's geometry (`hfield.arena.check_arena`:
   `pad_radius`, height scale, level grid, tiles, gap); the error names the
-  `just build-accel-arena arena=<kind> hfield_params...` command for it.
+  `just build-accel-arena arena=<kind> hfield_params...` command for it
+  ([setup.md](setup.md#tiled-arena-requirements)).
 
 ## Throughput {#throughput}
 
 H100, 8192 envs (256 lanes x 32), `scripts/profile_brax_ued.py`; full
 numbers and the old loop's profile in `experiments/tiled-arena/report.md`.
 
-- v10 loop (jax, per-env hfield swap): 12.9k env steps/s, ~9.7k end to
-  end. Physics is 98% of an iteration; the per-env swap itself costs
-  nothing (a shared level on jax is the same 12.9k).
+- v10 loop (jax, the old per-level arena, one `hfield_data` per env):
+  12.9k env steps/s, ~9.7k end to end. Physics is 98% of an iteration;
+  the per-env level itself costs nothing (a shared level on jax is the
+  same 12.9k).
 - Tiled arena on warp: 263k (benchmark) / 257k (deploy) env steps/s; a
   training iteration (2.46M steps, 15 unroll + PPO update pairs) ~10.8 s
   = ~227k steps/s; `evaluate` 17-23 s (jax: 106 s).
@@ -416,7 +419,8 @@ numbers and the old loop's profile in `experiments/tiled-arena/report.md`.
   terrain under warp and stands 7-11 mm higher; compare runs within one
   backend. On jax the tiled arena reproduces v10's final eval inside its
   95% CIs.
-- Whole-device GPU memory: ~16 GB on warp (JAX preallocation off), so
+- Whole-device GPU memory: ~16 GB on warp (JAX preallocation off,
+  [setup.md](setup.md#tiled-arena-requirements)), so
   larger batches fit.
 
 ## Level spaces — `hfield/level_space.py` {#level-spaces}

@@ -175,21 +175,19 @@ training script's Hydra config.
 
 ## Eval script — `scripts/eval.py`
 
-A `pyrallis` CLI over a dataclass (`EvalConfig`, not Hydra — it needs no
-training config, only the run's `meta.json`): `just eval --algo
-{ppo,ppo_dr,accel,accel_top_k} [--run NAME] [--step N] [--artifacts_dir DIR]
-[--envs_num N] [--steps N] [--seed N]`. `algo` is `utils/checkpoint.Algo`, a
-`str` `Enum` — invalid values fail fast with a clear error instead of
-`argparse`'s `choices=`. `pyrallis` also accepts `--config_path
-some.yaml` to load flags from a file instead of/in addition to the CLI.
+A Hydra app over a dataclass (`EvalConfig`, config `eval_config` — it needs no
+training config, only the run's `meta.json`): `just eval
+algo={ppo,ppo_dr,accel,accel_top_k} [run=NAME] [step=N] [artifacts_dir=DIR]
+[envs_num=N] [steps=N] [seed=N]`. `algo` is `utils/checkpoint.Algo`, a
+`str` `Enum` — invalid values fail fast with a clear error.
 
-1. Resolve the run directory (`--run`, else `latest_run_dir`) and load its
+1. Resolve the run directory (`run=`, else `latest_run_dir`) and load its
    `meta.json`.
 2. Rebuild `FunctionalEnv(task=meta.env_task, env_overrides=meta.env_overrides,
    seed=meta.env_seed)` and a template `A2C` from the meta shape fields.
-3. `restore_checkpoint` (model-only, `--step` or latest) and run the same
+3. `restore_checkpoint` (model-only, `step=` or latest) and run the same
    `eval` used during training (deterministic actions, nominal physics —
-   `dr_model`/`hfield_data` are not part of eval regardless of `--algo`).
+   `dr_model`/`hfield_data` are not part of eval regardless of `algo=`).
 4. Print `mean_return`.
 
 It is a skeleton: one metric, no video/rollout dump, no batch comparison
@@ -197,12 +195,11 @@ across runs — extend it here as evaluation needs grow.
 
 ## Levels-generalization eval — `scripts/eval_levels.py`
 
-Same `pyrallis`/`EvalLevelsConfig` CLI shape and run-resolution as
+Same Hydra `EvalLevelsConfig` shape and run-resolution as
 `scripts/eval.py`, but measures generalization to freshly generated
-heightfield levels instead of one fixed course: `--algo
-{ppo,ppo_dr,accel,accel_top_k} [--run NAME] [--step N] [--num_levels N]
-[--episodes_per_level N] [--chunk_size N] [--steps N] [--seed N] [--output
-path.npz]`. Rebuilds the env from `meta.env_overrides` (so the observation
+heightfield levels instead of one fixed course: `just eval-levels
+algo={ppo,ppo_dr,accel,accel_top_k} [run=NAME] [step=N] [num_levels=N]
+[episodes_per_level=N] [chunk_size=N] [steps=N] [seed=N]`. Rebuilds the env from `meta.env_overrides` (so the observation
 shape matches what the checkpoint was trained with — `ppo`/`ppo_dr` don't
 train with `terrain`/`height_scan` obs terms, `accel`/`accel_top_k` do), then
 force-merges `terrain.enable`/`arena=accel` on top regardless of the

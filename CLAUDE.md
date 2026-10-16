@@ -10,7 +10,7 @@ it when the code changes.**
 | Task / area | Read first |
 |---|---|
 | Anything — get oriented | [docs/overview.md](docs/overview.md) |
-| Install, deps/pins, building assets, running | [docs/setup.md](docs/setup.md) |
+| Install, deps/pins, building assets, tiled-arena/warp requirements, running | [docs/setup.md](docs/setup.md) |
 | The env, tasks, terrain, `FunctionalEnv`, the shared tiled arena | [docs/environment.md](docs/environment.md) |
 | PPO model / rollout / loss / checkpoints / logging | [docs/ppo.md](docs/ppo.md) |
 | ACCEL curriculum, heightfield levels, convergence | [docs/ued-accel.md](docs/ued-accel.md) |
@@ -44,7 +44,10 @@ it when the code changes.**
 - **Namespace packages** — no `__init__.py` in research code; imports are
   absolute via `PYTHONPATH=src`.
 - **Generated assets are gitignored** — run `just build` and
-  `just build-accel-arena` before anything that loads the robot / `accel` arena.
+  `just build-accel-arena` (`just build-deploy-arena` for `--profile deploy`)
+  before anything that loads the robot / an arena; warp needs
+  `XLA_PYTHON_CLIENT_PREALLOCATE=false`
+  ([docs/setup.md](docs/setup.md#tiled-arena-requirements)).
 - `just lint` is ruff-only; run `ty check` manually.
 
 ## After changing code

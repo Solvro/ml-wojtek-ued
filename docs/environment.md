@@ -218,7 +218,7 @@ and the benchmark profile use the baseline five-field form via
 `randomization_fn` and applies it through mujoco_playground's
 `BraxDomainRandomizationVmapWrapper`, but no script currently wires
 `randomize.py` through that path — `FunctionalEnv` uses its own swap
-mechanism instead (below), consistent with the hfield swap it already does.
+mechanism instead (below), consistent with the `hfield_data` `tree_replace` it already does.
 
 ## FunctionalEnv — the training bridge
 
@@ -300,12 +300,10 @@ Two things must follow the swap, or the level only exists on paper:
   backend (flat/pit tiles; `--compare` = jax vs warp; `--bench_envs N`
   times it).
 - **Warp memory** — warp allocates its collision scratch (EPA buffers,
-  ~0.3 GB each at 8192 envs) outside JAX's pool. Upstream measured a
-  mid-run OOM with JAX preallocating and calls turning it off mandatory on
-  terrain; `FunctionalEnv` refuses warp unless
-  `XLA_PYTHON_CLIENT_PREALLOCATE=false`, and the justfile, `slurm.sh` and
-  `slurm/*.sbatch` export it. Upstream's presets spell it
-  `XLA_PYTHON_CLIENT_PREALLOC=false`, which is not a variable JAX reads.
+  ~0.3 GB each at 8192 envs) outside JAX's pool; upstream measured a
+  mid-run OOM with JAX preallocating. `FunctionalEnv` refuses warp unless
+  `XLA_PYTHON_CLIENT_PREALLOCATE=false`
+  ([setup.md](setup.md#tiled-arena-requirements)).
 - **Warp CUDA graphs** — mjx's warp FFI (`GraphMode.WARP`) captures one
   CUDA graph per set of buffer addresses, each owning its own collision
   scratch, and caches 32 per callable. Upstream's single jitted `ppo.train`
