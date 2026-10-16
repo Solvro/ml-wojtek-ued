@@ -43,7 +43,8 @@ src/
     logging.py       wandb or a jsonl fallback Logger
   hfield/            heightfield levels for ACCEL  (see ued-accel.md)
     manager.py       HFieldManager: generate / mutate / upsample a level
-    arena.py         write the static "accel" MJCF arena assets
+    arena.py         write the static tiled "accel" MJCF arena assets
+    tiles.py         TileLayout: one level per tile of the shared arena
     playground.py    offscreen render demo of generated levels
   ued/               the ACCEL algorithm  (see ued-accel.md)
     types.py         RolloutFn, Curator, PPOTrainer
@@ -94,8 +95,10 @@ selected) checkpoint — no Hydra config needed at eval time. Details in
 
 ## Glossary
 
-- **Level / genome** — a `coarse_n × coarse_n` array in `[0,1]`; upsampled to
-  `hfield_data`, the terrain the robot walks on.
+- **Level / genome** — a `coarse_n × coarse_n` array (or 9 terrain
+  parameters, `param` space) in `[0,1]`; rendered to a heightfield patch and
+  written into its tile of the shared arena's `hfield_data`, the terrain the
+  robot walks on.
 - **Regret** — positive value loss (Eq. 5): how much the critic under-estimated
   return, i.e. how "surprisingly hard" a level was. The curriculum's score.
 - **Curator** — bundles the level buffer + generator + replay/regret thresholds.

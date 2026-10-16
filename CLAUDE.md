@@ -11,7 +11,7 @@ it when the code changes.**
 |---|---|
 | Anything — get oriented | [docs/overview.md](docs/overview.md) |
 | Install, deps/pins, building assets, running | [docs/setup.md](docs/setup.md) |
-| The env, tasks, terrain, `FunctionalEnv`, hfield swapping | [docs/environment.md](docs/environment.md) |
+| The env, tasks, terrain, `FunctionalEnv`, the shared tiled arena | [docs/environment.md](docs/environment.md) |
 | PPO model / rollout / loss / checkpoints / logging | [docs/ppo.md](docs/ppo.md) |
 | ACCEL curriculum, heightfield levels, convergence | [docs/ued-accel.md](docs/ued-accel.md) |
 | Config fields, Hydra overrides | [docs/configuration.md](docs/configuration.md) |

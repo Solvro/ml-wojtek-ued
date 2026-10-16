@@ -13,11 +13,12 @@ def merge_overrides(*overrides: dict[str, Any]) -> dict[str, Any]:
 
 
 def accel_arena_overrides(pad_radius: float, arena: str = "accel") -> dict[str, Any]:
-    # warp collides every env with the first env's hfield_data, so per-env
-    # levels need the jax backend (docs/environment.md#hfield-mutability)
+    # every env shares the tiled arena's hfield_data, so warp is valid (auto:
+    # warp on a GPU); its contact/constraint buffers are deploy's (upstream
+    # terrain_blind_v4_4d), sized for terrain
     return {
         "terrain": {"enable": True, "arena": arena, "pad_radius": pad_radius},
-        "sim": {"backend": "jax"},
+        "sim": {"naconmax_per_env": 116, "njmax": 1024},
     }
 
 

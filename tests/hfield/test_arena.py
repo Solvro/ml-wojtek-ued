@@ -5,16 +5,16 @@ from pathlib import Path
 import pytest
 
 from config.hfield_config import HFieldConfig
-from hfield.arena import build_accel_arena, check_arena
+from hfield.arena import arena_spec, build_accel_arena, check_arena
+from hfield.tiles import TileLayout
 from scripts.brax_ued import hfield_config, parse_args
 from wojtek_env import paths
-from wojtek_env.terrain import terrain
 
 RUN = HFieldConfig(amplitude=0.3, coarse_n=13, pad_radius=0.55, pad_taper=0.2)
 
 
 def write_spec(path: Path, config: HFieldConfig) -> Path:
-    spec = terrain.spec_to_dict(build_accel_arena(config).spec)
+    spec = arena_spec(config, build_accel_arena(config))
     path.write_text(json.dumps(spec))
     return path
 
@@ -66,3 +66,27 @@ def test_deploy_arena_files_do_not_overwrite_benchmark() -> None:
     deploy = paths.terrain_paths("accel_deploy")
     benchmark = paths.terrain_paths("accel")
     assert set(deploy.values()).isdisjoint(benchmark.values())
+
+
+def test_check_arena_rejects_single_level_arena_with_rebuild(tmp_path: Path) -> None:
+    spec = arena_spec(RUN, build_accel_arena(RUN))
+    del spec["tile_layout"]
+    path = tmp_path / "spec.json"
+    path.write_text(json.dumps(spec))
+    with pytest.raises(ValueError, match="hfield_params.tiles=16"):
+        check_arena(path, RUN, "accel")
+
+
+def test_check_arena_rejects_other_tile_count(tmp_path: Path) -> None:
+    spec = write_spec(tmp_path / "spec.json", dataclasses.replace(RUN, tiles=8))
+    with pytest.raises(ValueError, match="'tiles': 8"):
+        check_arena(spec, RUN, "accel")
+
+
+def test_static_arena_spans_every_tile_and_its_gap() -> None:
+    arena = build_accel_arena(RUN)
+    layout = TileLayout(RUN)
+    assert arena.hfield_data.shape == (layout.nodes, layout.nodes)
+    assert arena.spec.x_max == pytest.approx(layout.half)
+    # pinned corners keep MuJoCo's [0, 1] rescale the identity
+    assert arena.hfield_data.min() == 0.0 and arena.hfield_data.max() == 1.0

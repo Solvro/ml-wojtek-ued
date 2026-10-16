@@ -4,11 +4,13 @@ brax's own `ppo.train` fixes each env's model for the whole run, so levels
 cannot change per env over training. This loop keeps brax's PPO pieces
 (networks, running observation normalizer, `compute_ppo_loss`, its
 mujoco_playground locomotion hyperparameters: 20-step unrolls, 4 epochs x
-32 minibatches, discount 0.97) and drives `FunctionalEnv`, which takes a
-per-env `hfield_data` and physics DR draw at every step.
+32 minibatches, discount 0.97) and drives `FunctionalEnv`, which takes the
+shared tiled arena's `hfield_data` and a per-env physics DR draw at every
+step.
 
-One outer iteration = `num_lanes` levels x `envs_per_lane` envs, reset onto
-their level and stepped for `level_steps` (in `unroll_length` chunks, a PPO
+One outer iteration = `num_lanes` levels x `envs_per_lane` envs: level i is
+written into tile i of the arena (`hfield.tiles`), its lane's envs reset onto
+that tile and step for `level_steps` (in `unroll_length` chunks, a PPO
 update after each chunk when training). Per-lane regret = mean positive GAE
 advantage (positive value loss) over the iteration.
 
@@ -69,6 +71,7 @@ from hfield.level_space import (
     make_level_space,
     mean_abs_height,
 )
+from hfield.tiles import TileLayout
 from modules.generator import LevelGenerator
 from robots.go1 import GO1_SCALE
 from utils.env import FunctionalEnv, ObsSize
@@ -142,6 +145,7 @@ def hfield_config(args: argparse.Namespace) -> HFieldConfig:
         pad_taper=args.pad_taper * s,
         n_edits=args.n_edits,
         edit_scale=args.edit_scale,
+        reach=HFieldConfig().reach * s,
     )
 
 
@@ -440,7 +444,8 @@ def make_unroll(env: FunctionalEnv, make_policy: Any, dr_in_axes: Any):
         )
         return state, reward, done, info["truncation"]
 
-    v_step = jax.vmap(step_one, in_axes=(0, 0, 0, dr_in_axes))
+    # the arena's hfield_data is shared by every env (warp needs it unbatched)
+    v_step = jax.vmap(step_one, in_axes=(0, 0, None, dr_in_axes))
 
     @functools.partial(jax.jit, static_argnames=("deterministic", "length"))
     def unroll(inference, state, key, hfield, dr_model, deterministic, length):
@@ -553,14 +558,18 @@ def run_levels(
     student = student or ctx["student"]
     key = ctx["next_key"]()
     rendered = ctx["space"].render(levels)
-    hfield = jnp.repeat(jnp.asarray(rendered), args.envs_per_lane, axis=0)
-    dr_model, _ = env.sample_dr(ctx["next_key"](), args.num_lanes * args.envs_per_lane)
-    reset_keys = jax.random.split(key, hfield.shape[0])
-    _, state = ctx["reset"](reset_keys, hfield, dr_model)
+    layout: TileLayout = ctx["layout"]
+    hfield = ctx["assemble"](jnp.asarray(rendered))
+    tile_xy = layout.tile_xy(args.num_lanes, args.envs_per_lane)
+    n = args.num_lanes * args.envs_per_lane
+    dr_model, _ = env.sample_dr(ctx["next_key"](), n)
+    reset_keys = jax.random.split(key, n)
+    _, state = ctx["reset"](reset_keys, hfield, dr_model, tile_xy)
     start_xy = state.data.qpos[:, :2]
-    regret = jnp.zeros(hfield.shape[0])
-    episode_return = jnp.zeros(hfield.shape[0])
-    fell_any = jnp.zeros(hfield.shape[0])
+    regret = jnp.zeros(n)
+    episode_return = jnp.zeros(n)
+    fell_any = jnp.zeros(n)
+    leaked = jnp.zeros(n, bool)
     logs = []
     for _ in range(args.level_steps // PPO["unroll_length"]):
         state, data = ctx["unroll"](
@@ -583,6 +592,9 @@ def run_levels(
         regret = regret + student.regret(student.params, student.normalizer, data)
         episode_return = episode_return + data.reward.sum(axis=1)
         fell_any = jnp.maximum(fell_any, data.extras["log"]["fell"].max(axis=1))
+        xy = data.extras["log"]["xy"]
+        reads = layout.leaked(xy, tile_xy[:, None], env.travel.sensing)
+        leaked = leaked | reads.any(axis=1)
         logs.append(jax.tree.map(jnp.mean, data.extras["log"]))
     lane_regret = np.asarray(regret.reshape(args.num_lanes, -1).mean(axis=1))
     lane_returns = np.asarray(episode_return.reshape(args.num_lanes, -1))
@@ -606,6 +618,8 @@ def run_levels(
         "forward_vel": log["forward_vel"],
         **{f"reward_term/{k}": v for k, v in log["reward_terms"].items()},
         "travel": float(travel.mean()),
+        # envs whose feet or height scan reached another lane's level
+        "tile_leak_frac": float(leaked.mean()),
         "lane_roughness": mean_abs_height(ctx["space"].config, rendered),
         "levels": levels,
     }
@@ -613,33 +627,51 @@ def run_levels(
 
 def evaluate(ctx: dict[str, Any], rng: np.random.Generator) -> dict[str, float]:
     args, out = ctx["args"], {}
+    per_chunk = min(args.eval_levels, ctx["layout"].n_tiles)
     for difficulty in EVAL_DIFFICULTIES:
         levels = ctx["space"].scaled(rng, args.eval_levels, difficulty)
-        hfield = jnp.repeat(jnp.asarray(ctx["space"].render(levels)), 2, axis=0)
-        keys = jax.random.split(ctx["next_key"](), hfield.shape[0])
-        _, state = ctx["eval_reset"](keys, hfield)
-        start_xy = state.data.qpos[:, :2]
-        state, data = ctx["eval_unroll"](
-            ctx["student"].inference_params(),
-            state,
-            ctx["next_key"](),
-            hfield,
-            None,
-            deterministic=True,
-            length=args.level_steps,
-        )
-        log = data.extras["log"]
-        fell = np.asarray(log["fell"].max(axis=1))
-        travel = np.asarray(jnp.linalg.norm(log["xy"][:, -1] - start_xy, axis=-1))
+        rendered = jnp.asarray(ctx["space"].render(levels))
+        chunks = [
+            eval_chunk(ctx, rendered[start : start + per_chunk])
+            for start in range(0, args.eval_levels, per_chunk)
+        ]
+        fell, travel, forward_vel, cmd_vx = (np.concatenate(x) for x in zip(*chunks))
         tag = f"eval/d{difficulty}"
         out[f"{tag}/success_rate"] = float(
             ((fell == 0) & (travel >= min_travel(args.robot, args.min_travel))).mean()
         )
         out[f"{tag}/fall_rate"] = float(fell.mean())
         out[f"{tag}/mean_travel"] = float(travel.mean())
-        out[f"{tag}/forward_vel"] = float(log["forward_vel"].mean())
-        out[f"{tag}/cmd_vx"] = float(log["cmd_vx"].mean())
+        out[f"{tag}/forward_vel"] = float(forward_vel.mean())
+        out[f"{tag}/cmd_vx"] = float(cmd_vx.mean())
     return out
+
+
+def eval_chunk(ctx: dict[str, Any], rendered: jax.Array) -> tuple[np.ndarray, ...]:
+    """Two deterministic episodes per level, levels on the arena's tiles:
+    per env fell, travel, mean forward and commanded velocity."""
+    hfield = ctx["assemble"](rendered)
+    tile_xy = ctx["layout"].tile_xy(rendered.shape[0], 2)
+    keys = jax.random.split(ctx["next_key"](), tile_xy.shape[0])
+    _, state = ctx["eval_reset"](keys, hfield, tile_xy)
+    start_xy = state.data.qpos[:, :2]
+    state, data = ctx["eval_unroll"](
+        ctx["student"].inference_params(),
+        state,
+        ctx["next_key"](),
+        hfield,
+        None,
+        deterministic=True,
+        length=ctx["args"].level_steps,
+    )
+    log = data.extras["log"]
+    travel = jnp.linalg.norm(log["xy"][:, -1] - start_xy, axis=-1)
+    return (
+        np.asarray(log["fell"].max(axis=1)),
+        np.asarray(travel),
+        np.asarray(log["forward_vel"].mean(axis=1)),
+        np.asarray(log["cmd_vx"].mean(axis=1)),
+    )
 
 
 def level_composition(space: LevelSpace, levels: np.ndarray) -> dict[str, float]:
@@ -804,9 +836,17 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         edit_scale=args.edit_scale,
         robot_scale=ROBOT_SCALE[args.robot],
     )
+    layout = TileLayout(HFieldConfig(**spec["hfield"]))
+    if args.num_lanes > layout.n_tiles:
+        raise ValueError(
+            f"--num_lanes {args.num_lanes} exceeds the arena's {layout.n_tiles} "
+            "tiles, one level each; rebuild it with a larger hfield_params.tiles"
+        )
     num_envs = args.num_lanes * args.envs_per_lane
     env = make_env(spec, num_envs, train=True)
-    eval_env = make_env(spec, 2 * args.eval_levels, train=False)
+    reach = env.travel.reach(args.level_steps, env.travel.sensing)
+    layout.check_reach(reach, f"--level_steps {args.level_steps}")
+    eval_env = make_env(spec, 2 * min(args.eval_levels, layout.n_tiles), train=False)
     if args.checkpoint_dir:
         checkpoint = Path(args.checkpoint_dir) / f"{args.name}.pkl"
         path = write_sidecar(checkpoint, spec, env.observation_size, env.action_size)
@@ -834,8 +874,10 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     )
     adversary = Adversary(args, space.gen_shape, next_key()) if paired else None
     _, dr_in_axes = env.sample_dr(jax.random.key(0), num_envs)
-    reset = jax.jit(jax.vmap(env.reset, in_axes=(0, 0, dr_in_axes)))
-    eval_reset = jax.jit(jax.vmap(lambda k, h: eval_env.reset(k, h)))
+    reset = jax.jit(jax.vmap(env.reset, in_axes=(0, None, dr_in_axes, 0)))
+    eval_reset = jax.jit(
+        jax.vmap(lambda k, h, t: eval_env.reset(k, h, tile_xy=t), in_axes=(0, None, 0))
+    )
     return {
         "args": args,
         "env": env,
@@ -843,6 +885,8 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "antagonist": antagonist,
         "adversary": adversary,
         "space": space,
+        "layout": layout,
+        "assemble": jax.jit(layout.assemble),
         "rng": np.random.default_rng(args.seed),
         "next_key": next_key,
         "reset": reset,

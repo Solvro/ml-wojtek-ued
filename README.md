@@ -14,7 +14,7 @@ Full docs live in [`docs/`](docs/):
 |---|---|
 | [overview.md](docs/overview.md) | architecture, repo map, end-to-end data flow, glossary |
 | [setup.md](docs/setup.md) | install, dependency pins, building assets, running |
-| [environment.md](docs/environment.md) | `wojtek_env` tasks/terrain/gym, `FunctionalEnv`, hfield swapping |
+| [environment.md](docs/environment.md) | `wojtek_env` tasks/terrain/gym, `FunctionalEnv`, the shared tiled arena |
 | [ppo.md](docs/ppo.md) | A2C model, rollout, GAE, PPO loss/step, checkpoints, logging |
 | [ued-accel.md](docs/ued-accel.md) | heightfield levels + the ACCEL curriculum + convergence |
 | [configuration.md](docs/configuration.md) | every Hydra config field + override examples |

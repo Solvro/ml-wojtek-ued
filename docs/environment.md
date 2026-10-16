@@ -226,65 +226,132 @@ wraps `registry.make_env` + brax `EpisodeWrapper` and exposes pure `reset`/`step
 usable under `jit`/`vmap`.
 
 - `go1_hfield=HFieldConfig(...)` builds Playground's Go1 on that arena
-  (`robots/go1.py`) instead of Wojtek; hfield swap and DR work the same, but
-  Go1 reads terrain heights straight from `hfield_data` (no lookup).
+  (`robots/go1.py`) instead of Wojtek; the arena and DR work the same, but
+  Go1 reads terrain heights straight from `hfield_data` (no lookup) and
+  spawns on `Go1Terrain.spawn_xy`.
 
 - **Split obs.** `observation_size` / every `Obs` carries `actor` (`state`) and
   `critic` (`privileged_state`) separately — asymmetric actor-critic.
 - **Auto-reset semantics.** `step` freezes `data`/`obs` to the episode's first
   values on `done` (via `first_data`/`first_obs` stashed at reset), so a
   vmapped batch stays aligned.
-- **Heightfield swap.** Both `reset` and `step` take optional `hfield_data`.
-  `_swapped_model` temporarily does
-  `base._mjx_model = model.tree_replace({"hfield_data": hfield_data})` around the
-  call, then restores it. This is the mechanism ACCEL uses to run a different
-  level per rollout **without recompiling MJX** (see below).
+- **Shared tiled arena.** `reset(key, hfield_data, dr_model, tile_xy)` and
+  `step(..., hfield_data, dr_model)` take the arena's `hfield_data`
+  (`hfield.tiles.TileLayout.assemble`: every level of the iteration on its
+  own tile) — **one array for every env**, vmapped with `in_axes=None`.
+  `tile_xy` is the env's tile centre, where it spawns; `reset` raises if an
+  arena comes without it. `_swapped_model` temporarily does
+  `base._mjx_model = model.tree_replace({"hfield_data": hfield_data})` around
+  the call, then restores it, so a new iteration's levels need no MJX
+  recompilation (see below). Details: [tiled arena](#tiled-arena).
 - **Domain randomization swap.** `reset`/`step` also take an optional
   `dr_model` — a full `mjx.Model` (from `FunctionalEnv.sample_dr`, above) that
   `_swapped_model` installs as `_mjx_model` outright instead of
   `tree_replace`-ing one field. The two compose: passing both swaps
-  `dr_model` in first, then `tree_replace`s `hfield_data` on top. No script
-  currently needs both at once (`scripts/ppo_dr.py` has no hfield curriculum,
-  `scripts/accel*.py` build `FunctionalEnv` without `domain_randomize=True`).
+  `dr_model` in first, then `tree_replace`s `hfield_data` on top
+  (`brax_ued.py`, `ppo_dr_terrain.py`).
 
-## Why hfield swapping is free {#hfield-mutability}
+## Why the arena swap is free {#hfield-mutability}
 
 `mjx.Model` registers a field as a dynamic pytree leaf iff it is a `jax.Array`.
 
-- `hfield_data` → `jax.Array` → real dynamic leaf → swappable at runtime and
-  **vmappable per env with no MJX recompilation**.
-- `hfield_size` (radii, elevation, base) → plain `numpy.ndarray` → static
-  metadata, baked in at compile time; changing it needs a new model.
+- `hfield_data` → `jax.Array` → real dynamic leaf → swappable at runtime with
+  no MJX recompilation.
+- `hfield_size` (radii, elevation, base) and `hfield_nrow`/`ncol` → plain
+  `numpy.ndarray` / int → static, baked in at compile time; changing them
+  needs a new model.
 
-Consequence: fix the grid resolution and elevation envelope once (in
-`HFieldConfig`), and the heightfield *values* become a cheap, JAX-native,
-batchable "level genome" — which is what makes ACCEL practical at RL scale.
+Consequence: fix the arena geometry once (`HFieldConfig`: level grid,
+elevation envelope, tile count, gap), and the heightfield *values* become a
+cheap, JAX-native "level genome" — which is what makes ACCEL practical at RL
+scale.
 
 Two things must follow the swap, or the level only exists on paper:
 
 - **Terrain lookup** — height scan, base height, foot contact/clearance and
   the base-contact/min-height falls read `Arena.lookup`, not `hfield_data`.
-  The accel arena's lookup is static zeros, so `FunctionalEnv._swapped_model`
+  The accel arena's static lookup is flat, so `FunctionalEnv._swapped_model`
   also swaps `base._terrain.lookup` for `base_z + hfield_data * elevation`
-  (`HFieldGeometry`, `utils/env.py`). Requires an arena whose lookup is the
-  single heightfield's grid (the `accel` arena); otherwise it fails fast.
-- **Warp physics** — MJWarp's collision kernel indexes `hfield_data` without a
-  world id, and `mjx` flattens a vmapped `(B, N)` `hfield_data` to `(B*N,)`,
-  so on `sim.backend=warp` every env in a batch collides with the **first**
-  env's heightfield. The `jax` backend handles per-env `hfield_data`
-  correctly. Measured on an H100 (2026-10-07, job 6051735): warp
-  29.6k env-steps/s, jax 13.3k (4096 envs, random levels), and warp also
-  overflowed `njmax`/`naconmax` on random terrain, dropping constraints.
-  So `utils.env_overrides.accel_arena_overrides` pins `sim.backend=jax` for
-  every accel-arena script, and `FunctionalEnv` raises if an `hfield_data`
-  swap reaches a warp env. `src/scripts/check_hfield_batch.py --backend jax`
-  re-checks it (flat vs pit levels; `--bench_envs N` times throughput).
+  (`HFieldGeometry`, `utils/env.py`) and points every spawn-table entry
+  (`origin_xy`) at the env's `tile_xy`. Requires an arena whose lookup is the
+  single heightfield's grid (the `accel` arenas); otherwise it fails fast.
+- **Warp physics** — MJWarp's collision kernel indexes `hfield_data` without
+  a world id, and `mjx` flattens a vmapped `(B, N)` `hfield_data` to
+  `(B*N,)`, so a per-env (batched) heightfield on `sim.backend=warp` makes
+  every env collide with the **first** env's level. The tiled arena avoids
+  it by construction: `hfield_data` is unbatched, so warp is valid and
+  `accel_arena_overrides` leaves `sim.backend` at `auto` (warp on a GPU, jax
+  on CPU) with upstream's terrain buffers (`naconmax_per_env` 116, `njmax`
+  1024). Never vmap `hfield_data` with `in_axes=0`: nothing can detect it
+  inside the vmap. `src/scripts/check_hfield_batch.py` checks it per
+  backend (flat/pit tiles; `--compare` = jax vs warp; `--bench_envs N`
+  times it).
+- **Warp memory** — warp allocates its collision scratch (EPA buffers,
+  ~0.3 GB each at 8192 envs) outside JAX's pool. Upstream measured a
+  mid-run OOM with JAX preallocating and calls turning it off mandatory on
+  terrain; `FunctionalEnv` refuses warp unless
+  `XLA_PYTHON_CLIENT_PREALLOCATE=false`, and the justfile, `slurm.sh` and
+  `slurm/*.sbatch` export it. Upstream's presets spell it
+  `XLA_PYTHON_CLIENT_PREALLOC=false`, which is not a variable JAX reads.
+- **Warp CUDA graphs** — mjx's warp FFI (`GraphMode.WARP`) captures one
+  CUDA graph per set of buffer addresses, each owning its own collision
+  scratch, and caches 32 per callable. Upstream's single jitted `ppo.train`
+  step reuses its buffers; brax_ued's separate jitted reset / unroll / eval
+  calls pass new ones every call, and the first two sanity runs died with
+  a CUDA OOM at the third iteration, with JAX preallocating (job 6109872)
+  and without (6110159, 15 of 80 GB in use). `FunctionalEnv` caps the
+  cache at `WARP_GRAPH_CACHE` = 4 (`configure_warp`) when it builds a warp
+  env; with both settings the run completed (job 6110213, ~16 GB).
+
+## Tiled arena {#tiled-arena}
+
+`hfield/tiles.py` `TileLayout(HFieldConfig)`; the `accel` / `accel_deploy`
+assets are built with it (`hfield/arena.py`).
+
+- `tiles x tiles` square cells (`HFieldConfig.tiles`, default 16 = 256
+  tiles), row-major from `(-half, -half)`. Tile i holds level i, its
+  `grid_size x grid_size` patch centred in the cell; spawns at the centre,
+  on the level's flat pad (`pad_radius`, ± `pad_jitter` 0.15 m).
+- Between neighbouring patches: a flat `gap` (the neutral plane, height 0),
+  `reach - patch_radius` rounded up to an even number of cells, at least 2.
+  `reach` (default 10 m) bounds how far from its tile centre a robot reads
+  terrain within one level, so it cannot read a neighbour's level. Budget
+  (`utils.env.TravelBounds`): spawn jitter + `steps x ctrl_dt x` max command
+  speed + sensing (feet 0.35 m, or the height scan's far corner 1.48 m when
+  any obs reads it; the critic does). Deploy, 300 steps: 0.15 + 6 x 1.30
+  (vx 1.2, vy 0.5) + 1.48 = 9.43 m; benchmark (fast walk 1.2 m/s): 8.93 m.
+  Benchmark: gap 7 m, 4161² nodes (208 m, 69 MB); deploy: gap 4 m, 5121²
+  nodes (256 m, 105 MB); Go1: `reach` x 2.5, gap 17.5 m.
+- `TileLayout.check_reach`: every script that puts several levels on the
+  arena (`brax_ued`, `eval_brax`, `eval_sim2sim`, `eval_levels`,
+  `accel_top_k`, `ppo_dr_terrain`) fails at startup when its steps per
+  level exceed the budget; training counts the critic's scan, eval only the
+  deterministic policy's obs and feet. 1000-step levels need ~28 m: not
+  supported (`eval_sim` runs one level, neighbours flat).
+- `TileLayout.leaked(xy, tile_xy, sensing)`: base past `patch_radius + gap
+  - sensing` (Chebyshev) from the own centre = reads another tile.
+  `brax_ued.py` logs `tile_leak_frac` (envs that got there during the
+  iteration, with the critic's sensing).
+- vs the old per-level arena: inside the patch identical; past the patch
+  edge the robot meets the flat gap where it met the flat apron before. The
+  lookup there now reads that flat ground (the old lookup clamped to the
+  patch edge's heights, which the physics did not have).
+- One model update per iteration: `assemble` (jitted, on device) writes the
+  iteration's rendered levels into the arena; unused tiles stay flat.
+- Float32 positions differ per tile, which perturbs a standing robot
+  slightly (chaotic spawn settle): ~0.5 mm in the 2x2-tile test arena
+  (`tests/utils/test_env.py`), far below a level's features.
+- CPU rendering (`render_video.py`, `paper_terrains.py`, `eval_sim.py`)
+  uses `hfield.arena.single_tile_spec`: the scene cut to one tile with the
+  level at the origin; the renderer meshes the whole hfield, which for the
+  full arena is millions of cells.
 
 ## Assets {#assets}
 
 `wojtek_env/paths.py` centralises repo-relative paths. Generated arena file sets
 (`terrain_paths(kind)`) are `scene` XML, `hfield` binary, `spec` JSON, `lookup`
-NPZ, one set per kind in `TERRAIN_KINDS = (train, eval, eval_deep, test, accel)`.
+NPZ, one set per kind in `TERRAIN_KINDS = (train, eval, eval_deep, test, accel,
+accel_deploy)`; `tests/utils/test_env.py` writes a small tiled arena as `test`.
 
 They **must** live next to the robot XML: the scene includes the robot by
 relative path and MuJoCo resolves `<hfield file=>` against the robot's mesh
