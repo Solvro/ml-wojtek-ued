@@ -95,7 +95,7 @@ def test_import_round_trips_through_export(tmp_path: Path) -> None:
     _, params = load_run(out)
     upstream = ppo_checkpoint.load(str(fake_upstream(tmp_path / "again")))
     for ours, theirs in zip(
-        jax.tree.leaves(params[1:]), jax.tree.leaves(upstream[1:]), strict=True
+        jax.tree.leaves(params), jax.tree.leaves(upstream), strict=True
     ):
         np.testing.assert_array_equal(ours, theirs)
     meta = export_policy.export(out, tmp_path / "deploy")
