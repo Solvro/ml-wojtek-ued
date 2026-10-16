@@ -65,3 +65,12 @@ def test_1000_step_levels_are_refused() -> None:
 def test_disabled_modes_do_not_count() -> None:
     command: Any = registry.TASKS["joystick"][1]().command
     assert max_command_speed(command) == pytest.approx(math.hypot(0.6, 0.4))
+
+
+def test_feature_spawns_count_the_whole_patch() -> None:
+    config = registry.TASKS["joystick"][1]()
+    config.terrain.spawn_mode = "feature"
+    base = SimpleNamespace(
+        _config=config, dt=config.ctrl_dt, _terrain=SimpleNamespace(tile_size=6.0)
+    )
+    assert travel_bounds(base).jitter == pytest.approx(3.0 - SPAWN_EDGE_MARGIN)

@@ -107,8 +107,12 @@ def travel_bounds(base: Any) -> TravelBounds:
     hs = c.height_scan
     scan = scan_reach(hs.x_range, hs.y_range) if hs.enable else 0.0
     actor_scan = any(k.startswith("height_scan") for k in c.obs.state)
+    jitter = c.terrain.pad_jitter
+    if c.terrain.spawn_mode != "pad":
+        # feature spawns land anywhere inside the patch
+        jitter = base._terrain.tile_size / 2 - SPAWN_EDGE_MARGIN
     return TravelBounds(
-        jitter=float(c.terrain.pad_jitter),
+        jitter=float(jitter),
         speed=max_command_speed(c.command),
         sensing=max(SPAWN_EDGE_MARGIN, scan),
         actor_sensing=max(SPAWN_EDGE_MARGIN, scan if actor_scan else 0.0),
