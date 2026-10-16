@@ -120,6 +120,10 @@ def travel_bounds(base: Any) -> TravelBounds:
     )
 
 
+# m/s or rad/s: random actions on full-difficulty levels peak at ~75 (joints),
+# a blowing-up env passes 1e3-1e7 before it turns nan
+QVEL_DIVERGED = 200.0
+
 # CUDA graphs mjx's warp FFI keeps per callable (its default: 32)
 WARP_GRAPH_CACHE = 4
 
@@ -266,7 +270,7 @@ class FunctionalEnv:
             state: Any = self._env.reset(key)
         state.info["first_data"] = state.data
         state.info["first_obs"] = state.obs
-        state.info["nonfinite"] = jnp.zeros_like(state.done)
+        state.info["diverged"] = jnp.zeros_like(state.done)
         return self._obs(state), state
 
     def step(
@@ -283,7 +287,7 @@ class FunctionalEnv:
         state = state.replace(done=jnp.zeros_like(state.done))
         with self._swapped_model(hfield_data, dr_model):
             state = cast(Any, self._env.step(state, action))
-        state = self._end_nonfinite(state)
+        state = self._end_diverged(state)
 
         done = state.done
 
@@ -306,19 +310,24 @@ class FunctionalEnv:
         return self._obs(state), state, state.reward, state.done, state.info
 
     @staticmethod
-    def _end_nonfinite(state: Any) -> Any:
-        # MJX can diverge (nan qacc) on one env; its nan obs would reach the
-        # running obs normalizer and poison every env's policy
-        # (deploy_ws_accel_seed2), so a non-finite step ends the episode
+    def _end_diverged(state: Any) -> Any:
+        # MJX diverges now and then on one env (velocities blow up, then nan).
+        # Those obs reach brax's running obs normalizer, whose 1.5e9-step
+        # count never washes them out: one env's blow-up multiplied the
+        # joint-velocity stds 100-640000x and the policy collapsed
+        # (deploy-accel-ft); a nan one turned every env nan
+        # (deploy_ws_accel_seed2). Such a step ends the episode instead.
         done = state.done
 
-        def finite(x: jax.Array) -> jax.Array:
-            return jnp.isfinite(x).reshape(*done.shape, -1).all(axis=-1)
+        def per_env(ok: jax.Array) -> jax.Array:
+            return ok.reshape(*done.shape, -1).all(axis=-1)
 
         leaves = [state.data.qpos, state.data.qvel, state.reward]
         leaves += jax.tree.leaves(state.obs)
-        bad = ~jnp.all(jnp.stack([finite(x) for x in leaves]), axis=0)
-        state.info["nonfinite"] = bad.astype(done.dtype)
+        finite = jnp.all(jnp.stack([per_env(jnp.isfinite(x)) for x in leaves]), axis=0)
+        bounded = per_env(jnp.abs(state.data.qvel) <= QVEL_DIVERGED)
+        bad = ~(finite & bounded)
+        state.info["diverged"] = bad.astype(done.dtype)
         metrics = {
             k: jnp.where(bad, 0.0, v) if v.shape == done.shape else v
             for k, v in state.metrics.items()

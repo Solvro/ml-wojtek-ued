@@ -4,14 +4,14 @@ question = "Does an ACCEL fine-tune of the upstream 1.5B terrain_blind_v4_4d pol
 envs = ["deploy"]
 conditions = ["accel", "accel_lr1e-4", "dr"]
 seeds = [0, 1, 2]
-total_steps = 1_000_000_000
+total_steps = 300_000_000
 
 [wandb]
 entity = "dominikgalus9-wroc-aw-university-of-science-and-technology"
 project = "wojtyla"
 # added through the wandb API once the runs exist
 tag = "deploy-accel-ft"
-run_name = '^dft_(?P<env>deploy)_(?P<condition>accel|accel_lr1e-4|dr)_seed(?P<seed>\d+)$'
+run_name = '^dft2_(?P<env>deploy)_(?P<condition>accel|accel_lr1e-4|dr)_seed(?P<seed>\d+)$'
 
 [metric]
 keys = ["eval/d1.0/cmd_success_rate"]
@@ -47,12 +47,28 @@ key = "eval/d1.0/fall_rate"
 label = "fall rate, d=1.0 (guard)"
 
 [[secondary]]
-key = "nonfinite_per_step"
+key = "diverged_per_step"
 label = "diverged env steps / step"
-note = "ended by FunctionalEnv's non-finite guard"
+note = "ended by FunctionalEnv._end_diverged"
 
 [cluster]
 ssh_host = "wcss"
+
+[[cluster.jobs]]
+id = 6111593
+label = "setup: robot model, both tiled arenas, base re-import + export check (CPU)"
+
+[[cluster.jobs]]
+id = 6111594
+label = "launch 1: eval_brax base (array index 9), code 0fb3708"
+
+[[cluster.jobs]]
+id = 6111595
+label = "launch 1 (dft_*, code 0fb3708): train 0-8, cancelled at 50-150M (normalizer poisoned by env blow-ups)"
+
+[[cluster.jobs]]
+id = 6111596
+label = "launch 1: eval_brax 0-8, cancelled with the train array"
 
 [report]
 url = ""

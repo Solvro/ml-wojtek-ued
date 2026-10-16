@@ -350,6 +350,8 @@ class Student:
             optax.adam(learning_rate),
         )
         self.opt_state = self.optimizer.init(self.params)
+        # the warm start's obs stds, the reference for `std_ratios`
+        self.reference_std: dict[str, np.ndarray] | None = None
         self.update = jax.jit(self._update)
         self.regret = jax.jit(self._regret)
 
@@ -371,6 +373,7 @@ class Student:
                     "same profile and network"
                 )
         self.normalizer = jax.tree.map(jnp.asarray, normalizer)
+        self.reference_std = {k: np.asarray(v) for k, v in normalizer.std.items()}
         self.params = ppo_losses.PPONetworkParams(
             policy=jax.tree.map(jnp.asarray, policy),
             value=jax.tree.map(jnp.asarray, value),
@@ -383,6 +386,19 @@ class Student:
     def finite(self) -> bool:
         leaves = jax.tree.leaves((self.normalizer, self.params))
         return all(bool(jnp.isfinite(x).all()) for x in leaves)
+
+    def std_ratios(self) -> dict[str, float]:
+        """Per obs block, max and min of the obs std over the warm start's."""
+        if self.reference_std is None:
+            return {}
+        # brax types the stds as a generic nest; ours is a dict of blocks
+        std: Any = self.normalizer.std
+        out = {}
+        for block, reference in self.reference_std.items():
+            ratio = np.asarray(std[block]) / reference
+            out[f"normalizer/std_ratio_max/{block}"] = float(ratio.max())
+            out[f"normalizer/std_ratio_min/{block}"] = float(ratio.min())
+        return out
 
     def _loss(self, params, normalizer, data, key):
         return ppo_losses.compute_ppo_loss(
@@ -405,6 +421,8 @@ class Student:
             params, opt_state, key = carry
             key, loss_key = jax.random.split(key)
             (_, metrics), grads = grad_fn(params, normalizer, batch, loss_key)
+            # before clip_by_global_norm
+            metrics = {**metrics, "grad_norm": optax.global_norm(grads)}
             updates, opt_state = self.optimizer.update(grads, opt_state)
             return (optax.apply_updates(params, updates), opt_state, key), metrics
 
@@ -422,7 +440,16 @@ class Student:
         (params, opt_state, _), metrics = jax.lax.scan(
             epoch, (params, opt_state, key), None, PPO["num_updates_per_batch"]
         )
-        return params, opt_state, normalizer, jax.tree.map(jnp.mean, metrics)
+        means = jax.tree.map(jnp.mean, metrics)
+        return (
+            params,
+            opt_state,
+            normalizer,
+            {
+                **means,
+                "grad_norm_max": metrics["grad_norm"].max(),
+            },
+        )
 
     def _regret(self, params, normalizer, data):
         value_apply = self.network.value_network.apply
@@ -448,7 +475,7 @@ def make_unroll(env: FunctionalEnv, make_policy: Any, dr_in_axes: Any):
         _, state, reward, done, info = env.step(
             jax.random.key(0), state, action, hfield, dr_model
         )
-        return state, reward, done, info["truncation"], info["nonfinite"]
+        return state, reward, done, info["truncation"], info["diverged"]
 
     # the arena's hfield_data is shared by every env (warp needs it unbatched)
     v_step = jax.vmap(step_one, in_axes=(0, 0, None, dr_in_axes))
@@ -462,7 +489,7 @@ def make_unroll(env: FunctionalEnv, make_policy: Any, dr_in_axes: Any):
             key, act_key = jax.random.split(key)
             action, extras = policy(state.obs, act_key)
             cmd = state.info["command"][:, :3]
-            next_state, reward, done, truncation, nonfinite = v_step(
+            next_state, reward, done, truncation, diverged = v_step(
                 state, action, hfield, dr_model
             )
             linvel = jax.vmap(body_velocity)(next_state.data)
@@ -478,7 +505,7 @@ def make_unroll(env: FunctionalEnv, make_policy: Any, dr_in_axes: Any):
                     "state_extras": {"truncation": truncation},
                     "log": {
                         "fell": done * (1.0 - truncation),
-                        "nonfinite": nonfinite,
+                        "diverged": diverged,
                         "reward": reward,
                         "cmd_vx": cmd[:, 0],
                         "forward_vel": linvel[:, 0],
@@ -577,7 +604,7 @@ def run_levels(
     episode_return = jnp.zeros(n)
     fell_any = jnp.zeros(n)
     leaked = jnp.zeros(n, bool)
-    logs = []
+    logs, ppo_logs = [], []
     for _ in range(args.level_steps // PPO["unroll_length"]):
         state, data = ctx["unroll"](
             student.inference_params(),
@@ -589,13 +616,14 @@ def run_levels(
             length=PPO["unroll_length"],
         )
         if train:
-            student.params, student.opt_state, student.normalizer, _ = student.update(
+            student.params, student.opt_state, student.normalizer, ppo = student.update(
                 student.params,
                 student.opt_state,
                 student.normalizer,
                 data,
                 ctx["next_key"](),
             )
+            ppo_logs.append(ppo)
         regret = regret + student.regret(student.params, student.normalizer, data)
         episode_return = episode_return + data.reward.sum(axis=1)
         fell_any = jnp.maximum(fell_any, data.extras["log"]["fell"].max(axis=1))
@@ -613,15 +641,21 @@ def run_levels(
     # learnability (SFL): highest where the student sometimes succeeds
     learnability = lane_success * (1.0 - lane_success)
     log = jax.tree.map(lambda *x: float(np.mean(x)), *logs)
+    ppo_log = {}
+    if ppo_logs:
+        stacked = jax.tree.map(lambda *x: np.asarray(x), *ppo_logs)
+        ppo_log = {f"ppo/{k}": float(v.mean()) for k, v in stacked.items()}
+        ppo_log["ppo/grad_norm_max"] = float(stacked["grad_norm_max"].max())
     return {
+        **ppo_log,
         "regret": lane_regret,
         "score": learnability if args.score == "learnability" else lane_regret,
         "lane_returns": lane_returns,
         "train_success": float(success.mean()),
         "learnability_mean": float(learnability.mean()),
         "falls_per_step": log["fell"],
-        # env steps that diverged and were ended (FunctionalEnv._end_nonfinite)
-        "nonfinite_per_step": log["nonfinite"],
+        # env steps that diverged and were ended (FunctionalEnv._end_diverged)
+        "diverged_per_step": log["diverged"],
         "reward_per_step": log["reward"],
         "cmd_vx": log["cmd_vx"],
         "forward_vel": log["forward_vel"],
@@ -990,6 +1024,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
+# a warm-started obs std that moved this much was poisoned by blown-up states
+STD_RATIO_LIMIT = 10.0
+
+
+def student_problem(student: Student, log: dict[str, Any]) -> str | None:
+    if not student.finite():
+        return "the student's parameters or obs normalizer went non-finite"
+    for key, value in log.items():
+        if not key.startswith("normalizer/std_ratio"):
+            continue
+        if not 1.0 / STD_RATIO_LIMIT <= value <= STD_RATIO_LIMIT:
+            return (
+                f"{key} = {value:.3g} is outside [1/{STD_RATIO_LIMIT:g}, "
+                f"{STD_RATIO_LIMIT:g}] of the --init_from normalizer"
+            )
+    return None
+
+
 def save_checkpoint(args: argparse.Namespace, student: Student, env_steps: int) -> str:
     if not args.checkpoint_dir:
         return "none (no --checkpoint_dir)"
@@ -1060,13 +1112,14 @@ def main() -> None:
             "student_train_steps": student_train_steps,
             "elapsed_s": time.time() - launch,
         }
-        if not ctx["student"].finite():
+        log.update(ctx["student"].std_ratios())
+        problem = student_problem(ctx["student"], log)
+        if problem:
             run.log(log)
             raise FloatingPointError(
-                f"iteration {it} ({env_steps} env steps): the student's parameters "
-                "or obs normalizer went non-finite in this iteration's update "
-                f"({log['nonfinite_per_step']:.2e} of its env steps diverged and "
-                f"were ended); the last finite checkpoint is {saved_at}"
+                f"iteration {it} ({env_steps} env steps): {problem} "
+                f"({log['diverged_per_step']:.2e} of its env steps diverged and "
+                f"were ended); the last healthy checkpoint is {saved_at}"
             )
         if it % args.eval_every == 0 or env_steps >= args.num_timesteps:
             log.update(evaluate(ctx, np.random.default_rng(1234)))

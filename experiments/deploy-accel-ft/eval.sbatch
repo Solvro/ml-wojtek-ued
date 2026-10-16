@@ -23,10 +23,10 @@ PY="$HOME/workspace/ml-wojtek-ued/.venv/bin/python"
 PDW=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued
 ARMS=(accel accel_lr1e-4 dr)
 if [[ "$SLURM_ARRAY_TASK_ID" == 9 ]]; then
-  RUN=dft_deploy_base_seed0
+  RUN=dft2_deploy_base_seed0
   CKPT="$COPY/artifacts/upstream/base_1p5b.pkl"
 else
-  RUN="dft_deploy_${ARMS[$((SLURM_ARRAY_TASK_ID / 3))]}_seed$((SLURM_ARRAY_TASK_ID % 3))"
+  RUN="dft2_deploy_${ARMS[$((SLURM_ARRAY_TASK_ID / 3))]}_seed$((SLURM_ARRAY_TASK_ID % 3))"
   CKPT="$PDW/artifacts/deploy_accel_ft/$RUN.pkl"
 fi
 echo "job ${SLURM_JOB_ID} task ${SLURM_ARRAY_TASK_ID} on ${SLURM_JOB_NODELIST}: $CKPT"

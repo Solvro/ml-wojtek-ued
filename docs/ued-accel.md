@@ -355,11 +355,17 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   forward vs commanded speed. With `--checkpoint_dir`, `<name>.pkl` is
   rewritten after every eval, so a crashed run keeps its last evaluated
   policy.
-- Non-finite guard: after every iteration the student's parameters and obs
-  normalizer must be finite, else the run stops with `FloatingPointError`
-  naming the last checkpoint; diverged env steps are ended in the env
+- Divergence guard: diverged env steps are ended in the env
   ([environment.md](environment.md#functionalenv--the-training-bridge)) and
-  logged as `nonfinite_per_step`.
+  logged as `diverged_per_step`. After every iteration the student's
+  parameters and obs normalizer must be finite and, with `--init_from`,
+  every obs std within 10x of the warm start's (`normalizer/std_ratio_{max,min}/{state,privileged_state}`,
+  logged every iteration), else the run stops with `FloatingPointError`
+  naming the last checkpoint.
+- PPO, every training iteration: `ppo/<metric>` = mean of brax's loss
+  metrics over the iteration's updates (`total_loss`, `policy_loss`,
+  `v_loss`, `entropy_loss`, `kl_mean`, `policy_dist_*`), `ppo/grad_norm`
+  (global norm before clipping, mean) and `ppo/grad_norm_max`.
 - Curriculum composition (`--level_space param` only), every iteration over
   the levels the student ran on (replayed, explored or PAIRED-generated):
   `level/<param>` = mean physical value (`ParamSpace.physical`, robot

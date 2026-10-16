@@ -24,6 +24,7 @@ not edit it.
 | `envs/env.py` | `_get_reward` also returns `fall_causes`; `step` writes `fall_{min_height,tilt,toggle,base_contact}_at_done` | read by `utils/ppo_helpers.py` | training-only (metrics) |
 | `paths.py` | ours: assets under `assets/wojtek_description/`, `"accel"` and `"accel_deploy"` in `TERRAIN_KINDS`, no room/HF/policy constants | repo layout; accel arenas for UED | training-only |
 | `envs/__init__.py`, `gymnasium/`, `tools/check_gym.py` | ours: re-exports, Gymnasium wrapper | convenience API | training-only |
+| `utils/env.py` (ours, wraps the upstream env) | `FunctionalEnv._end_diverged`: a step with a non-finite `qpos`/`qvel`/obs/reward or any \|`qvel`\| > 200 ends the episode with reward 0 ([divergence guard](#functionalenv--the-training-bridge)) | MJX blow-ups poison brax's running obs normalizer | training-only (episode termination; in eval_brax a diverged env scores a fall). Not in the deploy contract: `tests/deploy` passes unchanged |
 - Generated `wojtek_mjx.xml` / `scene_mjx.xml` are byte-identical to upstream
   `ros/src/wojtek_description/mujoco/` at `e44c1a9`.
 - Model-free upstream unit tests live in `tests/wojtek_env/` (mirrors the
@@ -235,13 +236,18 @@ usable under `jit`/`vmap`.
 - **Auto-reset semantics.** `step` freezes `data`/`obs` to the episode's first
   values on `done` (via `first_data`/`first_obs` stashed at reset), so a
   vmapped batch stays aligned.
-- **Non-finite guard.** A step whose `qpos`, `qvel`, obs or reward is not
-  finite ends the episode (`done` 1, reward and per-env metrics 0, then the
-  auto-reset above) and sets `info["nonfinite"]` (brax_ued logs
-  `nonfinite_per_step`). Without it one diverged env's nan obs reaches
-  brax's running obs normalizer and turns every env's policy nan. `info`
-  is not reset, so an env whose `info` went nan stays ended until the next
-  `reset`.
+- **Divergence guard.** A step whose `qpos`, `qvel`, obs or reward is not
+  finite, or with any |`qvel`| above `QVEL_DIVERGED` (200 m/s or rad/s;
+  random actions on full-difficulty levels peak at ~75), ends the episode
+  (`done` 1, reward and per-env metrics 0, then the auto-reset above) and
+  sets `info["diverged"]` (brax_ued logs `diverged_per_step`). MJX blows
+  up now and then on one env (deploy profile, warp: ~1-5 env steps per
+  2.5M); its obs reach brax's running obs normalizer, and with a
+  warm-started count of 1.5e9 they never wash out: in deploy-accel-ft one
+  such env multiplied the joint-velocity stds 100-640000x and the policy
+  collapsed; a nan one turns every env nan (deploy_ws_accel_seed2).
+  `info` is not reset, so an env whose `info` went nan stays ended until
+  the next `reset`.
 - **Shared tiled arena.** `reset(key, hfield_data, dr_model, tile_xy)` and
   `step(..., hfield_data, dr_model)` take the arena's `hfield_data`
   (`hfield.tiles.TileLayout.assemble`: every level of the iteration on its
