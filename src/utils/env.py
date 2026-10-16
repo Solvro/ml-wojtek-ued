@@ -52,6 +52,23 @@ def hfield_geometry(base: Any) -> HFieldGeometry | None:
     return geometry
 
 
+# CUDA graphs mjx's warp FFI keeps per callable (its default: 32)
+WARP_GRAPH_CACHE = 4
+
+
+def configure_warp() -> None:
+    require_warp_memory()
+    # mjx's warp FFI captures one CUDA graph per set of buffer addresses, each
+    # owning its own collision scratch (GBs at 8192 envs). Upstream's single
+    # jitted ppo.train step reuses its buffers; our separate jitted reset /
+    # unroll / eval calls pass new addresses every call, and the default cache
+    # ran the GPU out of memory by the third iteration (job 6110159).
+    # mjx's vendored warp; the setting has no public import path
+    from mujoco.mjx.third_party.warp._src.jax_experimental import ffi
+
+    ffi.set_jax_callable_default_graph_cache_max(WARP_GRAPH_CACHE)
+
+
 def require_warp_memory() -> None:
     # warp allocates its collision scratch outside JAX's memory pool on every
     # step; with JAX's default 75% preallocation it runs out mid-run
@@ -86,7 +103,7 @@ class FunctionalEnv:
             dr_fn = go1_randomize.domain_randomize
         length = episode_length or base._config.episode_length
         if getattr(base, "_backend", "jax") == "warp":
-            require_warp_memory()
+            configure_warp()
 
         self._env = brax_training.EpisodeWrapper(base, length, action_repeat=1)
         # Go1 reads heights straight from hfield_data; Wojtek keeps a lookup

@@ -7,8 +7,12 @@ env, with no more dones: physics (the arena hfield) and the terrain lookup
 (base height, falls) must both read the env's own tile. Prints the mean
 base z over the last quarter and the dones over `--steps` of zero action.
 
-- `--compare`: the same batch on the jax and the warp backend; prints the
-  largest base-z gap between them and fails above `--tol` m.
+- `--compare`: the same batch on the jax and the warp backend. Fails when
+  the backends disagree on a tile's terrain: per-tile pit depth (flat z -
+  pit z of the neighbouring tile) differing by more than `--tol` m, or
+  different dones. Also prints the largest base-z gap between backends,
+  which is backend physics, not the arena: warp stands the robot ~7-11 mm
+  higher than jax on every tile (job 6109870).
 - `--bench_envs N`: env steps per second on the arena, N envs.
 
 Needs the benchmark `accel` arena (`just build-accel-arena ...`).
@@ -87,8 +91,13 @@ def settle(
     return np.asarray(z), np.asarray(done)
 
 
+def late_z(z: np.ndarray, envs_per_tile: int) -> np.ndarray:
+    """(tiles, envs_per_tile) mean base z over the last quarter."""
+    return z[:, -z.shape[1] // 4 :].mean(axis=1).reshape(-1, envs_per_tile)
+
+
 def report(backend: str, z: np.ndarray, done: np.ndarray, envs_per_tile: int) -> None:
-    late = z[:, -z.shape[1] // 4 :].mean(axis=1).reshape(-1, envs_per_tile)
+    late = late_z(z, envs_per_tile)
     dones = done.sum(axis=1).reshape(-1, envs_per_tile)
     print(f"backend={backend} per tile (late z / dones), even=flat odd=pit:")
     for i, (zs, ds) in enumerate(zip(late, dones, strict=True)):
@@ -119,7 +128,12 @@ def main() -> None:
     p.add_argument("--envs_per_tile", type=int, default=2)
     p.add_argument("--steps", type=int, default=100)
     p.add_argument("--compare", action="store_true")
-    p.add_argument("--tol", type=float, default=2e-3, help="m, --compare")
+    p.add_argument(
+        "--tol",
+        type=float,
+        default=5e-3,
+        help="m, --compare; a misread tile is off by --pit",
+    )
     p.add_argument("--bench_envs", type=int, default=0, help="0 = skip timing")
     args = p.parse_args()
     check_arena(paths.terrain_paths("accel")["spec"], CONFIG, "accel")
@@ -137,12 +151,19 @@ def main() -> None:
         report(backend, *runs[backend], args.envs_per_tile)
     print(f"expected: pit late z ~{args.pit} m below flat, no dones")
     if args.compare:
-        gap = np.abs(runs["jax"][0] - runs["warp"][0]).max()
+        depth = {}
+        for backend, (z, _) in runs.items():
+            tile_z = late_z(z, args.envs_per_tile).mean(axis=1)
+            depth[backend] = tile_z[0::2] - tile_z[1::2]
+        depth_gap = np.abs(depth["jax"] - depth["warp"]).max()
+        z_gap = np.abs(runs["jax"][0] - runs["warp"][0]).max()
         same_dones = np.array_equal(runs["jax"][1], runs["warp"][1])
-        ok = gap <= args.tol and same_dones
+        ok = depth_gap <= args.tol and same_dones
         print(
-            f"jax vs warp: max base-z gap {gap:.2e} m (tol {args.tol}), "
-            f"same dones {same_dones}: {'PASS' if ok else 'FAIL'}"
+            f"jax vs warp: pit depth jax {depth['jax'].mean():.4f} / warp "
+            f"{depth['warp'].mean():.4f} m, max per-tile gap {depth_gap:.2e} m "
+            f"(tol {args.tol}), same dones {same_dones}: "
+            f"{'PASS' if ok else 'FAIL'}; max base-z gap {z_gap:.2e} m"
         )
         if not ok:
             sys.exit(1)
