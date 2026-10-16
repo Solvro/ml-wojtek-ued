@@ -49,8 +49,8 @@ on warp when a GPU is present ([environment.md](environment.md#tiled-arena)).
 
 - `XLA_PYTHON_CLIENT_PREALLOCATE=false`: warp allocates its collision scratch
   outside JAX's pool; `FunctionalEnv` refuses warp without it. The `justfile`,
-  `slurm.sh` and `slurm/*.sbatch` export it; set it yourself when running a
-  script outside `just`. (`XLA_PYTHON_CLIENT_PREALLOC` is not read by JAX.)
+  `slurm.sh`, `slurm/brax_ued.sbatch` and `slurm/eval_brax.sbatch` export it;
+  set it yourself when running a script outside `just`. (`XLA_PYTHON_CLIENT_PREALLOC` is not read by JAX.)
 - Rebuild arenas after any change to the geometry: `patch_radius`,
   `cell_size`, `amplitude`, `base_z`, `tiles`, `reach`, `pad_radius`/
   `pad_taper`, or the arena kind. `hfield.arena.check_arena` fails with the
