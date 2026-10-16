@@ -14,6 +14,9 @@
   --s1: #2a78d6;
   --s2: #eb6834;
   --s3: #1baf7a;
+  --s4: #eda100;
+  --s5: #e87ba4;
+  --s6: #008300;
   --sbase: #4b5a55;
   --good: #1d7a3a;
   --bad: #b3261e;
@@ -33,6 +36,9 @@
     --s1: #3987e5;
     --s2: #d95926;
     --s3: #199e70;
+    --s4: #c98500;
+    --s5: #d55181;
+    --s6: #008300;
     --sbase: #a3b3ad;
     --good: #5fc27c;
     --bad: #ff8a80;
@@ -49,6 +55,9 @@
   --s1: #3987e5;
   --s2: #d95926;
   --s3: #199e70;
+  --s4: #c98500;
+  --s5: #d55181;
+  --s6: #008300;
   --sbase: #a3b3ad;
   --good: #5fc27c;
   --bad: #ff8a80;
@@ -82,6 +91,7 @@ small { color: var(--ink-2); font-weight: 400; }
 .d.neg { color: var(--bad); font-weight: 600; }
 .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: baseline; }
 .sw.s1 { background: var(--s1); } .sw.s2 { background: var(--s2); } .sw.s3 { background: var(--s3); }
+.sw.s4 { background: var(--s4); } .sw.s5 { background: var(--s5); } .sw.s6 { background: var(--s6); }
 .sw.sbase { background: var(--sbase); }
 td.ok { color: var(--good); } td.no { color: var(--bad); font-weight: 600; }
 td.win { font-weight: 600; } td.win.yes { color: var(--good); }
@@ -127,13 +137,17 @@ code { font: 0.85em var(--mono); }
   <section>
     <h2>Learning curves</h2>
     <p>In-training eval every 20 iterations (512 levels × 2 episodes, the same level draw each time): seed mean with min–max band. The dashed line and grey band are the base: the iteration-0 evals of the six ACCEL runs, which train nothing before their first eval.</p>
-    <div class="legend">
-      <span><i class="sw s1"></i>A ACCEL</span><span><i class="sw s2"></i>B ACCEL, lr 1e-4</span><span><i class="sw s3"></i>C DR</span><span><i class="sw sbase"></i>base</span>
-    </div>
+    <div class="legend">{{LEGEND}}</div>
     <div class="charts">
       <figure><svg id="c-cmd" viewBox="0 0 460 260" role="img" aria-label="d1.0 command-conditioned success vs env steps"></svg><figcaption>d1.0 command-conditioned success</figcaption></figure>
       <figure><svg id="c-succ" viewBox="0 0 460 260" role="img" aria-label="d1.0 success vs env steps"></svg><figcaption>d1.0 success</figcaption></figure>
     </div>
+  </section>
+
+  <section>
+    <h2>What each arm trained on</h2>
+    <p>Second half of training, iterations that updated the student (for ACCEL: levels replayed from its buffer). Genome distance = mean |genome − flat| over the 8 terrain parameters; uniform d1.0 eval levels sit near DR's value.</p>
+    {{COMPOSITION}}
   </section>
 
   <section>
@@ -156,14 +170,13 @@ code { font: 0.85em var(--mono); }
 
 <script>
 const DATA = {{CHARTS}};
-const COLORS = { accel: "--s1", "accel_lr1e-4": "--s2", dr: "--s3" };
-const NAMES = { accel: "A ACCEL", "accel_lr1e-4": "B ACCEL lr 1e-4", dr: "C DR" };
+const META = {{META}};
 function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
 function draw(id, series) {
   const svg = document.getElementById(id);
   const W = 460, H = 260, L = 44, R = 12, T = 12, B = 32;
   const arms = Object.keys(series).filter(k => k !== "base");
-  const xs = series[arms[0]].x;
+  const xs = [...new Set(arms.flatMap(a => series[a].x))].sort((a, b) => a - b);
   const all = arms.flatMap(a => [...series[a].lo, ...series[a].hi]).concat([series.base.lo, series.base.hi]);
   const y0 = Math.floor(Math.min(...all) * 50) / 50, y1 = Math.ceil(Math.max(...all) * 50) / 50;
   const xmax = Math.ceil(xs[xs.length - 1] / 50) * 50;
@@ -182,7 +195,7 @@ function draw(id, series) {
   el("rect", { x: L, width: W - L - R, y: sy(series.base.hi), height: sy(series.base.lo) - sy(series.base.hi), fill: css("--sbase"), opacity: 0.12 });
   el("line", { x1: L, x2: W - R, y1: sy(series.base.mean), y2: sy(series.base.mean), stroke: css("--sbase"), "stroke-width": 1.5, "stroke-dasharray": "5 4" });
   for (const a of arms) {
-    const s = series[a], c = css(COLORS[a]);
+    const s = series[a], c = css("--" + META[a].slot);
     const band = s.x.map((x, i) => `${sx(x)},${sy(s.hi[i])}`).concat(s.x.map((x, i) => `${sx(x)},${sy(s.lo[i])}`).reverse());
     el("polygon", { points: band.join(" "), fill: c, opacity: 0.13 });
     el("polyline", { points: s.x.map((x, i) => `${sx(x)},${sy(s.mean[i])}`).join(" "), fill: "none", stroke: c, "stroke-width": 2, "stroke-linejoin": "round" });
@@ -196,7 +209,8 @@ function draw(id, series) {
     const px = (ev.clientX - box.left) * W / box.width;
     let i = 0; xs.forEach((x, j) => { if (Math.abs(sx(x) - px) < Math.abs(sx(xs[i]) - px)) i = j; });
     cross.setAttribute("x1", sx(xs[i])); cross.setAttribute("x2", sx(xs[i])); cross.setAttribute("opacity", 0.6);
-    tip.innerHTML = `<b>${xs[i].toFixed(0)}M steps</b><br>` + arms.map(a => `${NAMES[a]}: ${(100 * series[a].mean[i]).toFixed(1)}`).join("<br>") + `<br>base: ${(100 * series.base.mean).toFixed(1)}`;
+    const rows = arms.map(a => { const j = series[a].x.findIndex(x => Math.abs(x - xs[i]) < 1); return j < 0 ? null : `${META[a].name}: ${(100 * series[a].mean[j]).toFixed(1)}`; }).filter(Boolean);
+    tip.innerHTML = `<b>${xs[i].toFixed(0)}M steps</b><br>` + rows.join("<br>") + `<br>base: ${(100 * series.base.mean).toFixed(1)}`;
     tip.hidden = false;
     const left = (sx(xs[i]) / W) * box.width;
     tip.style.left = (left > box.width / 2 ? left - tip.offsetWidth - 4 : left + 16) + "px";

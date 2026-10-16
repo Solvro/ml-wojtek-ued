@@ -16,11 +16,18 @@ from typing import Any
 
 import numpy as np
 
+# letter, name, colour slot; ACCEL arms first, DR controls last
 ARMS = {
     "accel": ("A", "ACCEL, T6 flags", "s1"),
     "accel_lr1e-4": ("B", "ACCEL, lr 1e-4", "s2"),
-    "dr": ("C", "DR control", "s3"),
+    "accel_lr1e-4_1b": ("B→1B", "B continued to 1B", "s2"),
+    "accel_hard_lr1e-4": ("D", "ACCEL harder, lr 1e-4", "s4"),
+    "accel_sfl_lr1e-4": ("F", "ACCEL SFL, lr 1e-4", "s6"),
+    "dr": ("C", "DR control, lr 3e-4", "s3"),
+    "dr_lr1e-4": ("E", "DR control, lr 1e-4", "s5"),
 }
+# B to 1B starts from B's 300M checkpoint
+STEP_OFFSET = {"accel_lr1e-4_1b": 300.0}
 PRIMARY = [
     ("random/d1.0/cmd_success_rate", "d1.0 cmd success"),
     ("random/d1.0/success_rate", "d1.0 success"),
@@ -163,7 +170,8 @@ def curve_series(curves: dict[str, Any], key: str) -> dict[str, Any]:
         if not runs:
             continue
         n = min(len(r) for r in runs)
-        x = [runs[0][i]["env_steps"] / 1e6 for i in range(n)]
+        offset = STEP_OFFSET.get(arm, 0.0)
+        x = [offset + runs[0][i]["env_steps"] / 1e6 for i in range(n)]
         ys = np.array([[r[i][key] for i in range(n)] for r in runs])
         out[arm] = {
             "x": x,
@@ -176,10 +184,40 @@ def curve_series(curves: dict[str, Any], key: str) -> dict[str, Any]:
     first = [
         v["eval"][0][key]
         for k, v in curves.items()
-        if k.startswith("dft2_deploy_accel") and v["eval"]
+        if k.startswith("dft2_deploy_accel") and "_1b_" not in k and v["eval"]
     ]
     out["base"] = {"mean": float(np.mean(first)), "lo": min(first), "hi": max(first)}
     return out
+
+
+def composition_table(curves: dict[str, Any]) -> str:
+    """Second half of training: levels trained on (replay iterations = the
+    ACCEL buffer's levels), training success, divergence frequency."""
+    rows = []
+    for arm, (letter, name, slot) in ARMS.items():
+        runs = [
+            v["train"]
+            for k, v in curves.items()
+            if k.startswith(f"dft2_deploy_{arm}_seed")
+        ]
+        if not runs:
+            continue
+        late = [row for r in runs for row in r[len(r) // 2 :]]
+        trained = [row for row in late if row["replay"] == 1]
+        dist = np.mean([row["level/genome_dist"] for row in trained])
+        success = np.mean([row["train_success"] for row in trained])
+        diverged = np.mean([row["diverged_per_step"] > 0 for r in runs for row in r])
+        rows.append(
+            f'<tr><th scope="row"><i class="sw {slot}"></i>{letter} {name}</th>'
+            f'<td><span class="v">{dist:.3f}</span></td>'
+            f'<td><span class="v">{pct(success)}</span></td>'
+            f'<td><span class="v">{pct(diverged)}</span></td></tr>'
+        )
+    return (
+        '<div class="tw"><table><thead><tr><th>arm</th><th>genome distance from flat</th>'
+        "<th>training success %</th><th>iterations with a diverged env %</th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table></div>"
+    )
 
 
 def main() -> None:
@@ -218,6 +256,17 @@ def main() -> None:
             ],
         ),
     )
+    page = page.replace("{{COMPOSITION}}", composition_table(curves))
+    legend = "".join(
+        f'<span><i class="sw {slot}"></i>{letter} {html.escape(name)}</span>'
+        for arm, (letter, name, slot) in ARMS.items()
+        if arm in charts["cmd"] and arm != "accel_lr1e-4_1b"
+    )
+    page = page.replace(
+        "{{LEGEND}}", legend + '<span><i class="sw sbase"></i>base</span>'
+    )
+    meta = {a: {"slot": v[2], "name": f"{v[0]} {v[1]}"} for a, v in ARMS.items()}
+    page = page.replace("{{META}}", json.dumps(meta))
     page = page.replace("{{NOTES}}", args.notes.read_text())
     page = page.replace("{{CHARTS}}", json.dumps(charts))
     args.out.write_text(page)
