@@ -1,0 +1,546 @@
+{
+  "w01_tek_commit": "e44c1a9075c5c33f0bb2f485583f641f3e2c6e1f",
+  "hydra_overrides": [
+    "+experiment=flat_quiet_v6",
+    "++task.env.pd_kp=40.0",
+    "++task.env.pd_kd=0.8",
+    "++task.env.reward.scales.base_accel=-0.02",
+    "++task.env.reward.base_accel_wz_fade=0.1",
+    "++task.env.reward.base_accel_wz_floor=0.35"
+  ],
+  "task": "joystick",
+  "env_config": {
+    "abduction_ctrl_limit": 0.44,
+    "action_delay": 1,
+    "action_filter": 0.0,
+    "action_scale": [
+      0.25,
+      0.25,
+      0.25
+    ],
+    "command": {
+      "arc_prob": 0.0,
+      "arc_vx": [
+        0.3,
+        0.8
+      ],
+      "back_vx": [
+        -0.8,
+        -0.2
+      ],
+      "fast_vx": [
+        0.8,
+        1.2
+      ],
+      "height": [
+        0.125,
+        0.125
+      ],
+      "pure_back_prob": 0.0,
+      "pure_fast_prob": 0.0,
+      "pure_slow_prob": 0.15,
+      "pure_vy_prob": 0.2,
+      "pure_wz_prob": 0.25,
+      "pure_wz_sticky": false,
+      "resample_steps": 250,
+      "slow_vx": [
+        0.1,
+        0.35
+      ],
+      "terrain_bias": {
+        "enable": false,
+        "pure_back_prob": 0.1,
+        "pure_slow_prob": 0.3,
+        "pure_vy_prob": 0.05,
+        "pure_wz_prob": 0.1,
+        "zero_prob": 0.1
+      },
+      "vx": [
+        -0.8,
+        1.2
+      ],
+      "vy": [
+        -0.5,
+        0.5
+      ],
+      "wz": [
+        -1.0,
+        1.0
+      ],
+      "zero_prob": 0.25
+    },
+    "ctrl_dt": 0.02,
+    "encoder": {
+      "enable": true,
+      "range": 0.02
+    },
+    "episode_length": 1000,
+    "fall": {
+      "max_tilt_gz": -0.4,
+      "max_toggle_deg": 0.0,
+      "min_height": 0.06,
+      "on_base_contact": false
+    },
+    "gait": {
+      "air_time_cap": 0.0,
+      "duty": [
+        0.7,
+        0.5
+      ],
+      "freq": [
+        1.4,
+        3.0
+      ],
+      "swing_height": 0.03,
+      "trot_band": [
+        0.35,
+        0.55
+      ]
+    },
+    "height_scan": {
+      "clip": 0.3,
+      "corrupt": {
+        "blackout_prob": 0.1,
+        "drift_prob": 0.3,
+        "drift_tilt": 0.05,
+        "drift_z": 0.05,
+        "dropout_prob": 0.05,
+        "enable": false,
+        "mount_jitter": 0.0,
+        "noise_prob": 0.6,
+        "noise_std": 0.02,
+        "pitch_jitter_deg": 0.0
+      },
+      "dark": false,
+      "delay_steps": 1,
+      "enable": false,
+      "hold_steps": 3,
+      "mask": {
+        "enable": true,
+        "hfov_deg": 90.7,
+        "max_depth": 3.0,
+        "min_depth": 0.3,
+        "mount": [
+          0.32,
+          0.0,
+          0.07
+        ],
+        "occlusion": true,
+        "occlusion_margin": 0.02,
+        "occlusion_samples": 8,
+        "pitch_deg": 15.0,
+        "vfov_deg": 61.2
+      },
+      "nx": 5,
+      "ny": 5,
+      "x_range": [
+        0.65,
+        1.45
+      ],
+      "y_range": [
+        -0.3,
+        0.3
+      ]
+    },
+    "knee_target_max": 3.15,
+    "latency": {
+      "enable": true,
+      "max_substeps": 5,
+      "min_substeps": 0
+    },
+    "max_torque": 12.0,
+    "no_progress": {
+      "ema_sec": 1.0,
+      "enable": false,
+      "grace_sec": 2.0,
+      "p_max": 0.02,
+      "risk_below": 0.5,
+      "terrain_grace_sec": 0.0,
+      "terrain_p_max_scale": 1.0
+    },
+    "obs": {
+      "history_len": 0,
+      "include": [
+        "joint_pos",
+        "joint_vel",
+        "last_act",
+        "command"
+      ],
+      "privileged": [
+        "gyro",
+        "gravity",
+        "joint_pos",
+        "joint_vel",
+        "last_act",
+        "command",
+        "linvel",
+        "foot_contact"
+      ],
+      "state": [
+        "gyro",
+        "gravity",
+        "joint_pos",
+        "joint_vel",
+        "last_act",
+        "command",
+        "phase"
+      ]
+    },
+    "obs_noise": {
+      "gravity": 0.05,
+      "gyro": 0.2,
+      "gyro_bias": 0.0,
+      "gyro_vib": 0.0,
+      "gyro_vib_decay": 0.9,
+      "joint_pos": 0.01,
+      "joint_vel": 1.5
+    },
+    "pd_kd": 0.8,
+    "pd_kp": 40.0,
+    "push": {
+      "enable": true,
+      "interval_steps": 200,
+      "vel": 0.8
+    },
+    "real_pose_ref": false,
+    "reward": {
+      "apex_target": 0.05,
+      "base_accel_ang_weight": 0.02,
+      "base_accel_wz_fade": 0.1,
+      "base_accel_wz_floor": 0.35,
+      "energy_cmd_sigma_ang": 30.0,
+      "energy_cmd_sigma_lin": 32.0,
+      "feet_landing_wz_fade": 0.1,
+      "feet_landing_wz_floor": 0.35,
+      "glide_height": 0.03,
+      "height_sigma": 0.001,
+      "orientation_tol_deg": 0.0,
+      "phase_sigma": 0.002,
+      "pose_leg_weight": 0.1,
+      "scales": {
+        "action_accel": 0.0,
+        "action_rate": -0.25,
+        "ang_vel_xy": 0.0,
+        "base_accel": -0.02,
+        "contact_match": 0.0,
+        "energy": 0.0,
+        "energy_cmd": 1.0,
+        "feet_air_time": 0.0,
+        "feet_apex": 5.0,
+        "feet_landing": -15.0,
+        "feet_phase": 0.0,
+        "feet_slip": -0.35,
+        "flat_pitch": 0.0,
+        "height_tracking": 0.0,
+        "high_step": 0.0,
+        "lin_vel_z": 0.0,
+        "orientation": -5.0,
+        "pose": -1.0,
+        "probe_free_transient": 0.0,
+        "probe_sat": 0.0,
+        "probe_slip": 0.0,
+        "probe_transient": 0.0,
+        "slip_cmd": 0.0,
+        "stand_feet_down": -30.0,
+        "stand_still": -2.5,
+        "target_sag": -10.0,
+        "tau_ff": -0.001,
+        "tau_ff_swing": -0.5,
+        "termination": -1.0,
+        "toggle_flat": 0.0,
+        "torque_limit": 0.0,
+        "torque_rate": 0.0,
+        "torques": -0.0006,
+        "tracking_ang_vel": 1.6,
+        "tracking_lin_vel": 4.0
+      },
+      "shaping_tracking_gate": false,
+      "slip_cmd_sigma_ang": 0.5,
+      "slip_cmd_sigma_lin": 0.8,
+      "target_sag_wz_fade": 0.1,
+      "terrain_gate": {
+        "enable": false,
+        "flat_pitch_rough_cut": 0.25,
+        "flat_pitch_row_only": false,
+        "flat_pitch_spin_exempt": false,
+        "flat_pitch_tol_deg": 2.0,
+        "floor": 0.15,
+        "landing_soften": 0.5,
+        "orientation_tol_flat_deg": 0.0,
+        "rough_ref": 0.05
+      },
+      "torque_limit_frac": 0.85,
+      "tracking_far_sigma": 2.5,
+      "tracking_far_weight": 0.0,
+      "tracking_product": false,
+      "tracking_rel_floor_ang": 0.4,
+      "tracking_rel_floor_lin": 0.3,
+      "tracking_rel_sigma": 0.25,
+      "tracking_relative": false,
+      "tracking_sigma": 0.1
+    },
+    "sim": {
+      "backend": "auto",
+      "naconmax_per_env": 32,
+      "njmax": 320
+    },
+    "sim_dt": 0.004,
+    "symmetry": {
+      "enable": false,
+      "mirror_prob": 0.5
+    },
+    "tau_ff": {
+      "enable": true,
+      "rate_weight": 0.25,
+      "scale": 3.0
+    },
+    "terrain": {
+      "arena": "train",
+      "demote_fraction": 0.5,
+      "demote_strikes": 1,
+      "enable": false,
+      "flat_row": false,
+      "init_level_frac": 0.5,
+      "pad_jitter": 0.15,
+      "pad_radius": null,
+      "pinned_flat_frac": 0.0,
+      "pinned_frac": 0.0,
+      "spawn_grace_sec": 0.0,
+      "spawn_level": -1,
+      "spawn_mode": "pad",
+      "spawn_yaw": true,
+      "stair_tread_range": null,
+      "type_caps": null
+    }
+  },
+  "dr": {
+    "com_offset": {
+      "enable": false,
+      "xy": 0.02,
+      "z": 0.01
+    },
+    "joint_gains": {
+      "enable": true,
+      "gain_pct": 0.2,
+      "kd_pct": 0.2
+    },
+    "dof": {
+      "enable": false,
+      "damping": [
+        0.9,
+        1.1
+      ],
+      "armature": [
+        0.9,
+        1.1
+      ],
+      "frictionloss": [
+        0.9,
+        1.1
+      ]
+    },
+    "foot_friction": {
+      "enable": true,
+      "range": [
+        0.4,
+        1.35
+      ]
+    },
+    "motor_strength": {
+      "enable": true,
+      "range": [
+        0.5,
+        1.1
+      ]
+    }
+  },
+  "network": {
+    "policy_hidden_layer_sizes": [
+      512,
+      256,
+      128
+    ],
+    "policy_obs_key": "state",
+    "value_hidden_layer_sizes": [
+      512,
+      256,
+      128
+    ],
+    "value_obs_key": "privileged_state",
+    "activation": "silu",
+    "distribution_type": "tanh_normal"
+  },
+  "contract": {
+    "schema_version": 2,
+    "run_name": "wojtek_flat_quiet_v6",
+    "checkpoint": "",
+    "task": "joystick",
+    "obs_size": 40,
+    "action_size": 24,
+    "obs_layout": [
+      "joint_pos:12",
+      "joint_vel:12",
+      "last_act:12",
+      "command:4"
+    ],
+    "actuator_names": [
+      "rear_left_first_joint",
+      "rear_left_second_joint",
+      "rear_left_third_joint",
+      "rear_right_first_joint",
+      "rear_right_second_joint",
+      "rear_right_third_joint",
+      "front_right_first_joint",
+      "front_right_second_joint",
+      "front_right_third_joint",
+      "front_left_first_joint",
+      "front_left_second_joint",
+      "front_left_third_joint"
+    ],
+    "home_ctrl": [
+      0.0,
+      -0.20000000298023224,
+      3.0999999046325684,
+      0.0,
+      -0.20000000298023224,
+      3.0999999046325684,
+      0.0,
+      -0.20000000298023224,
+      3.0999999046325684,
+      0.0,
+      -0.20000000298023224,
+      3.0999999046325684
+    ],
+    "anchor_ctrl": [
+      0.0,
+      -0.1666666567325592,
+      3.1666665077209473,
+      0.0,
+      -0.1666666567325592,
+      3.1666665077209473,
+      0.0,
+      -0.1666666567325592,
+      3.1666665077209473,
+      0.0,
+      -0.1666666567325592,
+      3.1666665077209473
+    ],
+    "action_scale": [
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25
+    ],
+    "target_low": [
+      -0.4399999976158142,
+      -3.140000104904175,
+      0.42500001192092896,
+      -0.4399999976158142,
+      -3.140000104904175,
+      0.42500001192092896,
+      -0.4399999976158142,
+      -3.140000104904175,
+      0.42500001192092896,
+      -0.4399999976158142,
+      -3.140000104904175,
+      0.42500001192092896
+    ],
+    "target_high": [
+      0.4399999976158142,
+      3.140000104904175,
+      3.1500000953674316,
+      0.4399999976158142,
+      3.140000104904175,
+      3.1500000953674316,
+      0.4399999976158142,
+      3.140000104904175,
+      3.1500000953674316,
+      0.4399999976158142,
+      3.140000104904175,
+      3.1500000953674316
+    ],
+    "ctrl_low": [
+      -0.4399999976158142,
+      -3.140000104904175,
+      0.42500001192092896,
+      -0.4399999976158142,
+      -3.140000104904175,
+      0.42500001192092896,
+      -0.4399999976158142,
+      -3.140000104904175,
+      0.42500001192092896,
+      -0.4399999976158142,
+      -3.140000104904175,
+      0.42500001192092896
+    ],
+    "ctrl_high": [
+      0.4399999976158142,
+      3.140000104904175,
+      5.800000190734863,
+      0.4399999976158142,
+      3.140000104904175,
+      5.800000190734863,
+      0.4399999976158142,
+      3.140000104904175,
+      5.800000190734863,
+      0.4399999976158142,
+      3.140000104904175,
+      5.800000190734863
+    ],
+    "command_low": [
+      -0.8,
+      -0.5,
+      -1.0,
+      0.125
+    ],
+    "command_high": [
+      1.2,
+      0.5,
+      1.0,
+      0.125
+    ],
+    "command_fill": [
+      0.125
+    ],
+    "height_table": {
+      "heights": [
+        0.084,
+        0.094,
+        0.106,
+        0.121,
+        0.139,
+        0.16,
+        0.182
+      ],
+      "dsecond": [
+        -0.45,
+        -0.3,
+        -0.15,
+        0.0,
+        0.15,
+        0.3,
+        0.45
+      ]
+    },
+    "action_filter": 0.0,
+    "ctrl_dt": 0.02,
+    "knee_singularity": 3.2,
+    "pd": {
+      "kp": 40.0,
+      "kd": 0.8,
+      "max_torque": 12.0
+    },
+    "tau_ff": {
+      "enable": true,
+      "scale": 3.0
+    }
+  }
+}

@@ -29,7 +29,10 @@ advantage (positive value loss) over the iteration.
   arena, level lengths, commands and `min_travel` scale by `GO1_SCALE`.
 - `--profile deploy`: w01-tek's `terrain_blind_v4_4d` env and network, so
   `export_policy.py` can ship the checkpoint to the robot (docs/deploy.md),
-  on a 12x12 m arena (`accel_deploy`). `benchmark` (default) is the v10 setup.
+  on a 12x12 m arena (`accel_deploy`). `--profile robot`: the same for
+  `flat_quiet_v6` at kp 40 / kd 0.8, the contract of the policy the robot
+  runs (no IMU, a feed-forward torque head: 24 actions). `benchmark` (default) is
+  the v10 setup.
 
 Writes `<name>.json` beside `<name>.pkl` at launch: everything needed to
 rebuild the env and network (`load_run`).
@@ -81,6 +84,7 @@ from utils.env_overrides import (
     deploy_overrides,
     merge_overrides,
     movement_overrides,
+    robot_overrides,
     terrain_overrides,
     terrain_task_overrides,
 )
@@ -106,11 +110,38 @@ ROBOT_SCALE = {"wojtek": 1.0, "go1": GO1_SCALE}
 
 # the deploy command box reaches 1.2 m/s and leaves the 6x6 m benchmark patch
 # within ~2.5 s of a 6 s level; coarse_n 25 keeps its ~0.5 m feature size
+DEPLOY_ARENA = {"arena": "accel_deploy", "patch_radius": 6.0, "coarse_n": 25}
 ARENAS: dict[str, dict[str, Any]] = {
     "benchmark": {"arena": "accel", "patch_radius": 3.0, "coarse_n": 13},
-    "deploy": {"arena": "accel_deploy", "patch_radius": 6.0, "coarse_n": 25},
+    "deploy": DEPLOY_ARENA,
+    # the same command box speeds as deploy
+    "robot": DEPLOY_ARENA,
 }
+# the w01-tek e44c1a9 train.py run each robot profile reproduces, as its Hydra
+# overrides (docs/deploy.md); tests/deploy/upstream_<profile>.json snapshots it
+UPSTREAM_RUNS: dict[str, list[str]] = {
+    "deploy": ["+experiment=terrain_blind_v4_4d"],
+    # the policy the robot's RPi loads, wojtek_flat_quiet_baseacc_s0: its kp
+    # 40 / kd 0.8 plant and base_accel dose on the flat_quiet_v6 recipe
+    "robot": [
+        "+experiment=flat_quiet_v6",
+        "++task.env.pd_kp=40.0",
+        "++task.env.pd_kd=0.8",
+        "++task.env.reward.scales.base_accel=-0.02",
+        "++task.env.reward.base_accel_wz_fade=0.1",
+        "++task.env.reward.base_accel_wz_floor=0.35",
+    ],
+}
+UPSTREAM_OVERRIDES = {"deploy": deploy_overrides, "robot": robot_overrides}
 ACTIVATIONS = {"elu": jax.nn.elu, "silu": jax.nn.silu}
+UPSTREAM_NETWORK = {
+    "policy_hidden_layer_sizes": [512, 256, 128],
+    "value_hidden_layer_sizes": [512, 256, 128],
+    "activation": "silu",
+    "distribution_type": "tanh_normal",
+    "policy_obs_key": "state",
+    "value_obs_key": "privileged_state",
+}
 NETWORKS: dict[str, dict[str, Any]] = {
     "benchmark": {
         "policy_hidden_layer_sizes": [512, 256, 128],
@@ -122,14 +153,8 @@ NETWORKS: dict[str, dict[str, Any]] = {
     },
     # w01-tek train.py build_ppo_params: Playground's Go1 network_factory with
     # brax's default SiLU and tanh-normal, what the robot runtime evaluates
-    "deploy": {
-        "policy_hidden_layer_sizes": [512, 256, 128],
-        "value_hidden_layer_sizes": [512, 256, 128],
-        "activation": "silu",
-        "distribution_type": "tanh_normal",
-        "policy_obs_key": "state",
-        "value_obs_key": "privileged_state",
-    },
+    "deploy": UPSTREAM_NETWORK,
+    "robot": UPSTREAM_NETWORK,
 }
 
 
@@ -172,10 +197,11 @@ def env_overrides(args: argparse.Namespace) -> dict[str, Any] | None:
     if args.robot == "go1":
         return None
     arena = accel_arena_overrides(args.pad_radius, ARENAS[args.profile]["arena"])
-    if args.profile == "deploy":
-        # upstream's terrain block configures its tile curriculum arena; the
-        # accel arena replaces it (training-only, docs/deploy.md)
-        upstream = {k: v for k, v in deploy_overrides().items() if k != "terrain"}
+    if args.profile in UPSTREAM_OVERRIDES:
+        # upstream's terrain block configures its tile curriculum arena (or
+        # none); the accel arena replaces it (training-only, docs/deploy.md)
+        resolved = UPSTREAM_OVERRIDES[args.profile]()
+        upstream = {k: v for k, v in resolved.items() if k != "terrain"}
         profile = merge_overrides(upstream, arena)
     else:
         profile = merge_overrides(
@@ -220,7 +246,7 @@ def run_spec(args: argparse.Namespace) -> dict[str, Any]:
         "hfield": dataclasses.asdict(hfield_config(args)),
         "level_space": args.level_space,
         "env_overrides": env_overrides(args),
-        "dr_config": deploy_dr_config() if args.profile == "deploy" else None,
+        "dr_config": (deploy_dr_config() if args.profile in UPSTREAM_RUNS else None),
         "network": NETWORKS[args.profile],
         "init_from": args.init_from,
         "args": vars(args),
@@ -1038,8 +1064,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="brax_ued .pkl (sidecar beside it) to start the student from",
     )
     args = p.parse_args(argv)
-    if args.profile == "deploy" and args.robot != "wojtek":
-        p.error("--profile deploy is Wojtek's robot setup; use --robot wojtek")
+    if args.profile in UPSTREAM_RUNS and args.robot != "wojtek":
+        p.error(f"--profile {args.profile} is Wojtek's robot setup; use --robot wojtek")
     if args.env_override:
         if args.robot == "go1":
             p.error("--env_override edits Wojtek's env config; Go1 has none")

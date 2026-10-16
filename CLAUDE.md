@@ -32,7 +32,7 @@ it when the code changes.**
 - `src/deploy/` — robot export: `contract.py` (port of w01-tek
   `deploy_contract.py`), `runtime.py` (the robot's `policy.py`, verbatim,
   ruff-excluded — never edit), `upstream_snapshot.py` (regenerates
-  `tests/deploy/upstream_terrain_blind_v4_4d.json`).
+  `tests/deploy/upstream_<profile>.json`, one per robot profile).
 - `src/ued/` — the ACCEL algorithm, split by role (`types`, `regret`, `levels`,
   `stopper`, `curriculum`). Keep the split; don't recreate a `helpers` grab-bag.
 

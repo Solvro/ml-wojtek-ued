@@ -9,9 +9,7 @@ from scripts.brax_ued import parse_args, run_spec
 from wojtek_env.envs import registry
 
 ROOT = Path(__file__).parents[2]
-SNAPSHOT = json.loads(
-    (ROOT / "tests/deploy/upstream_terrain_blind_v4_4d.json").read_text()
-)
+SNAPSHOT = json.loads((ROOT / "tests/deploy/upstream_deploy.json").read_text())
 ARMS = sorted((ROOT / "experiments/deploy-ab/arms").glob("*.json"))
 DEPLOY = ["--mode", "accel", "--name", "t", "--profile", "deploy"]
 

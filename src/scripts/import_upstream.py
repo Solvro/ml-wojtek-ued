@@ -1,4 +1,4 @@
-"""Import a w01-tek `train.py` checkpoint as a `brax_ued.py` deploy checkpoint.
+"""Import a w01-tek `train.py` checkpoint as a `brax_ued.py` robot-profile one.
 
     --checkpoint <run>/checkpoints/<step>   brax ppo_checkpoint (orbax) +
                                             ppo_network_config.json; the
@@ -6,10 +6,11 @@
     --out <name>.pkl                        params + sidecar <name>.json
 
 Remaining flags are `brax_ued.py` flags for the run the import stands in for
-(`--profile deploy` is required); the sidecar is that run's spec plus
-`imported_from`. Refuses, before writing, a checkpoint whose CONSUMED env
-keys, actor or critic observation size, action size, network or parameter
-shapes differ from the deploy profile's, or whose normalizer keys differ.
+(`--profile deploy` or `--profile robot`, the profile of the checkpoint's
+upstream experiment); the sidecar is that run's spec plus `imported_from`.
+Refuses, before writing, a checkpoint whose CONSUMED env keys, actor or
+critic observation size, action size, network or parameter shapes differ
+from the profile's, or whose normalizer keys differ.
 """
 
 import argparse
@@ -24,6 +25,7 @@ from brax.training.agents.ppo import checkpoint as ppo_checkpoint
 
 from deploy.contract import CONSUMED_KEYS
 from scripts.brax_ued import (
+    UPSTREAM_RUNS,
     load_run,
     make_network,
     parse_args,
@@ -58,7 +60,7 @@ def incompatibilities(
     net_cfg: dict[str, Any],
     params: Any,
 ) -> list[str]:
-    """Every way the upstream checkpoint differs from the deploy profile."""
+    """Every way the upstream checkpoint differs from the run's profile."""
     env = build_env(spec)
     ours = plain(env._config.to_dict())
     problems = [
@@ -122,10 +124,11 @@ def import_checkpoint(
                 "runs/<run>/checkpoints/<step> directory"
             )
     spec = run_spec(parse_args(train_flags))
-    if spec["profile"] != "deploy":
+    profile = spec["profile"]
+    if profile not in UPSTREAM_RUNS:
         raise ValueError(
-            "an upstream checkpoint imports as a --profile deploy run; pass "
-            "--profile deploy"
+            "an upstream checkpoint imports as a robot-profile run; pass "
+            f"--profile {' or '.join(UPSTREAM_RUNS)}"
         )
     run = json.loads(run_json.read_text())
     net_cfg = json.loads(config.read_text())
@@ -133,10 +136,11 @@ def import_checkpoint(
     problems = incompatibilities(spec, run["env_config"], net_cfg, params)
     if problems:
         raise ValueError(
-            f"{checkpoint} does not match the deploy profile:\n  - "
+            f"{checkpoint} does not match the {profile} profile:\n  - "
             + "\n  - ".join(problems)
-            + "\nImport a checkpoint trained with upstream's terrain_blind_v4_4d "
-            "(the snapshot in tests/deploy) or update the deploy profile first"
+            + "\nImport a checkpoint of upstream's "
+            f"`train.py {' '.join(UPSTREAM_RUNS[profile])}` (the snapshot in "
+            "tests/deploy) or update the profile first"
         )
     out.parent.mkdir(parents=True, exist_ok=True)
     brax_model.save_params(str(out), tuple(params))

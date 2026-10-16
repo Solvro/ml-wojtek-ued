@@ -78,7 +78,7 @@ build:
 build-accel-arena *args:
     uv run python -m hfield.arena {{ args }}
 
-# Write the 12x12 m "accel_deploy" arena that `brax_ued.py --profile deploy` loads
+# Write the 12x12 m "accel_deploy" arena that `brax_ued.py --profile deploy|robot` loads
 [group('build')]
 build-deploy-arena:
     just build-accel-arena arena=accel_deploy hfield_params.patch_radius=6.0 hfield_params.cell_size=0.05 hfield_params.amplitude=0.3 hfield_params.coarse_n=25 hfield_params.pad_radius=0.55 hfield_params.pad_taper=0.2
@@ -129,12 +129,12 @@ render-video *args:
 
 # --- deploy ---
 
-# Export a `brax_ued.py --profile deploy` checkpoint to the robot's policy.npz + policy_meta.json (`just export --checkpoint run.pkl [--out dir]`)
+# Export a `brax_ued.py --profile deploy|robot` checkpoint to the robot's policy.npz + policy_meta.json (`just export --checkpoint run.pkl [--out dir]`)
 [group('deploy')]
 export *args:
     JAX_PLATFORMS=cpu uv run python src/scripts/export_policy.py {{ args }}
 
-# Import a w01-tek train.py checkpoint as a deploy-profile .pkl + sidecar (`just import-upstream --checkpoint <run>/checkpoints/<step> --out run.pkl --mode accel --name run --profile deploy ...`)
+# Import a w01-tek train.py checkpoint as a deploy- or robot-profile .pkl + sidecar (`just import-upstream --checkpoint <run>/checkpoints/<step> --out run.pkl --mode accel --name run --profile deploy|robot ...`)
 [group('deploy')]
 import-upstream *args:
     JAX_PLATFORMS=cpu uv run python src/scripts/import_upstream.py {{ args }}

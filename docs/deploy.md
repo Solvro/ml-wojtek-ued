@@ -1,7 +1,8 @@
 # Deploying a policy to the robot
 
-Train with `brax_ued.py --profile deploy`, export with `just export`, run it
-with w01-tek's ROS stack — in the MuJoCo sim first.
+Train with `brax_ued.py --profile deploy` (upstream `terrain_blind_v4_4d`)
+or `--profile robot` (the policy the robot runs), export with `just
+export`, run it with w01-tek's ROS stack — in the MuJoCo sim first.
 
 ## Current robot policy {#current-policy}
 
@@ -63,8 +64,8 @@ with w01-tek's ROS stack — in the MuJoCo sim first.
 
 ## `--profile deploy` {#profile}
 
-`brax_ued.py --profile {benchmark,deploy}`, default `benchmark` (the v10
-setup, unchanged).
+`brax_ued.py --profile {benchmark,deploy,robot}`, default `benchmark` (the
+v10 setup, unchanged); `robot`: [below](#robot-profile).
 
 - Env: `utils/env_overrides.deploy_overrides()` = the resolved `task.env` of
   upstream `+experiment=terrain_blind_v4_4d` @ `e44c1a9`, verbatim: kp 40 /
@@ -106,17 +107,72 @@ setup, unchanged).
   `tests/scripts/test_env_override.py` keeps every
   `experiments/deploy-ab/arms/*.json` at upstream's CONSUMED keys and
   network.
-- Parity test: `tests/deploy/test_upstream_parity.py` compares the deploy
-  profile's resolved env config (every CONSUMED key, every TRAINING_ONLY key
-  but `terrain`/`sim`), `dr` and network against
-  `tests/deploy/upstream_terrain_blind_v4_4d.json`, a snapshot taken with
-  upstream's own code; `test_export_policy.py` checks the exported contract
-  equals upstream's. Regenerate after an upstream bump (read-only on
-  w01-tek):
+- Parity test: `tests/deploy/test_upstream_parity.py` compares each robot
+  profile's (`deploy`, [`robot`](#robot-profile)) resolved env config (every
+  CONSUMED key, every TRAINING_ONLY key but `terrain`/`sim`), `dr` and
+  network against `tests/deploy/upstream_<profile>.json`, a snapshot of the
+  profile's upstream `train.py` overrides (`brax_ued.UPSTREAM_RUNS`) taken
+  with upstream's own code; `test_export_policy.py` checks the exported
+  contract equals upstream's, and that w01-tek's `policy.py` (when a
+  checkout is at `../w01-tek` or `$W01_TEK`) gives the vendored runtime's
+  targets and `tau_ff` bit for bit. Regenerate after an upstream bump
+  (read-only on w01-tek):
 
   ```sh
-  uv run python -m deploy.upstream_snapshot --w01-tek ../w01-tek
+  uv run python -m deploy.upstream_snapshot --w01-tek ../w01-tek --profile deploy
+  uv run python -m deploy.upstream_snapshot --w01-tek ../w01-tek --profile robot
   ```
+
+## `--profile robot` {#robot-profile}
+
+The contract of the policy the robot's RPi loads:
+`wojtek_flat_quiet_baseacc_s0` (the drop-in
+`ros/deploy/rpi/wojtek-robot-local.conf` launches `policy:=/home/rpi/policy`;
+its comment names that run). Not the policy `policy_source.py` pins
+(`wojtek-quiet-locomotion@553795b` = `wojtek_flat_quiet_v10_s0`, kp 20,
+w01-tek c843245): the drop-in's explicit `policy:=` overrides the pin, so
+the robot team has to make sure the policy they copy to `/home/rpi/policy`
+is the one loaded.
+
+- Env: `utils/env_overrides.robot_overrides()` = the resolved `task.env` of
+  upstream `train.py` with `brax_ued.UPSTREAM_RUNS["robot"]` @ `e44c1a9`:
+  `+experiment=flat_quiet_v6 ++task.env.pd_kp=40.0 ++task.env.pd_kd=0.8
+  ++task.env.reward.scales.base_accel=-0.02
+  ++task.env.reward.base_accel_wz_fade=0.1
+  ++task.env.reward.base_accel_wz_floor=0.35`. `dr` = `flat_quiet_v6`'s,
+  the same block as deploy's. Network as deploy (upstream `build_ppo_params`).
+- Upstream trains it with RND (`rnd.enable`, the vendored `ppo_rnd`
+  trainer); brax_ued has no RND, so fine-tunes run without it
+  (training-only).
+- No preset records `baseacc_s0`'s recipe. Reconstruction (coordinator /
+  user decision, 2026-10-16): `flat_quiet_v6` at the robot's servo plant,
+  plus the `base_accel` dose w01-tek 6ff736c measured "on the kp40-sticky
+  keeper"; upstream's run was a fine-tune of that keeper (restore chain
+  unknown), ours trains from scratch for the preset's 2B.
+- CONSUMED keys of the contract:
+
+  | key | value | source |
+  |---|---|---|
+  | `pd_kp` / `pd_kd` / `max_torque` | 40 / 0.8 / 12 | established: w01-tek 833b9ca (`origin/michal/baseacc-default-policy`) |
+  | `tau_ff` | enable, scale 3.0 (24 actions) | established: 833b9ca ("tau_ff +-3") |
+  | `action_filter` | 0.0 | established: 833b9ca ("no action filter") |
+  | `obs` (actor) | `joint_pos`, `joint_vel`, `last_act`, `command` (40) | established: 833b9ca ("IMU-blind obs") |
+  | `command` | 4-D: vx [-0.8, 1.2], vy [-0.5, 0.5], wz [-1, 1], height 0.125 fixed | 4-D established (833b9ca); box inferred from the flat_quiet family |
+  | `action_scale` | 0.25 on every joint | inferred: flat_quiet family; `flat_grace_v1` (3616f81) = `flat_quiet_v6` + kp/kd "at the deployed keeper's servo contract" |
+  | `abduction_ctrl_limit` / `knee_target_max` | 0.44 / 3.15 | inferred: flat_quiet family, `flat_probe_v1` (kp 40 / kd 0.8 keeper plant) |
+  | `ctrl_dt` / `real_pose_ref` | 0.02 / false | inferred: flat_quiet family (env defaults) |
+
+  - the inferred rows have to be checked against the deployed
+    `/home/rpi/policy/policy_meta.json` before an export is loaded on the
+    robot (nobody here can read it)
+- Deviations from upstream, all TRAINING_ONLY (`tests/deploy` checks the
+  rest): `terrain` = the `accel_deploy` tiled arena block (upstream trains
+  on the flat floor); `sim` = upstream's backend with
+  `terrain_blind_v4_4d`'s contact buffers (`naconmax_per_env` 116, `njmax`
+  1024; flat upstream: 32 / 320); our env patches and training loop as
+  deploy. Arena, command speeds and `just build-deploy-arena` as deploy.
+- v10-comparable eval: `--command_box 0.2 0.6 -0.2 0.2 -0.4 0.4 0.125`
+  (the height is a policy input, trained at 0.125 only).
 
 ## Sidecar `<run>.json` {#sidecar}
 
@@ -158,13 +214,15 @@ just export --checkpoint artifacts/brax_ued/<run>.pkl [--out <dir>]
 ## Upstream checkpoints and warm start {#warm-start}
 
 - `just import-upstream --checkpoint <w01-tek run>/checkpoints/<step> --out
-  <name>.pkl --mode accel --name <name> --profile deploy [brax_ued flags]`
+  <name>.pkl --mode accel --name <name> --profile {deploy,robot} [brax_ued
+  flags]`
   (`scripts/import_upstream.py`): a w01-tek `train.py` checkpoint (brax
   orbax + `ppo_network_config.json`, `run.json` two levels up) becomes a
   brax_ued `.pkl` (normalizer, policy, value) + sidecar for the given
   flags, with `imported_from` (checkpoint, run name, env steps).
-- Refused before writing: any CONSUMED env key differing from the run's
-  `run.json`, actor or critic obs size, action size, network kwargs,
+- The profile has to be the one of the checkpoint's upstream run
+  (`UPSTREAM_RUNS`). Refused before writing: any CONSUMED env key differing
+  from the run's `run.json`, actor or critic obs size, action size, network kwargs,
   policy/value parameter shapes, normalizer keys. A critic mismatch is not
   papered over by re-initialising the value net.
 - The import exports like any deploy checkpoint (`just export`); for
