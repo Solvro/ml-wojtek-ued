@@ -141,6 +141,11 @@ just export --checkpoint artifacts/brax_ued/<run>.pkl [--out <dir>]
   checkpoint's normalizer, policy and value (fresh optimizer state);
   refused if its sidecar's network or any parameter shape differs. The
   sidecar records `init_from`.
+- Fine-tuning the 1.5B upstream base (experiments/deploy-accel-ft, 300M
+  steps, warp): lr 3e-4 degrades it; `--learning_rate 1e-4 --mode accel
+  --score learnability --generator mixed --mutation grow` beats it on
+  d1.0 success (+6.7 points) and command-conditioned success (+6.3); the
+  plain easy-generator ACCEL buffer stays next to flat and does not.
 
 ## Running it {#run}
 

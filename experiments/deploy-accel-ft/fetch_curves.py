@@ -7,6 +7,7 @@
 import argparse
 import json
 from pathlib import Path
+from typing import Any
 
 import wandb
 
@@ -28,6 +29,11 @@ TRAIN_KEYS = [
 ]
 
 
+def complete(rows: Any) -> list[dict[str, Any]]:
+    # finished runs return every row, None where a key was not logged
+    return [row for row in rows if all(v is not None for v in row.values())]
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--out", type=Path, required=True)
@@ -37,8 +43,8 @@ def main() -> None:
     for run in api.runs(PROJECT, filters={"display_name": {"$regex": RUNS}}):
         out[run.name] = {
             "state": run.state,
-            "eval": list(run.scan_history(keys=KEYS)),
-            "train": list(run.scan_history(keys=TRAIN_KEYS)),
+            "eval": complete(run.scan_history(keys=KEYS)),
+            "train": complete(run.scan_history(keys=TRAIN_KEYS)),
             "elapsed_h": run.summary.get("final/elapsed_h"),
         }
     args.out.parent.mkdir(parents=True, exist_ok=True)

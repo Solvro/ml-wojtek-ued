@@ -109,9 +109,9 @@ code { font: 0.85em var(--mono); }
 
 <main>
   <header style="display:grid; gap:10px">
-    <div class="eyebrow">deploy-accel-ft · terrain_blind_v4_4d · warp tiled arena · 300M fine-tune</div>
+    <div class="eyebrow">deploy-accel-ft · terrain_blind_v4_4d · warp tiled arena · 3 seeds per arm</div>
     <h1>ACCEL fine-tune vs the 1.5B base</h1>
-    <p class="lede">Three arms fine-tune the upstream 1.5B-step policy for 300M env steps on the deploy arena (upstream rewards, DR and network, clip 0.3), 3 seeds each. Every policy, the base included, ran the same eval_brax levels and reset keys on warp: 2048 levels × 4 episodes × 2 passes.</p>
+    <p class="lede">Seven arms fine-tune the upstream 1.5B-step policy on the deploy arena (upstream rewards, DR and network, clip 0.3): five ACCEL variants and two DR controls, 300M env steps each, B also continued to 1B. Every policy, the base included, ran the same eval_brax levels and reset keys on warp: 2048 levels × 4 episodes × 2 passes, flat on 1024 levels.</p>
   </header>
 
   <section class="criterion">
@@ -119,6 +119,7 @@ code { font: 0.85em var(--mono); }
     <ul>
       <li>Primary: <code>random/d1.0/cmd_success_rate</code> and <code>random/d1.0/success_rate</code>, 3-seed mean above the base with the 95% CIs (levels × seeds bootstrap) not overlapping the base's (levels bootstrap).</li>
       <li>Guards: no drop &gt; 2 points on flat and d0.25 success; d1.0 fall rate not worse (paired difference not significantly above 0).</li>
+      <li>Only ACCEL arms can be the uploaded policy; DR arms are controls.</li>
       <li>Secondary: v10box d1.0 success, suite success.</li>
     </ul>
   </section>

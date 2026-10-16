@@ -64,3 +64,11 @@ across ACCEL arms only (DR arms are controls).
 | 2026-10-16 12:42 | 6112489 | train 0-11: accel_hard_lr1e-4, dr_lr1e-4, accel_sfl_lr1e-4 (300M from base), accel_lr1e-4_1b (+700M from launch 2's B) |
 | 2026-10-16 12:42 | 6112490 | eval 0-11 (flat 1024 + native + v10box), aftercorr 6112489 |
 | 2026-10-16 12:42 | 6112491 | flat-only 1024-level eval of launch 2's 9 policies + base |
+
+## Results (launch 3)
+
+- F (ACCEL SFL lr 1e-4) beats the base pooled and per seed: d1.0 cmd +6.3
+  [+5.7, +6.8], success +6.7 [+5.9, +7.4], guards pass. Exported seed 1;
+  videos rendered locally (paths in `report.md`).
+- E (DR lr 1e-4, control) matches F on the primary metrics.
+- Cost: 22.1 GPU-h total (sacct).

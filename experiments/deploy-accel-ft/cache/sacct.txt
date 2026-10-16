@@ -1,32 +1,67 @@
-6111593|wued-dft-setup|COMPLETED|00:02:10|130|billing=4,cpu=4,mem=16G,node=1
-6111594_9|wued-dft-eval|COMPLETED|00:18:23|1103|billing=4,cpu=4,energy=258699,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111595_0|wued-dft-train|CANCELLED by 63324|00:20:24|1224|billing=4,cpu=4,energy=326098,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111595_1|wued-dft-train|CANCELLED by 63324|00:20:24|1224|billing=4,cpu=4,energy=274075,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111595_2|wued-dft-train|CANCELLED by 63324|00:20:24|1224|billing=4,cpu=4,energy=274076,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111595_3|wued-dft-train|CANCELLED by 63324|00:20:24|1224|billing=4,cpu=4,energy=261496,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111595_4|wued-dft-train|CANCELLED by 63324|00:19:24|1164|billing=4,cpu=4,energy=263369,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111595_5|wued-dft-train|CANCELLED by 63324|00:19:24|1164|billing=4,cpu=4,energy=263369,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111595_6|wued-dft-train|CANCELLED by 63324|00:19:24|1164|billing=4,cpu=4,energy=253010,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111595_7|wued-dft-train|CANCELLED by 63324|00:19:24|1164|billing=4,cpu=4,energy=253009,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111595_8|wued-dft-train|CANCELLED by 63324|00:19:24|1164|billing=4,cpu=4,energy=244613,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111596_8|wued-dft-eval|CANCELLED by 63324|00:00:00|0|
-6111933|wued-dft-setup|COMPLETED|00:01:51|111|billing=4,cpu=4,mem=16G,node=1
-6111934_9|wued-dft-eval|COMPLETED|00:18:10|1090|billing=4,cpu=4,energy=241061,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111935_0|wued-dft-train|COMPLETED|00:28:16|1696|billing=4,cpu=4,energy=398023,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111935_1|wued-dft-train|COMPLETED|00:28:08|1688|billing=4,cpu=4,energy=388033,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111935_2|wued-dft-train|COMPLETED|00:28:37|1717|billing=4,cpu=4,energy=373962,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111935_3|wued-dft-train|COMPLETED|00:28:26|1706|billing=4,cpu=4,energy=386712,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111935_4|wued-dft-train|COMPLETED|00:28:26|1706|billing=4,cpu=4,energy=386725,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111935_5|wued-dft-train|COMPLETED|00:28:28|1708|billing=4,cpu=4,energy=387052,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111935_6|wued-dft-train|COMPLETED|00:28:56|1736|billing=4,cpu=4,energy=392713,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111935_7|wued-dft-train|COMPLETED|00:28:24|1704|billing=4,cpu=4,energy=374912,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111935_8|wued-dft-train|COMPLETED|00:29:36|1776|billing=4,cpu=4,energy=382346,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111936_0|wued-dft-eval|COMPLETED|00:18:02|1082|billing=4,cpu=4,energy=252483,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111936_1|wued-dft-eval|COMPLETED|00:18:19|1099|billing=4,cpu=4,energy=252556,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111936_2|wued-dft-eval|COMPLETED|00:18:42|1122|billing=4,cpu=4,energy=237412,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111936_3|wued-dft-eval|COMPLETED|00:18:27|1107|billing=4,cpu=4,energy=259019,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111936_4|wued-dft-eval|COMPLETED|00:18:20|1100|billing=4,cpu=4,energy=290095,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111936_5|wued-dft-eval|COMPLETED|00:18:20|1100|billing=4,cpu=4,energy=290267,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111936_6|wued-dft-eval|COMPLETED|00:18:17|1097|billing=4,cpu=4,energy=253928,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111936_7|wued-dft-eval|COMPLETED|00:18:14|1094|billing=4,cpu=4,energy=253498,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
-6111936_8|wued-dft-eval|COMPLETED|00:18:29|1109|billing=4,cpu=4,energy=247688,gres/gpu:hopper=1,gres/gpu=1,mem=96G,node=1
+6111593|wued-dft-setup|COMPLETED|00:02:10|130
+6111594_9|wued-dft-eval|COMPLETED|00:18:23|1103
+6111595_0|wued-dft-train|CANCELLED by 63324|00:20:24|1224
+6111595_1|wued-dft-train|CANCELLED by 63324|00:20:24|1224
+6111595_2|wued-dft-train|CANCELLED by 63324|00:20:24|1224
+6111595_3|wued-dft-train|CANCELLED by 63324|00:20:24|1224
+6111595_4|wued-dft-train|CANCELLED by 63324|00:19:24|1164
+6111595_5|wued-dft-train|CANCELLED by 63324|00:19:24|1164
+6111595_6|wued-dft-train|CANCELLED by 63324|00:19:24|1164
+6111595_7|wued-dft-train|CANCELLED by 63324|00:19:24|1164
+6111595_8|wued-dft-train|CANCELLED by 63324|00:19:24|1164
+6111596_8|wued-dft-eval|CANCELLED by 63324|00:00:00|0
+6111933|wued-dft-setup|COMPLETED|00:01:51|111
+6111934_9|wued-dft-eval|COMPLETED|00:18:10|1090
+6111935_0|wued-dft-train|COMPLETED|00:28:16|1696
+6111935_1|wued-dft-train|COMPLETED|00:28:08|1688
+6111935_2|wued-dft-train|COMPLETED|00:28:37|1717
+6111935_3|wued-dft-train|COMPLETED|00:28:26|1706
+6111935_4|wued-dft-train|COMPLETED|00:28:26|1706
+6111935_5|wued-dft-train|COMPLETED|00:28:28|1708
+6111935_6|wued-dft-train|COMPLETED|00:28:56|1736
+6111935_7|wued-dft-train|COMPLETED|00:28:24|1704
+6111935_8|wued-dft-train|COMPLETED|00:29:36|1776
+6111936_0|wued-dft-eval|COMPLETED|00:18:02|1082
+6111936_1|wued-dft-eval|COMPLETED|00:18:19|1099
+6111936_2|wued-dft-eval|COMPLETED|00:18:42|1122
+6111936_3|wued-dft-eval|COMPLETED|00:18:27|1107
+6111936_4|wued-dft-eval|COMPLETED|00:18:20|1100
+6111936_5|wued-dft-eval|COMPLETED|00:18:20|1100
+6111936_6|wued-dft-eval|COMPLETED|00:18:17|1097
+6111936_7|wued-dft-eval|COMPLETED|00:18:14|1094
+6111936_8|wued-dft-eval|COMPLETED|00:18:29|1109
+6112488|wued-dft-setup|COMPLETED|00:02:09|129
+6112489_0|wued-dft-train|COMPLETED|00:28:25|1705
+6112489_1|wued-dft-train|COMPLETED|00:28:30|1710
+6112489_2|wued-dft-train|COMPLETED|00:28:37|1717
+6112489_3|wued-dft-train|COMPLETED|00:28:47|1727
+6112489_4|wued-dft-train|COMPLETED|00:28:45|1725
+6112489_5|wued-dft-train|COMPLETED|00:29:09|1749
+6112489_6|wued-dft-train|COMPLETED|00:28:53|1733
+6112489_7|wued-dft-train|COMPLETED|00:28:50|1730
+6112489_8|wued-dft-train|COMPLETED|00:28:25|1705
+6112489_9|wued-dft-train|COMPLETED|01:00:32|3632
+6112489_10|wued-dft-train|COMPLETED|01:02:55|3775
+6112489_11|wued-dft-train|COMPLETED|01:00:31|3631
+6112490_0|wued-dft-eval|COMPLETED|00:19:17|1157
+6112490_1|wued-dft-eval|COMPLETED|00:19:20|1160
+6112490_2|wued-dft-eval|COMPLETED|00:19:06|1146
+6112490_3|wued-dft-eval|COMPLETED|00:19:15|1155
+6112490_4|wued-dft-eval|COMPLETED|00:19:04|1144
+6112490_5|wued-dft-eval|COMPLETED|00:19:09|1149
+6112490_6|wued-dft-eval|COMPLETED|00:19:14|1154
+6112490_7|wued-dft-eval|COMPLETED|00:19:11|1151
+6112490_8|wued-dft-eval|COMPLETED|00:19:15|1155
+6112490_9|wued-dft-eval|COMPLETED|00:19:37|1177
+6112490_10|wued-dft-eval|COMPLETED|00:19:04|1144
+6112490_11|wued-dft-eval|COMPLETED|00:19:34|1174
+6112491_0|wued-dft-eval|COMPLETED|00:01:19|79
+6112491_1|wued-dft-eval|COMPLETED|00:01:19|79
+6112491_2|wued-dft-eval|COMPLETED|00:01:19|79
+6112491_3|wued-dft-eval|COMPLETED|00:01:21|81
+6112491_4|wued-dft-eval|COMPLETED|00:01:09|69
+6112491_5|wued-dft-eval|COMPLETED|00:01:09|69
+6112491_6|wued-dft-eval|COMPLETED|00:01:09|69
+6112491_7|wued-dft-eval|COMPLETED|00:01:09|69
+6112491_8|wued-dft-eval|COMPLETED|00:01:10|70
+6112491_9|wued-dft-eval|COMPLETED|00:01:07|67
