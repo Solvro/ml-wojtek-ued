@@ -3,39 +3,33 @@
 Train with `brax_ued.py --profile deploy`, export with `just export`, run it
 with w01-tek's ROS stack — in the MuJoCo sim first.
 
-## Current robot policy {#current-policy}
+## Robot policy status {#current-policy}
 
-- Policy: `experiments/deploy-accel-ft` arm F, seed 1
-  ([report](../experiments/deploy-accel-ft/report.md)).
-  - ACCEL: `--mode accel --score learnability --generator mixed --mutation
-    grow`, `--learning_rate 1e-4`, 300M steps.
-  - Fine-tune of the imported upstream `terrain_blind_v4_4d` 1.5B base
-    (`--init_from`, [warm start](#warm-start)), deploy profile, warp, tiled
-    deploy arena.
-- Export dir: `dft2_deploy_accel_sfl_lr1e-4_seed1_deploy/`
-  - local (gitignored, in the `jgilewicz/accel-ft` worktree):
-    `artifacts/deploy_accel_ft/dft2_deploy_accel_sfl_lr1e-4_seed1_deploy/`
-    (checkpoint `.pkl` + sidecar beside it)
-  - WCSS: `$PDW/artifacts/deploy_accel_ft/`
-- Native deploy eval, d1.0, 3-seed pool, %, 95% CI (bootstrap over seeds x
-  levels; base: levels), difference paired by level:
+- No policy trained here is cleared for the robot yet.
+- The policy pinned on the robot (w01-tek `ros/src/wojtek_policy/wojtek_policy/policy_source.py`,
+  `_DEFAULT_REPO = wojtek-quiet-locomotion`, `flat_quiet` family) has a
+  different contract from `--profile deploy`:
 
-  | metric | base 1.5B | F | F − base |
-  |---|---|---|---|
-  | cmd success | 41.6 [40.7, 42.5] | 47.9 | +6.3 [+5.7, +6.8] |
-  | success | 32.1 [31.1, 33.1] | 38.8 | +6.7 [+5.9, +7.4] |
+  | | robot (`flat_quiet`) | `--profile deploy` (`terrain_blind_v4_4d`) |
+  |---|---|---|
+  | IMU (gyro, gravity) in actor obs | no | yes |
+  | kp / kd | 20 / 0.5 | 40 / 1.6 |
+  | max_torque | 12 Nm | 32 Nm |
+  | action_scale | 0.25 | [0.25, 0.5, 1.35] |
+  | `tau_ff` head | yes | no |
 
-  - every seed beats the base; flat −0.7, d0.25 +0.4, d1.0 fall rate −4.9
-    points (guards passed).
-- Contract: `policy_meta.json` equals the base export's (and upstream's)
-  except `run_name` / `checkpoint` — CONSUMED keys, network and runtime
-  unchanged. Export checks: numpy vs brax inference 1.35e-5, robot runtime
-  vs env reference 2.57e-4.
-- Attribution: the DR control at the same lr (arm E, `--mode dr
-  --learning_rate 1e-4`) ties F (47.9 / 38.8). The gain comes from the lower
-  fine-tune lr plus hard training levels, not from ACCEL alone; lr 3e-4
-  (arms A, C) degrades the base.
-- Run it: [Running it](#run).
+- `experiments/deploy-accel-ft` arm F, seed 1
+  ([report](../experiments/deploy-accel-ft/report.md)) is a
+  `terrain_blind_v4_4d`-contract research result, NOT a robot policy.
+  - `terrain_blind_v4_4d` has never run on hardware.
+  - Do not send it to the robot team.
+  - Result (sim only): +6.7 points d1.0 success over the 1.5B base, from
+    lr 1e-4 + hard training levels, not ACCEL alone (DR control, arm E,
+    ties it).
+- Robot-contract policy (`flat_quiet` contract): in progress.
+- The steps below are generic: export any deploy-profile checkpoint and run
+  it in sim first. Check the export's `pd` block against the robot's
+  servo limits before putting it on hardware.
 
 ## Upstream contract {#contract}
 
@@ -180,7 +174,7 @@ just export --checkpoint artifacts/brax_ued/<run>.pkl [--out <dir>]
   --score learnability --generator mixed --mutation grow` beats it on
   d1.0 success (+6.7 points) and command-conditioned success (+6.3), as
   does DR at lr 1e-4; the plain easy-generator ACCEL buffer stays next to
-  flat and does not ([current policy](#current-policy)).
+  flat and does not ([robot policy status](#current-policy)).
 
 ## Running it {#run}
 
@@ -195,7 +189,7 @@ answered from the policy store.
    `ros/policies` (→ `/ros2_ws/policies`, `WOJTEK_POLICY_STORE`):
 
    ```sh
-   cp -r <export dir> <w01-tek>/ros/policies/dft2_deploy_accel_sfl_lr1e-4_seed1_deploy
+   cp -r <export dir> <w01-tek>/ros/policies/<policy_name>
    ```
 
    - `./deploy.sh` mirrors `ros/policies/` to the RPi's
@@ -206,7 +200,7 @@ answered from the policy store.
 2. Sim first, in the container (`./dev.sh` in `ros/`):
 
    ```sh
-   ros2 launch wojtek_pc sim.launch.py policy:=/ros2_ws/policies/dft2_deploy_accel_sfl_lr1e-4_seed1_deploy
+   ros2 launch wojtek_pc sim.launch.py policy:=/ros2_ws/policies/<policy_name>
    ```
 
    - the plant (MuJoCo), ros2_control, `real_io_node` and `policy_node`; the
@@ -214,7 +208,7 @@ answered from the policy store.
    - `./sim.sh policy:=<dir>` from the host does the same (every
      `name:=value` passes through); `hw:=mock` runs the node graph only
    - the launch prints `>> policy dft2_deploy_accel_sfl_lr1e-4_seed1 from
-     local:<dir>; servo settings kp=40 kd=1.6 max_torque=32`
+     local:<dir>; servo settings kp=<kp> kd=<kd> max_torque=<max_torque>`
 3. Robot: upstream runs the RPi stack only through `wojtek-robot.service`
    (RT-pinned; "there's no non-RT way to run it" apart from the `--dry-run`
    bench). The drop-in `deploy.sh --provision` installs
@@ -223,8 +217,8 @@ answered from the policy store.
    deploying a local policy by hand:
 
    ```sh
-   rsync -a <export dir>/ rpi@10.42.0.2:policies/dft2_deploy_accel_sfl_lr1e-4_seed1_deploy/
-   ssh rpi@10.42.0.2 'ln -sfn /home/rpi/policies/dft2_deploy_accel_sfl_lr1e-4_seed1_deploy /home/rpi/policy'
+   rsync -a <export dir>/ rpi@10.42.0.2:policies/<policy_name>/
+   ssh rpi@10.42.0.2 'ln -sfn /home/rpi/policies/<policy_name> /home/rpi/policy'
    ```
 
    - then, robot lying folded: `ros2 run wojtek_bringup robot` from
@@ -232,8 +226,8 @@ answered from the policy store.
      stopped on Ctrl-C); if the service already runs (boot autostart),
      `ssh rpi@10.42.0.2 'sudo systemctl restart wojtek-robot.service'`
      instead — `start` leaves a running stack on the old policy
-   - servo kp / kd / max_torque come from the contract's `pd` block (kp 40,
-     kd 1.6, max_torque 32; `tau_ff` off, so the drive limit stays 32)
+   - servo kp / kd / max_torque come from the contract's `pd` block (`tau_ff`
+     off keeps the drive limit at `max_torque`)
    - `deploy.sh --policy` takes a Hugging Face reference only (it rejects a
      local directory); it writes `~/wojtek_ws/policy_override`, which only
      sets the launch default, so the drop-in's explicit `policy:=` wins
@@ -257,7 +251,7 @@ answered from the policy store.
     `/wojtek/arm std_srvs/srv/SetBool "{data: true}"`
   - wind down: disarm, then `/wojtek/lie_down` (Trigger)
 - Bench first, no torque: `ros2 run wojtek_bringup robot --dry-run --policy
-  /home/rpi/policies/dft2_deploy_accel_sfl_lr1e-4_seed1_deploy` launches
+  /home/rpi/policies/<policy_name>` launches
   `robot.launch.py dry_run:=true` on the RPi without RT (drives never
   enabled, encoder states still stream, the policy runs). Stop the service
   first (inferred: both open the drives).
