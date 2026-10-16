@@ -21,7 +21,7 @@ with w01-tek's ROS stack — in the MuJoCo sim first.
 - `experiments/deploy-accel-ft` arm F, seed 1
   ([report](../experiments/deploy-accel-ft/report.md)) is a
   `terrain_blind_v4_4d`-contract research result, NOT a robot policy.
-  - `terrain_blind_v4_4d` has never run on hardware.
+  - `terrain_blind_v4_4d` is not the pinned robot policy; its preset header says the family needs the IMU wired into the policy node before it can run on the robot.
   - Do not send it to the robot team.
   - Result (sim only): +6.7 points d1.0 success over the 1.5B base, from
     lr 1e-4 + hard training levels, not ACCEL alone (DR control, arm E,
