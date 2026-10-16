@@ -33,3 +33,14 @@ Upstream: `/home/jakgil6519/workspace/w01tek-e44c1a9`, base checkpoint
 - Fix (relaunch code): `FunctionalEnv._end_diverged` also ends any step with
   |qvel| > 200; brax_ued stops if any obs std leaves [0.1, 10]x of the
   `--init_from` normalizer; PPO losses + grad norm logged.
+
+## Launch 2 (code b84a645, runs `dft2_*`, 300M = the go/no-go)
+
+Approved by the coordinator: ~18 GPU-h total incl. launch 1.
+
+| date | job | what |
+|---|---|---|
+| 2026-10-16 12:15 | 6111933 | setup, frozen copy `$PDW/copies/dft-b84a645` |
+| 2026-10-16 12:15 | 6111934 | base eval_brax (native + v10box) |
+| 2026-10-16 12:15 | 6111935 | train array 0-8, 300M steps |
+| 2026-10-16 12:15 | 6111936 | eval_brax array 0-8, aftercorr 6111935 |

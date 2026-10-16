@@ -70,5 +70,21 @@ label = "launch 1 (dft_*, code 0fb3708): train 0-8, cancelled at 50-150M (normal
 id = 6111596
 label = "launch 1: eval_brax 0-8, cancelled with the train array"
 
+[[cluster.jobs]]
+id = 6111933
+label = "launch 2 (dft2_*, code b84a645): setup"
+
+[[cluster.jobs]]
+id = 6111934
+label = "launch 2: eval_brax base (array index 9)"
+
+[[cluster.jobs]]
+id = 6111935
+label = "launch 2: train 0-2 A accel, 3-5 B accel lr1e-4, 6-8 C dr; 300M"
+
+[[cluster.jobs]]
+id = 6111936
+label = "launch 2: eval_brax 0-8, aftercorr train"
+
 [report]
 url = ""
