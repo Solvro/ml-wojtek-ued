@@ -11,6 +11,7 @@ from omegaconf import OmegaConf
 
 from config.eval_config import EvalLevelsConfig
 from config.hfield_config import HFieldConfig
+from hfield.arena import check_arena
 from hfield.manager import HFieldManager
 from hfield.tiles import TileLayout
 from modules.ppo_modules import A2C
@@ -26,6 +27,7 @@ from utils.env import FunctionalEnv
 from utils.env_overrides import accel_arena_overrides, merge_overrides
 from utils.logging import Logger, quiet_dependencies
 from utils.ppo_helpers import FALL_CAUSES, LevelEpisode, eval_levels
+from wojtek_env import paths
 
 
 def rollout_levels(
@@ -124,6 +126,7 @@ def main(cfg: EvalLevelsConfig) -> None:
     meta = load_meta(directory)
 
     hfield_config = cast(HFieldConfig, OmegaConf.to_object(cfg.hfield_params))
+    check_arena(paths.terrain_paths("accel")["spec"], hfield_config, "accel")
     hfield_manager = HFieldManager(hfield_config)
     meta_overrides = meta["env_overrides"] or {}
     pad_radius = meta_overrides.get("terrain", {}).get(

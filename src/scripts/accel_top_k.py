@@ -12,6 +12,7 @@ from omegaconf import OmegaConf
 
 from config.accel_config import AccelConfig
 from config.hfield_config import HFieldConfig
+from hfield.arena import check_arena
 from hfield.manager import HFieldManager
 from hfield.tiles import TileLayout
 from modules.ppo_modules import A2C, Episode
@@ -48,6 +49,7 @@ from utils.ppo_helpers import (
     make_step,
     warm_start_actor,
 )
+from wojtek_env import paths
 
 ALGO = "accel_top_k"
 
@@ -202,6 +204,7 @@ def train(cfg: AccelConfig) -> None:
 
     level_buffer = LevelBuffer(size=cfg.accel_params.buffer_size)
     hfield_config = cast(HFieldConfig, OmegaConf.to_object(cfg.hfield_params))
+    check_arena(paths.terrain_paths("accel")["spec"], hfield_config, "accel")
     hfield_manager = HFieldManager(hfield_config)
     layout = TileLayout(hfield_config)
     steps = cfg.environment_params.steps_in_episode

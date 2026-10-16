@@ -13,6 +13,7 @@ from omegaconf import OmegaConf
 
 from config.hfield_config import HFieldConfig
 from config.ppo_dr_terrain_config import PpoDrTerrainConfig
+from hfield.arena import check_arena
 from hfield.manager import HFieldManager
 from hfield.tiles import TileLayout
 from modules.ppo_modules import A2C
@@ -41,6 +42,7 @@ from utils.ppo_helpers import (
     rollout_metrics,
     run_ppo_epochs,
 )
+from wojtek_env import paths
 
 ALGO = "ppo_dr_terrain"
 
@@ -71,6 +73,7 @@ def train(cfg: PpoDrTerrainConfig) -> None:
     )
 
     hfield_config = cast(HFieldConfig, OmegaConf.to_object(cfg.hfield_params))
+    check_arena(paths.terrain_paths("accel")["spec"], hfield_config, "accel")
     hfield_manager = HFieldManager(hfield_config)
 
     # same observations and task as the ACCEL trainers, so the comparison
