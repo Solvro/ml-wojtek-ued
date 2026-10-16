@@ -16,6 +16,7 @@ from scripts.brax_ued import (
     Student,
     load_run,
     make_network,
+    normalizer_problem,
     parse_args,
     run_spec,
 )
@@ -135,10 +136,19 @@ def test_checkpoint_without_run_json_is_refused(tmp_path: Path) -> None:
         run_import(checkpoint, tmp_path / "x.pkl")
 
 
-def student(size: ObsSize) -> Student:
+def student(size: ObsSize, learning_rate: float = 3e-4) -> Student:
     env = SimpleNamespace(observation_size=size, action_size=12)
     spec = run_spec(parse_args(DEPLOY))
-    return Student(env, spec["network"], jax.random.key(1), 0.3)  # ty: ignore[invalid-argument-type]
+    return Student(env, spec["network"], jax.random.key(1), 0.3, learning_rate)  # ty: ignore[invalid-argument-type]
+
+
+@pytest.mark.parametrize("learning_rate", [3e-4, 1e-4])
+def test_learning_rate_sets_the_first_adam_step(learning_rate: float) -> None:
+    s = student(deploy_size(), learning_rate)
+    grads = jax.tree.map(lambda x: 1e-3 * np.ones_like(x), s.params)
+    updates, _ = s.optimizer.update(grads, s.optimizer.init(s.params))
+    steps = np.concatenate([np.abs(x).ravel() for x in jax.tree.leaves(updates)])
+    np.testing.assert_allclose(steps, learning_rate, rtol=1e-3)
 
 
 def test_warm_start_takes_every_imported_param(tmp_path: Path) -> None:
@@ -171,3 +181,30 @@ def test_default_run_has_no_init_from() -> None:
 def test_init_from_is_recorded_in_the_sidecar_spec() -> None:
     spec = run_spec(parse_args([*DEPLOY, "--init_from", "a1long.pkl"]))
     assert spec["init_from"] == "a1long.pkl"
+
+
+def warm_student(tmp_path: Path) -> Student:
+    out = tmp_path / "imported.pkl"
+    run_import(fake_upstream(tmp_path), out)
+    _, params = load_run(out)
+    s = student(deploy_size())
+    s.warm_start(params, str(out))
+    return s
+
+
+def test_std_ratios_need_a_warm_start() -> None:
+    s = student(deploy_size())
+    assert s.std_ratios() == {}
+    assert normalizer_problem(s.std_ratios()) is None
+
+
+def test_a_poisoned_obs_std_is_a_normalizer_problem(tmp_path: Path) -> None:
+    s = warm_student(tmp_path)
+    ratios = s.std_ratios()
+    assert set(ratios.values()) == {1.0}
+    assert normalizer_problem(ratios) is None
+    normalizer: Any = s.normalizer
+    std = {**normalizer.std, "state": normalizer.std["state"].at[3].multiply(20.0)}
+    s.normalizer = normalizer.replace(std=std)
+    problem = normalizer_problem(s.std_ratios())
+    assert problem is not None and "std_ratio_max/state" in problem

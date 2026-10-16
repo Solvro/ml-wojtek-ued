@@ -350,14 +350,29 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
 - Non-finite guard, every iteration: NaN/Inf in the student's normalizer,
   policy or value stops the run (`FloatingPointError` naming iteration and
   `env_steps`); with `--checkpoint_dir` the previous iteration's params go to
-  `<name>_last_finite.pkl` (+ sidecar), no `<name>.pkl` is written.
+  `<name>_last_finite.pkl` (+ sidecar); `<name>.pkl` keeps the last
+  evaluated policy.
   `load_run` refuses a checkpoint with non-finite params (eval, export,
   render, `--init_from`).
 - Eval every `eval_every` iterations: deterministic policy on `eval_levels`
   fresh uniform levels (2 episodes each, in chunks of at most `tiles²`
   levels) at difficulties 0.25/0.5/0.75/1.0 — `eval/d<d>/success_rate` (no
-  fall and >= `min_travel` m from spawn), fall rate, travel, forward vs
-  commanded speed.
+  fall and >= `min_travel` m from spawn), `eval/d<d>/cmd_success_rate`
+  (eval_brax's command tracking, `utils/tracking.py`), fall rate, travel,
+  forward vs commanded speed. With `--checkpoint_dir`, `<name>.pkl` is
+  rewritten after every eval, so a crashed run keeps its last evaluated
+  policy.
+- Divergence guard: diverged env steps are ended in the env
+  ([environment.md](environment.md#functionalenv--the-training-bridge)) and
+  logged as `diverged_per_step`. With `--init_from`, every obs std must
+  stay within 10x of the warm start's
+  (`normalizer/std_ratio_{max,min}/{state,privileged_state}`, logged every
+  iteration), else the run stops with `FloatingPointError` naming the last
+  evaluated checkpoint.
+- PPO, every training iteration: `ppo/<metric>` = mean of brax's loss
+  metrics over the iteration's updates (`total_loss`, `policy_loss`,
+  `v_loss`, `entropy_loss`, `kl_mean`, `policy_dist_*`), `ppo/grad_norm`
+  (global norm before clipping, mean) and `ppo/grad_norm_max`.
 - Curriculum composition (`--level_space param` only), every iteration over
   the levels the student ran on (replayed, explored or PAIRED-generated):
   `level/<param>` = mean physical value (`ParamSpace.physical`, robot
@@ -367,7 +382,7 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   upstream checkpoint ([deploy.md](deploy.md#warm-start)).
 - `--env_override <file.json>` (TRAINING_ONLY env keys merged onto the
   profile's, [deploy.md](deploy.md#profile)), `--clipping_epsilon` (PPO
-  clip, default 0.2).
+  clip, default 0.2), `--learning_rate` (Adam, default 3e-4).
 - Reward terms, every iteration: `reward_term/<name>` = mean of the env's
   `reward/<name>` metric over the iteration's training steps, raw (before
   `reward.scales` and the x `ctrl_dt`).
@@ -498,7 +513,7 @@ the backend is the sidecar's (v10 and earlier: jax).
   `lin_rel = |v_xy - cmd_xy| / max(|cmd_xy|, 0.3 m/s x ROBOT_SCALE)`,
   `yaw_rel = |wz - cmd_wz| / max(|cmd_wz|, 0.7 rad/s)` (the deploy reward's
   `tracking_rel_floor_lin` / `_ang`). Tracked = episode means of both
-  < 0.5, i.e. within 50% of the command (`TRACK_*` in `eval_brax.py`).
+  < 0.5, i.e. within 50% of the command (`TRACK_*` in `utils/tracking.py`).
   Steps within 1 s of the reset or of a command change are a start-up
   transient and not scored: the env resamples every 250 steps (5 s), so a
   6 s level scores 1-5 s and the second command's last second is all
@@ -530,9 +545,13 @@ the backend is the sidecar's (v10 and earlier: jax).
   off; `envelope` = largest |feature| passed at 50% success, `auc` = mean
   success over the ramp. Difficulty 0.25 is too easy to separate methods
   (~89% for anything trained near flat) and is not a headline number.
-- `flat/...`: `suite_instances` flat levels (`scaled(0)`), the no-terrain
-  reference (success, fall rate, travel, CVaR). Runs last on its own
-  rng/key, so every other set keeps its v8 levels and keys.
+- `flat/...`: `--flat_levels` (default `suite_instances`) flat levels
+  (`scaled(0)`), the no-terrain reference (success, fall rate, travel,
+  CVaR). Runs last on its own rng/key, so every other set keeps its v8
+  levels and keys. `--flat_only` evaluates only flat levels, with reset
+  keys of its own (not the full eval's flat keys): compare `--flat_only`
+  runs with each other, not with a full eval's `flat/...` (64 levels
+  resolve only ±4 points; deploy-accel-ft guards use 1024).
 - 95% bootstrap CIs over levels for mean and CVaR; `level_success_corr`
   between passes; suite CVaR is over the 28 terrain×strength cells.
 - Writes `<name>.json` (metrics) and `<name>.npz` to `--out_dir`, and the
@@ -541,6 +560,7 @@ the backend is the sidecar's (v10 and earlier: jax).
   - `random_d<d>_fell`, `random_d<d>_travel`; `random_levels` (levels x
     genome): the d=1 base genomes of the `random/d*` sets.
   - `suite_success` (28 terrain x strength cells).
+  - `flat_fell`, `flat_travel`, `flat_{lin,yaw}_{err,rel}`.
   - `param` only: `param_uniform_fell`, `param_uniform_travel`,
     `param_uniform_levels` (levels x genome). `_travel` and the genomes are
     new in v10; v8 npz files lack them. WCSS: `eval_brax.sbatch` (same `MODES` task layout

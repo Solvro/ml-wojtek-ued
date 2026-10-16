@@ -1,0 +1,226 @@
+<title>ACCEL fine-tune vs the 1.5B base</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,650&family=Public+Sans:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* layout: one reading column, wide tables scroll in their own frame; lab-notebook ink on a cool paper */
+:root {
+  --paper: #f6f8f7;
+  --panel: #ffffff;
+  --ink: #15201d;
+  --ink-2: #4b5a55;
+  --rule: #d5dedb;
+  --accent: #0f6b5c;
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --s4: #eda100;
+  --s5: #e87ba4;
+  --s6: #008300;
+  --sbase: #4b5a55;
+  --good: #1d7a3a;
+  --bad: #b3261e;
+  --display: "Source Serif 4", Georgia, serif;
+  --body: "Public Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #121816;
+    --panel: #19211e;
+    --ink: #e6eeeb;
+    --ink-2: #a3b3ad;
+    --rule: #2f3b37;
+    --accent: #5cc4ae;
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --s4: #c98500;
+    --s5: #d55181;
+    --s6: #008300;
+    --sbase: #a3b3ad;
+    --good: #5fc27c;
+    --bad: #ff8a80;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #121816;
+  --panel: #19211e;
+  --ink: #e6eeeb;
+  --ink-2: #a3b3ad;
+  --rule: #2f3b37;
+  --accent: #5cc4ae;
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --s4: #c98500;
+  --s5: #d55181;
+  --s6: #008300;
+  --sbase: #a3b3ad;
+  --good: #5fc27c;
+  --bad: #ff8a80;
+}
+body { background: var(--paper); color: var(--ink); font: 15px/1.6 var(--body); padding-inline: 16px; }
+main { max-width: 980px; margin: 0 auto; padding-block: 40px 80px; display: grid; gap: 28px; }
+h1, h2, h3 { font-family: var(--display); font-weight: 650; line-height: 1.2; text-wrap: balance; margin: 0; }
+h1 { font-size: 2.1rem; }
+h2 { font-size: 1.35rem; padding-top: 12px; border-top: 1px solid var(--rule); }
+h3 { font-size: 1.05rem; }
+p, li { max-width: 68ch; }
+p { margin: 0; }
+section { display: grid; gap: 12px; }
+.eyebrow { font: 600 0.72rem/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.lede { font-size: 1.05rem; color: var(--ink-2); }
+.criterion { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 18px; }
+.criterion ul { margin: 6px 0 0; padding-left: 18px; }
+.tw { overflow-x: auto; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 0.86rem; }
+th, td { padding: 6px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--rule); }
+thead th { font: 600 0.72rem/1.3 var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); vertical-align: bottom; }
+tbody th { text-align: left; font-weight: 600; }
+tr.seed th { font-weight: 400; color: var(--ink-2); padding-left: 30px; }
+tr.seed td { color: var(--ink-2); }
+tr.base th, tr.arm th { padding-top: 10px; }
+small { color: var(--ink-2); font-weight: 400; }
+.v { font-family: var(--mono); }
+.ci { display: block; font: 0.72rem var(--mono); color: var(--ink-2); }
+.d { font-family: var(--mono); }
+.d.pos { color: var(--good); font-weight: 600; }
+.d.neg { color: var(--bad); font-weight: 600; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: baseline; }
+.sw.s1 { background: var(--s1); } .sw.s2 { background: var(--s2); } .sw.s3 { background: var(--s3); }
+.sw.s4 { background: var(--s4); } .sw.s5 { background: var(--s5); } .sw.s6 { background: var(--s6); }
+.sw.sbase { background: var(--sbase); }
+td.ok { color: var(--good); } td.no { color: var(--bad); font-weight: 600; }
+td.win { font-weight: 600; } td.win.yes { color: var(--good); }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+figure { margin: 0; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 12px 8px; position: relative; }
+figcaption { font-size: 0.82rem; color: var(--ink-2); }
+svg { width: 100%; height: auto; display: block; }
+svg text { fill: var(--ink-2); font: 11px var(--mono); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.82rem; color: var(--ink-2); }
+.tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; padding: 6px 8px; font: 0.75rem/1.4 var(--mono); color: var(--ink); white-space: nowrap; }
+code { font: 0.85em var(--mono); }
+.notes { display: grid; gap: 12px; }
+.notes ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+</style>
+
+<main>
+  <header style="display:grid; gap:10px">
+    <div class="eyebrow">deploy-accel-ft · terrain_blind_v4_4d · warp tiled arena · 3 seeds per arm</div>
+    <h1>ACCEL fine-tune vs the 1.5B base</h1>
+    <p class="lede">Seven arms fine-tune the upstream 1.5B-step policy on the deploy arena (upstream rewards, DR and network, clip 0.3): five ACCEL variants and two DR controls, 300M env steps each, B also continued to 1B. Every policy, the base included, ran the same eval_brax levels and reset keys on warp: 2048 levels × 4 episodes × 2 passes, flat on 1024 levels.</p>
+  </header>
+
+  <section class="criterion">
+    <h3>Win criterion, fixed before running</h3>
+    <ul>
+      <li>Primary: <code>random/d1.0/cmd_success_rate</code> and <code>random/d1.0/success_rate</code>, 3-seed mean above the base with the 95% CIs (levels × seeds bootstrap) not overlapping the base's (levels bootstrap).</li>
+      <li>Guards: no drop &gt; 2 points on flat and d0.25 success; d1.0 fall rate not worse (paired difference not significantly above 0).</li>
+      <li>Only ACCEL arms can be the uploaded policy; DR arms are controls.</li>
+      <li>Secondary: v10box d1.0 success, suite success.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Verdict</h2>
+    {{VERDICT}}
+  </section>
+
+  <section>
+    <h2>Primary metrics, native deploy eval</h2>
+    <p>Success rates in %, 95% CI below each value. “vs base”: paired difference in points (same levels), green when its CI is above 0, red when below.</p>
+    {{PRIMARY}}
+  </section>
+
+  <section>
+    <h2>Learning curves</h2>
+    <p>In-training eval every 20 iterations (512 levels × 2 episodes, the same level draw each time): seed mean with min–max band. The dashed line and grey band are the base: the iteration-0 evals of the six ACCEL runs, which train nothing before their first eval.</p>
+    <div class="legend">{{LEGEND}}</div>
+    <div class="charts">
+      <figure><svg id="c-cmd" viewBox="0 0 460 260" role="img" aria-label="d1.0 command-conditioned success vs env steps"></svg><figcaption>d1.0 command-conditioned success</figcaption></figure>
+      <figure><svg id="c-succ" viewBox="0 0 460 260" role="img" aria-label="d1.0 success vs env steps"></svg><figcaption>d1.0 success</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>What each arm trained on</h2>
+    <p>Second half of training, iterations that updated the student (for ACCEL: levels replayed from its buffer). Genome distance = mean |genome − flat| over the 8 terrain parameters; uniform d1.0 eval levels sit near DR's value.</p>
+    {{COMPOSITION}}
+  </section>
+
+  <section>
+    <h2>Guards</h2>
+    {{GUARDS}}
+  </section>
+
+  <section>
+    <h2>Secondary metrics</h2>
+    <h3>v10box: v10 6×6 m arena, uniform forward command in both boxes</h3>
+    {{V10BOX}}
+    <h3>Other level sets, native</h3>
+    {{SECONDARY}}
+    <h3>Suite and flat (per-seed values below the mean)</h3>
+    {{SUITE}}
+  </section>
+
+  <div class="notes">{{NOTES}}</div>
+</main>
+
+<script>
+const DATA = {{CHARTS}};
+const META = {{META}};
+function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function draw(id, series) {
+  const svg = document.getElementById(id);
+  const W = 460, H = 260, L = 44, R = 12, T = 12, B = 32;
+  const arms = Object.keys(series).filter(k => k !== "base");
+  const xs = [...new Set(arms.flatMap(a => series[a].x))].sort((a, b) => a - b);
+  const all = arms.flatMap(a => [...series[a].lo, ...series[a].hi]).concat([series.base.lo, series.base.hi]);
+  const y0 = Math.floor(Math.min(...all) * 50) / 50, y1 = Math.ceil(Math.max(...all) * 50) / 50;
+  const xmax = Math.ceil(xs[xs.length - 1] / 50) * 50;
+  const sx = x => L + (x / xmax) * (W - L - R);
+  const sy = y => T + (1 - (y - y0) / (y1 - y0)) * (H - T - B);
+  const ns = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs) => { const e = document.createElementNS(ns, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); svg.appendChild(e); return e; };
+  svg.innerHTML = "";
+  for (let y = y0; y <= y1 + 1e-9; y += 0.02) {
+    el("line", { x1: L, x2: W - R, y1: sy(y), y2: sy(y), stroke: css("--rule"), "stroke-width": 1 });
+    el("text", { x: L - 6, y: sy(y) + 4, "text-anchor": "end" }).textContent = (100 * y).toFixed(0);
+  }
+  for (let x = 0; x <= xmax; x += 50) {
+    el("text", { x: sx(x), y: H - 12, "text-anchor": "middle" }).textContent = x + "M";
+  }
+  el("rect", { x: L, width: W - L - R, y: sy(series.base.hi), height: sy(series.base.lo) - sy(series.base.hi), fill: css("--sbase"), opacity: 0.12 });
+  el("line", { x1: L, x2: W - R, y1: sy(series.base.mean), y2: sy(series.base.mean), stroke: css("--sbase"), "stroke-width": 1.5, "stroke-dasharray": "5 4" });
+  for (const a of arms) {
+    const s = series[a], c = css("--" + META[a].slot);
+    const band = s.x.map((x, i) => `${sx(x)},${sy(s.hi[i])}`).concat(s.x.map((x, i) => `${sx(x)},${sy(s.lo[i])}`).reverse());
+    el("polygon", { points: band.join(" "), fill: c, opacity: 0.13 });
+    el("polyline", { points: s.x.map((x, i) => `${sx(x)},${sy(s.mean[i])}`).join(" "), fill: "none", stroke: c, "stroke-width": 2, "stroke-linejoin": "round" });
+  }
+  const cross = el("line", { y1: T, y2: H - B, stroke: css("--ink-2"), "stroke-width": 1, opacity: 0 });
+  const fig = svg.parentElement;
+  const tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true; fig.appendChild(tip);
+  const hit = el("rect", { x: L, y: T, width: W - L - R, height: H - T - B, fill: "transparent" });
+  hit.addEventListener("mousemove", ev => {
+    const box = svg.getBoundingClientRect();
+    const px = (ev.clientX - box.left) * W / box.width;
+    let i = 0; xs.forEach((x, j) => { if (Math.abs(sx(x) - px) < Math.abs(sx(xs[i]) - px)) i = j; });
+    cross.setAttribute("x1", sx(xs[i])); cross.setAttribute("x2", sx(xs[i])); cross.setAttribute("opacity", 0.6);
+    const rows = arms.map(a => { const j = series[a].x.findIndex(x => Math.abs(x - xs[i]) < 1); return j < 0 ? null : `${META[a].name}: ${(100 * series[a].mean[j]).toFixed(1)}`; }).filter(Boolean);
+    tip.innerHTML = `<b>${xs[i].toFixed(0)}M steps</b><br>` + rows.join("<br>") + `<br>base: ${(100 * series.base.mean).toFixed(1)}`;
+    tip.hidden = false;
+    const left = (sx(xs[i]) / W) * box.width;
+    tip.style.left = (left > box.width / 2 ? left - tip.offsetWidth - 4 : left + 16) + "px";
+    tip.style.top = "16px";
+  });
+  hit.addEventListener("mouseleave", () => { tip.hidden = true; cross.setAttribute("opacity", 0); });
+}
+function render() { draw("c-cmd", DATA.cmd); draw("c-succ", DATA.succ); }
+render();
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+</script>

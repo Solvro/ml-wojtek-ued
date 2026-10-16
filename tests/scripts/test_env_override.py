@@ -114,7 +114,12 @@ def test_arm_keeps_inference_equal_to_upstream(arm: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "flag", [["--clipping_epsilon", "0.3"], ["--level_steps", "1000"]]
+    "flag",
+    [
+        ["--clipping_epsilon", "0.3"],
+        ["--level_steps", "1000"],
+        ["--learning_rate", "1e-4"],
+    ],
 )
 def test_ppo_and_episode_arms_keep_inference_equal(flag: list[str]) -> None:
     ours = resolved([*DEPLOY, *flag])

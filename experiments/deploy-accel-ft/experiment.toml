@@ -1,0 +1,106 @@
+name = "deploy-accel-ft"
+question = "Does an ACCEL fine-tune of the upstream 1.5B terrain_blind_v4_4d policy beat that base on the deploy arena (warp)?"
+
+envs = ["deploy"]
+conditions = ["accel", "accel_lr1e-4", "dr", "accel_hard_lr1e-4", "dr_lr1e-4", "accel_sfl_lr1e-4", "accel_lr1e-4_1b"]
+seeds = [0, 1, 2]
+total_steps = 300_000_000
+
+[wandb]
+entity = "dominikgalus9-wroc-aw-university-of-science-and-technology"
+project = "wojtyla"
+# added through the wandb API once the runs exist
+tag = "deploy-accel-ft"
+run_name = '^dft2_(?P<env>deploy)_(?P<condition>accel|accel_lr1e-4|dr|accel_hard_lr1e-4|dr_lr1e-4|accel_sfl_lr1e-4|accel_lr1e-4_1b)_seed(?P<seed>\d+)$'
+
+[metric]
+keys = ["eval/d1.0/cmd_success_rate"]
+x = ["env_steps"]
+label = "command-conditioned success, uniform levels d=1.0"
+final_window = 0.1
+
+[reference]
+condition = "accel"
+thresholds = [0.5]
+
+# Win criterion (fixed before running, from the T8 brief), on the final
+# eval_brax evals, base re-evaluated on the same backend/arena/levels:
+# - primary: random/d1.0/cmd_success_rate AND random/d1.0/success_rate,
+#   3-seed mean above the base with 95% CIs (levels x seeds bootstrap) not
+#   overlapping the base's (levels bootstrap);
+# - secondary: v10box random/d1.0/success_rate and suite/success_rate;
+# - guard: no drop > 0.02 on flat and random/d0.25 success, d1.0 fall rate
+#   not worse.
+# Go/no-go at ~300M env steps: stop if no A/B seed trends above the base
+# (in-training eval at iteration 0 = the base) on both primary metrics.
+
+[[secondary]]
+key = "eval/d1.0/success_rate"
+label = "success, uniform levels d=1.0"
+
+[[secondary]]
+key = "eval/d0.25/success_rate"
+label = "success, d=0.25 (guard)"
+
+[[secondary]]
+key = "eval/d1.0/fall_rate"
+label = "fall rate, d=1.0 (guard)"
+
+[[secondary]]
+key = "diverged_per_step"
+label = "diverged env steps / step"
+note = "ended by FunctionalEnv._end_diverged"
+
+[cluster]
+ssh_host = "wcss"
+
+[[cluster.jobs]]
+id = 6111593
+label = "setup: robot model, both tiled arenas, base re-import + export check (CPU)"
+
+[[cluster.jobs]]
+id = 6111594
+label = "launch 1: eval_brax base (array index 9), code 0fb3708"
+
+[[cluster.jobs]]
+id = 6111595
+label = "launch 1 (dft_*, code 0fb3708): train 0-8, cancelled at 50-150M (normalizer poisoned by env blow-ups)"
+
+[[cluster.jobs]]
+id = 6111596
+label = "launch 1: eval_brax 0-8, cancelled with the train array"
+
+[[cluster.jobs]]
+id = 6111933
+label = "launch 2 (dft2_*, code b84a645): setup"
+
+[[cluster.jobs]]
+id = 6111934
+label = "launch 2: eval_brax base (array index 9)"
+
+[[cluster.jobs]]
+id = 6111935
+label = "launch 2: train 0-2 A accel, 3-5 B accel lr1e-4, 6-8 C dr; 300M"
+
+[[cluster.jobs]]
+id = 6111936
+label = "launch 2: eval_brax 0-8, aftercorr train"
+
+[[cluster.jobs]]
+id = 6112488
+label = "launch 3 (code ce15a38): setup"
+
+[[cluster.jobs]]
+id = 6112489
+label = "launch 3: train 0-11 (hard, dr lr1e-4, sfl, B to 1B)"
+
+[[cluster.jobs]]
+id = 6112490
+label = "launch 3: eval 0-11, aftercorr train"
+
+[[cluster.jobs]]
+id = 6112491
+label = "launch 3: flat-only evals of launch 2 + base"
+
+[report]
+url = "https://claude.ai/code/artifact/8d375cee-c869-4b66-a942-8331da0f9d4d"

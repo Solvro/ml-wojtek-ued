@@ -223,7 +223,8 @@ def main() -> None:
             hfield = space.render(level)[0]
             arena = layout.assemble(jnp.asarray(hfield)[None])
             qpos, fell = rollout(jax.random.key(args.seed), arena, tile_xy)
-            qpos, fell = np.asarray(qpos), np.asarray(fell)
+            # a copy: np.asarray of a jax array is read-only
+            qpos, fell = np.array(qpos), np.asarray(fell)
             # the render model holds the level at the origin
             qpos[:, :2] -= np.asarray(tile_xy)
             falls = np.flatnonzero(fell) * base.dt

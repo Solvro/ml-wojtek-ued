@@ -67,7 +67,8 @@ setup, unchanged).
   accepted (`contract.TRAINING_ONLY_KEYS`), anything that shapes the
   contract (`obs`, `command`, `action_scale`, `pd_*`, ...) is refused at
   parse time. The merged config lands in the sidecar, so export and evals
-  rebuild the same env. `--clipping_epsilon` (default 0.2) sets PPO's clip.
+  rebuild the same env. `--clipping_epsilon` (default 0.2) sets PPO's clip,
+  `--learning_rate` (default 3e-4) Adam's step size.
   `tests/scripts/test_env_override.py` keeps every
   `experiments/deploy-ab/arms/*.json` at upstream's CONSUMED keys and
   network.
@@ -140,6 +141,11 @@ just export --checkpoint artifacts/brax_ued/<run>.pkl [--out <dir>]
   checkpoint's normalizer, policy and value (fresh optimizer state);
   refused if its sidecar's network or any parameter shape differs. The
   sidecar records `init_from`.
+- Fine-tuning the 1.5B upstream base (experiments/deploy-accel-ft, 300M
+  steps, warp): lr 3e-4 degrades it; `--learning_rate 1e-4 --mode accel
+  --score learnability --generator mixed --mutation grow` beats it on
+  d1.0 success (+6.7 points) and command-conditioned success (+6.3); the
+  plain easy-generator ACCEL buffer stays next to flat and does not.
 
 ## Running it {#run}
 
