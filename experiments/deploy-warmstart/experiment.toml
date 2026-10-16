@@ -65,4 +65,4 @@ id = 6109845
 label = "eval seeds 0-2 (native + v10box, aftercorr:6109843)"
 
 [report]
-url = ""
+url = "https://claude.ai/code/artifact/cc0573b2-d8f2-47e2-b5af-855e6cfc64ef"
