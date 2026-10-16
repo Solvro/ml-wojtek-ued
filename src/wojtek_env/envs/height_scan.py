@@ -73,16 +73,8 @@ def camera_pos(base_pos, quat, mount, xp=jp):
 
 
 def visible_mask(
-    points,
-    base_pos,
-    quat,
-    mount,
-    pitch_deg,
-    hfov_deg,
-    vfov_deg,
-    min_depth,
-    max_depth,
-    xp=jp,
+    points, base_pos, quat, mount, pitch_deg, hfov_deg, vfov_deg,
+    min_depth, max_depth, xp=jp,
 ):
     """Which world `points` a body-mounted depth camera can see.
 
@@ -130,14 +122,8 @@ def occluded_mask(points, cam_pos, height_fn, num_samples, margin, xp=jp):
 
 
 def sample_corruption(
-    rng,
-    noise_prob,
-    drift_prob,
-    blackout_prob,
-    drift_z,
-    drift_tilt,
-    pitch_jitter_deg=0.0,
-    mount_jitter=0.0,
+    rng, noise_prob, drift_prob, blackout_prob, drift_z, drift_tilt,
+    pitch_jitter_deg=0.0, mount_jitter=0.0,
 ):
     """(regime, (drift_z, drift_tilt), (dpitch_deg, dx, dy, dz)) per episode.
 
@@ -154,12 +140,16 @@ def sample_corruption(
         minval=jp.array([-drift_z, -drift_tilt]),
         maxval=jp.array([drift_z, drift_tilt]),
     )
-    bound = jp.array([pitch_jitter_deg, mount_jitter, mount_jitter, mount_jitter])
+    bound = jp.array(
+        [pitch_jitter_deg, mount_jitter, mount_jitter, mount_jitter]
+    )
     cam_jit = jax.random.uniform(r_cam, (4,), minval=-bound, maxval=bound)
     return regime.astype(jp.int32), drift, cam_jit
 
 
-def apply_corruption(rng, scan, regime, drift, grid_x, noise_std, dropout_prob):
+def apply_corruption(
+    rng, scan, regime, drift, grid_x, noise_std, dropout_prob
+):
     """Actor-side sensor corruption of one masked scan.
 
     NOISE adds iid gaussian, DRIFT a per-episode offset growing with

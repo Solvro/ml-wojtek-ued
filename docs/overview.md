@@ -15,9 +15,9 @@ inside `wojtek_env`.
 | **Env library** | `src/wojtek_env/` | MJX sim env, procedural terrain, Gymnasium wrapper, build/check CLIs | packaged (hatchling), **excluded from ruff** |
 | **Research code** | `src/{config,modules,utils,hfield,ued}/`, `src/scripts/` | PPO trainer, ACCEL curriculum, heightfield levels, Hydra config | ruff + ty enforced |
 
-`src/wojtek_env/` is extracted from an upstream robot stack (w01-tek) and treated
-as a stable dependency: env only, no trainer, no ROS, no deployment. Details in
-[environment.md](environment.md).
+`src/wojtek_env/` is copied from an upstream robot stack (w01-tek, synced at
+`e44c1a9`) and treated as a stable dependency: env only, no trainer, no ROS,
+no deployment. Details in [environment.md](environment.md#upstream-sync).
 
 ## Repo map
 
@@ -43,7 +43,8 @@ src/
     logging.py       wandb or a jsonl fallback Logger
   hfield/            heightfield levels for ACCEL  (see ued-accel.md)
     manager.py       HFieldManager: generate / mutate / upsample a level
-    arena.py         write the static "accel" MJCF arena assets
+    arena.py         write the static tiled "accel" MJCF arena assets
+    tiles.py         TileLayout: one level per tile of the shared arena
     playground.py    offscreen render demo of generated levels
   ued/               the ACCEL algorithm  (see ued-accel.md)
     types.py         RolloutFn, Curator, PPOTrainer
@@ -56,8 +57,8 @@ src/
     ppo_dr.py        PPO + baseline domain randomization (`just train-dr`)
     accel.py         ACCEL curriculum, vanilla         (`just accel`)
     accel_top_k.py   ACCEL curriculum, batched-lanes/top-k (`just accel-top-k`)
-    eval.py          evaluate a saved checkpoint       (`just eval --algo <algo>`)
-    eval_levels.py   evaluate across generated levels  (`uv run python src/scripts/eval_levels.py --algo <algo>`)
+    eval.py          evaluate a saved checkpoint       (`just eval algo=<algo>`)
+    eval_levels.py   evaluate across generated levels  (`just eval-levels algo=<algo>`)
 main.py              random-agent MuJoCo-viewer preview
 ```
 
@@ -87,15 +88,17 @@ plateau**, not a fixed step count. Full walkthrough in [ued-accel.md](ued-accel.
 **Eval** (`scripts/eval.py`): each trainer checkpoints under
 `artifacts/<algo>/<run>/` (`<algo>` is one of `ppo`/`ppo_dr`/`accel`/
 `accel_top_k`) and writes a `meta.json` sidecar recording the model shape and
-env construction. `just eval --algo <algo>` rebuilds the `A2C` template and
-`FunctionalEnv` from that sidecar and restores the latest (or `--run`/`--step`
+env construction. `just eval algo=<algo>` rebuilds the `A2C` template and
+`FunctionalEnv` from that sidecar and restores the latest (or `run=`/`step=`
 selected) checkpoint — no Hydra config needed at eval time. Details in
 [ppo.md](ppo.md#checkpoints--utilscheckpointpy).
 
 ## Glossary
 
-- **Level / genome** — a `coarse_n × coarse_n` array in `[0,1]`; upsampled to
-  `hfield_data`, the terrain the robot walks on.
+- **Level / genome** — a `coarse_n × coarse_n` array (or 9 terrain
+  parameters, `param` space) in `[0,1]`; rendered to a heightfield patch and
+  written into its tile of the shared arena's `hfield_data`, the terrain the
+  robot walks on.
 - **Regret** — positive value loss (Eq. 5): how much the critic under-estimated
   return, i.e. how "surprisingly hard" a level was. The curriculum's score.
 - **Curator** — bundles the level buffer + generator + replay/regret thresholds.
@@ -104,7 +107,7 @@ selected) checkpoint — no Hydra config needed at eval time. Details in
 ## Where to read next
 
 - Get it running → [setup.md](setup.md)
-- The env, tasks, terrain, hfield-swap trick → [environment.md](environment.md)
+- The env, tasks, terrain, shared tiled arena → [environment.md](environment.md)
 - PPO model, rollout, loss, checkpoints → [ppo.md](ppo.md)
 - The ACCEL curriculum + heightfield levels → [ued-accel.md](ued-accel.md)
 - Every config field and Hydra overrides → [configuration.md](configuration.md)

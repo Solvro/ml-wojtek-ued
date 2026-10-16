@@ -144,23 +144,26 @@ def batch_rollout(
     envs_num: int,
     steps_in_episode: int,
     hfield_data: jax.Array | None = None,
+    tile_xy: jax.Array | None = None,
     dr_model: mjx.Model | None = None,
     dr_in_axes: mjx.Model | None = None,
-    hfield_in_axes: int | None = None,
 ) -> Episode:
+    """`hfield_data`: the tiled arena, shared by every env; `tile_xy`:
+    (envs_num, 2) spawn tile centre per env (`hfield.tiles.TileLayout`)."""
     key_reset, key_episode = jax.random.split(key_input)
     reset_keys = jax.random.split(key_reset, envs_num)
     episode_keys = jax.random.split(key_episode, envs_num)
+    tile_axis = None if tile_xy is None else 0
 
     obs, state = jax.vmap(
-        lambda k, hf, dr: env.reset(k, hf, dr),
-        in_axes=(0, hfield_in_axes, dr_in_axes),
-    )(reset_keys, hfield_data, dr_model)
+        lambda k, hf, dr, t: env.reset(k, hf, dr, t),
+        in_axes=(0, None, dr_in_axes, tile_axis),
+    )(reset_keys, hfield_data, dr_model, tile_xy)
     step_fn = jax.vmap(
         lambda state_input, tmp, hf, dr: policy_step(
             env, model, state_input, tmp, hfield_data=hf, dr_model=dr
         ),
-        in_axes=(0, None, hfield_in_axes, dr_in_axes),
+        in_axes=(0, None, None, dr_in_axes),
     )
     _, episode = jax.lax.scan(
         lambda carry, x: step_fn(carry, x, hfield_data, dr_model),
@@ -179,15 +182,24 @@ def lanes_rollout(
     envs_per_lane: int,
     steps_in_episode: int,
     hfield_data: jax.Array,
+    tile_xy: jax.Array,
 ) -> Episode:
+    """Lane i runs on tile i of the arena `hfield_data`; `tile_xy`:
+    (num_lanes, envs_per_lane, 2)."""
     keys = jax.random.split(key_input, num_lanes)
 
-    def rollout_fn(key: jax.Array, model: A2C, hfield_data: jax.Array) -> Episode:
+    def rollout_fn(key: jax.Array, model: A2C, tiles: jax.Array) -> Episode:
         return batch_rollout(
-            env, key, model, envs_per_lane, steps_in_episode, hfield_data=hfield_data
+            env,
+            key,
+            model,
+            envs_per_lane,
+            steps_in_episode,
+            hfield_data=hfield_data,
+            tile_xy=tiles,
         )
 
-    return jax.vmap(rollout_fn, in_axes=(0, None, 0))(keys, model, hfield_data)
+    return jax.vmap(rollout_fn, in_axes=(0, None, 0))(keys, model, tile_xy)
 
 
 def calculate_episode_advantage(model, episode, gamma=0.99, lam=0.95):
@@ -385,9 +397,10 @@ def level_eval_rollout(
     model: A2C,
     steps: int,
     hfield_data: jax.Array,
+    tile_xy: jax.Array,
 ) -> LevelEpisode:
     key_reset, key_episode = jax.random.split(key_input)
-    obs, state = env.reset(key_reset, hfield_data)
+    obs, state = env.reset(key_reset, hfield_data, tile_xy=tile_xy)
     step_fn = functools.partial(level_eval_step, env, model, hfield_data=hfield_data)
     carry, (rewards, fell, base_contact_alive, cause_at_done, tracking) = jax.lax.scan(
         step_fn, [obs, state, key_episode], (), steps
@@ -410,21 +423,24 @@ def eval_levels(
     key_input: jax.Array,
     model: A2C,
     hfield_data: jax.Array,
+    tile_xy: jax.Array,
     episodes_per_level: int,
     steps: int,
 ) -> LevelEpisode:
-    num_levels = hfield_data.shape[0]
+    """Level i on tile i of the arena `hfield_data`; `tile_xy`: (levels, 2)."""
+    num_levels = tile_xy.shape[0]
     level_keys = jax.random.split(key_input, num_levels)
 
-    def per_level(level_key: jax.Array, level_hfield: jax.Array):
+    def per_level(level_key: jax.Array, level_tile: jax.Array):
         episode_keys = jax.random.split(level_key, episodes_per_level)
         rollout_fn = functools.partial(
             level_eval_rollout,
             env,
             model=model,
             steps=steps,
-            hfield_data=level_hfield,
+            hfield_data=hfield_data,
+            tile_xy=level_tile,
         )
         return jax.vmap(rollout_fn)(episode_keys)
 
-    return jax.vmap(per_level)(level_keys, hfield_data)
+    return jax.vmap(per_level)(level_keys, tile_xy)

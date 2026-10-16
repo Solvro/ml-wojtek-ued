@@ -4,11 +4,13 @@ brax's own `ppo.train` fixes each env's model for the whole run, so levels
 cannot change per env over training. This loop keeps brax's PPO pieces
 (networks, running observation normalizer, `compute_ppo_loss`, its
 mujoco_playground locomotion hyperparameters: 20-step unrolls, 4 epochs x
-32 minibatches, discount 0.97) and drives `FunctionalEnv`, which takes a
-per-env `hfield_data` and physics DR draw at every step.
+32 minibatches, discount 0.97) and drives `FunctionalEnv`, which takes the
+shared tiled arena's `hfield_data` and a per-env physics DR draw at every
+step.
 
-One outer iteration = `num_lanes` levels x `envs_per_lane` envs, reset onto
-their level and stepped for `level_steps` (in `unroll_length` chunks, a PPO
+One outer iteration = `num_lanes` levels x `envs_per_lane` envs: level i is
+written into tile i of the arena (`hfield.tiles`), its lane's envs reset onto
+that tile and step for `level_steps` (in `unroll_length` chunks, a PPO
 update after each chunk when training). Per-lane regret = mean positive GAE
 advantage (positive value loss) over the iteration.
 
@@ -25,6 +27,12 @@ advantage (positive value loss) over the iteration.
   mutation; explore iterations score fresh uniform (DR) levels.
 - `--robot go1`: Playground's Go1 (`robots/go1.py`) instead of Wojtek. The
   arena, level lengths, commands and `min_travel` scale by `GO1_SCALE`.
+- `--profile deploy`: w01-tek's `terrain_blind_v4_4d` env and network, so
+  `export_policy.py` can ship the checkpoint to the robot (docs/deploy.md),
+  on a 12x12 m arena (`accel_deploy`). `benchmark` (default) is the v10 setup.
+
+Writes `<name>.json` beside `<name>.pkl` at launch: everything needed to
+rebuild the env and network (`load_run`).
 
 All evaluate the deterministic policy every `eval_every` iterations on
 fresh uniform levels at several difficulties: success = no fall and at least
@@ -34,9 +42,12 @@ fresh uniform levels at several difficulties: success = no fall and at least
 import argparse
 import dataclasses
 import functools
+import json
+import subprocess
+import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import equinox as eqx
 import jax
@@ -51,6 +62,8 @@ from brax.training.agents.ppo import losses as ppo_losses
 from brax.training.agents.ppo import networks as ppo_networks
 
 from config.hfield_config import HFieldConfig
+from deploy.contract import TRAINING_ONLY_KEYS
+from hfield.arena import check_arena
 from hfield.level_space import (
     PARAMS,
     LevelSpace,
@@ -58,17 +71,22 @@ from hfield.level_space import (
     make_level_space,
     mean_abs_height,
 )
+from hfield.tiles import TileLayout
 from modules.generator import LevelGenerator
 from robots.go1 import GO1_SCALE
-from utils.env import FunctionalEnv
+from utils.env import FunctionalEnv, ObsSize
 from utils.env_overrides import (
     accel_arena_overrides,
+    deploy_dr_config,
+    deploy_overrides,
     merge_overrides,
     movement_overrides,
     terrain_overrides,
     terrain_task_overrides,
 )
 from utils.ppo_helpers import body_velocity
+from utils.tracking import TRACK_FLOOR_LIN, TRACK_SKIP_S, tracked, tracking_errors
+from wojtek_env import paths
 
 PPO: dict[str, Any] = {
     "unroll_length": 20,
@@ -86,61 +104,265 @@ EVAL_DIFFICULTIES = (0.25, 0.5, 0.75, 1.0)
 
 ROBOT_SCALE = {"wojtek": 1.0, "go1": GO1_SCALE}
 
+# the deploy command box reaches 1.2 m/s and leaves the 6x6 m benchmark patch
+# within ~2.5 s of a 6 s level; coarse_n 25 keeps its ~0.5 m feature size
+ARENAS: dict[str, dict[str, Any]] = {
+    "benchmark": {"arena": "accel", "patch_radius": 3.0, "coarse_n": 13},
+    "deploy": {"arena": "accel_deploy", "patch_radius": 6.0, "coarse_n": 25},
+}
+ACTIVATIONS = {"elu": jax.nn.elu, "silu": jax.nn.silu}
+NETWORKS: dict[str, dict[str, Any]] = {
+    "benchmark": {
+        "policy_hidden_layer_sizes": [512, 256, 128],
+        "value_hidden_layer_sizes": [512, 256, 128],
+        "activation": "elu",
+        "distribution_type": "tanh_normal",
+        "policy_obs_key": "state",
+        "value_obs_key": "privileged_state",
+    },
+    # w01-tek train.py build_ppo_params: Playground's Go1 network_factory with
+    # brax's default SiLU and tanh-normal, what the robot runtime evaluates
+    "deploy": {
+        "policy_hidden_layer_sizes": [512, 256, 128],
+        "value_hidden_layer_sizes": [512, 256, 128],
+        "activation": "silu",
+        "distribution_type": "tanh_normal",
+        "policy_obs_key": "state",
+        "value_obs_key": "privileged_state",
+    },
+}
+
 
 def hfield_config(args: argparse.Namespace) -> HFieldConfig:
     """The arena at the robot's size: every length scales, slopes do not."""
     s = ROBOT_SCALE[args.robot]
-    base = HFieldConfig()
+    arena = ARENAS[args.profile]
     return HFieldConfig(
-        patch_radius=base.patch_radius * s,
-        cell_size=base.cell_size * s,
+        patch_radius=arena["patch_radius"] * s,
+        cell_size=HFieldConfig().cell_size * s,
         amplitude=args.amplitude * s,
         coarse_n=args.coarse_n,
         pad_radius=args.pad_radius * s,
         pad_taper=args.pad_taper * s,
+        n_edits=args.n_edits,
+        edit_scale=args.edit_scale,
+        reach=HFieldConfig().reach * s,
     )
 
 
-def make_env(
-    args: argparse.Namespace, config: HFieldConfig, num_envs: int, train: bool
-) -> FunctionalEnv:
+def load_env_override(path: str) -> dict[str, Any]:
+    """`--env_override` file: a JSON object of TRAINING_ONLY env keys."""
+    try:
+        override = json.loads(Path(path).read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        raise ValueError(f"--env_override {path}: cannot read JSON ({e})") from e
+    if not isinstance(override, dict):
+        raise TypeError(f"--env_override {path}: expected a JSON object")
+    refused = sorted(set(override) - TRAINING_ONLY_KEYS)
+    if refused:
+        raise ValueError(
+            f"--env_override {path}: {refused} are not TRAINING_ONLY keys "
+            "(src/deploy/contract.py); keys that shape the deploy contract or "
+            "the actor's inputs cannot be overridden"
+        )
+    return override
+
+
+def env_overrides(args: argparse.Namespace) -> dict[str, Any] | None:
     if args.robot == "go1":
+        return None
+    arena = accel_arena_overrides(args.pad_radius, ARENAS[args.profile]["arena"])
+    if args.profile == "deploy":
+        # upstream's terrain block configures its tile curriculum arena; the
+        # accel arena replaces it (training-only, docs/deploy.md)
+        upstream = {k: v for k, v in deploy_overrides().items() if k != "terrain"}
+        profile = merge_overrides(upstream, arena)
+    else:
+        profile = merge_overrides(
+            arena, movement_overrides(), terrain_overrides(), terrain_task_overrides()
+        )
+    if args.env_override:
+        return merge_overrides(profile, load_env_override(args.env_override))
+    return profile
+
+
+def git_commit() -> dict[str, Any]:
+    src = Path(__file__).resolve().parents[1]
+
+    def git(*cmd: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", "-C", str(src), *cmd], capture_output=True, text=True, check=False
+        )
+
+    head = git("rev-parse", "HEAD")
+    if head.returncode:
+        # a frozen WCSS copy has no .git; its GIT_COMMIT file names the commit
+        stamp = src.parent / "GIT_COMMIT"
+        if stamp.exists():
+            return {"git_commit": stamp.read_text().strip(), "git_dirty": None}
+        print(
+            f"warning: {src} is not a git checkout and {stamp} does not exist; "
+            "the sidecar records git_commit=null",
+            file=sys.stderr,
+        )
+        return {"git_commit": None, "git_dirty": None}
+    dirty = bool(git("status", "--porcelain", "--", ".").stdout.strip())
+    return {"git_commit": head.stdout.strip(), "git_dirty": dirty}
+
+
+def run_spec(args: argparse.Namespace) -> dict[str, Any]:
+    """Everything `make_env` / `make_network` need, JSON-serializable."""
+    return {
+        "profile": args.profile,
+        "robot": args.robot,
+        "task": "joystick",
+        "arena": ARENAS[args.profile]["arena"],
+        "hfield": dataclasses.asdict(hfield_config(args)),
+        "level_space": args.level_space,
+        "env_overrides": env_overrides(args),
+        "dr_config": deploy_dr_config() if args.profile == "deploy" else None,
+        "network": NETWORKS[args.profile],
+        "init_from": args.init_from,
+        "args": vars(args),
+    }
+
+
+def sidecar_path(checkpoint: Path) -> Path:
+    return checkpoint.with_suffix(".json")
+
+
+def write_sidecar(
+    checkpoint: Path, spec: dict[str, Any], obs_size: ObsSize, action_size: int
+) -> Path:
+    sidecar = {
+        **spec,
+        "obs_size": {"actor": obs_size.actor, "critic": obs_size.critic},
+        "action_size": action_size,
+        **git_commit(),
+    }
+    path = sidecar_path(checkpoint)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(sidecar, indent=2) + "\n")
+    return path
+
+
+def all_finite(tree: Any) -> bool:
+    return all(bool(jnp.all(jnp.isfinite(x))) for x in jax.tree.leaves(tree))
+
+
+def last_finite_path(checkpoint: Path) -> Path:
+    return checkpoint.with_name(f"{checkpoint.stem}_last_finite.pkl")
+
+
+def check_finite(
+    params: Any, last_finite: Any, checkpoint: Path | None, where: str
+) -> None:
+    # NaN params never recover (deploy-warmstart seed 2 ran 10M steps on them)
+    if all_finite(params):
+        return
+    saved = "no --checkpoint_dir, nothing saved"
+    if checkpoint is not None:
+        path = last_finite_path(checkpoint)
+        brax_model.save_params(str(path), last_finite)
+        sidecar_path(path).write_text(sidecar_path(checkpoint).read_text())
+        saved = f"the last finite params are in {path}"
+    raise FloatingPointError(
+        f"{where}: the student's normalizer, policy or value params are "
+        f"non-finite after its PPO update; {saved}. Rerun with another --seed "
+        "or a lower learning rate, or --init_from the last finite params"
+    )
+
+
+def load_run(checkpoint: Path) -> tuple[dict[str, Any], Any]:
+    """A checkpoint's sidecar and params, checked against each other."""
+    path = sidecar_path(checkpoint)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"no sidecar {path} for {checkpoint}: brax_ued.py writes it beside "
+            "the .pkl. For a checkpoint from before sidecars, write it with "
+            f"`uv run python src/scripts/write_sidecar.py --checkpoint "
+            f"{checkpoint} <the run's brax_ued.py flags>`"
+        )
+    spec = json.loads(path.read_text())
+    params = brax_model.load_params(str(checkpoint))
+    normalizer = params[0]
+    got = {k: int(normalizer.mean[k].shape[-1]) for k in ("state", "privileged_state")}
+    want = {
+        "state": spec["obs_size"]["actor"],
+        "privileged_state": spec["obs_size"]["critic"],
+    }
+    if got != want:
+        raise ValueError(
+            f"{checkpoint} has observation sizes {got}, its sidecar {path} says "
+            f"{want}; the two files come from different runs"
+        )
+    if not all_finite(params):
+        raise ValueError(
+            f"{checkpoint} has non-finite params: its run diverged. Use "
+            f"{last_finite_path(checkpoint)} if brax_ued.py wrote one"
+        )
+    return spec, params
+
+
+def check_spec_arena(spec: dict[str, Any]) -> None:
+    if spec["robot"] == "wojtek":
+        kind = spec["arena"]
+        config = HFieldConfig(**spec["hfield"])
+        check_arena(paths.terrain_paths(kind)["spec"], config, kind)
+
+
+def make_env(spec: dict[str, Any], num_envs: int, train: bool) -> FunctionalEnv:
+    if spec["robot"] == "go1":
+        config = HFieldConfig(**spec["hfield"])
         return FunctionalEnv(domain_randomize=train, go1_hfield=config)
     overrides = merge_overrides(
-        accel_arena_overrides(args.pad_radius),
-        movement_overrides(),
-        terrain_overrides(),
-        terrain_task_overrides(),
+        spec["env_overrides"],
         {"sim": {"num_envs": num_envs}},
         # eval scores falls and travel; the stochastic cut only adds noise
         {} if train else {"no_progress": {"enable": False}},
     )
     return FunctionalEnv(
-        task="joystick", env_overrides=overrides, domain_randomize=train
+        task=spec["task"],
+        env_overrides=overrides,
+        domain_randomize=train,
+        dr_config=spec["dr_config"],
     )
 
 
-def make_network(env: FunctionalEnv) -> ppo_networks.PPONetworks:
-    obs_size = env.observation_size
+def make_network(
+    network: dict[str, Any], obs_size: ObsSize, action_size: int
+) -> ppo_networks.PPONetworks:
+    kwargs = dict(network)
+    activation = ACTIVATIONS[kwargs.pop("activation")]
     return ppo_networks.make_ppo_networks(
         {"state": (obs_size.actor,), "privileged_state": (obs_size.critic,)},
-        env.action_size,
+        action_size,
         # brax types the hook narrower than its own normalizer
         preprocess_observations_fn=running_statistics.normalize,  # ty: ignore[invalid-argument-type]
-        policy_hidden_layer_sizes=(512, 256, 128),
-        value_hidden_layer_sizes=(512, 256, 128),
-        activation=jax.nn.elu,
-        policy_obs_key="state",
-        value_obs_key="privileged_state",
+        activation=activation,
+        **kwargs,
     )
+
+
+def spec_network(spec: dict[str, Any]) -> ppo_networks.PPONetworks:
+    size = ObsSize(spec["obs_size"]["actor"], spec["obs_size"]["critic"])
+    return make_network(spec["network"], size, spec["action_size"])
 
 
 class Student:
     """brax PPO networks, optimizer and jitted unroll / update / regret."""
 
-    def __init__(self, env: FunctionalEnv, key: jax.Array):
+    def __init__(
+        self,
+        env: FunctionalEnv,
+        network: dict[str, Any],
+        key: jax.Array,
+        clipping_epsilon: float,
+        learning_rate: float = PPO["learning_rate"],
+    ):
+        self.clipping_epsilon = clipping_epsilon
         obs_size = env.observation_size
-        self.network = make_network(env)
+        self.network = make_network(network, obs_size, env.action_size)
         self.make_policy = ppo_networks.make_inference_fn(self.network)
         policy_key, value_key = jax.random.split(key)
         self.params = ppo_losses.PPONetworkParams(
@@ -157,14 +379,54 @@ class Student:
         )
         self.optimizer = optax.chain(
             optax.clip_by_global_norm(PPO["max_grad_norm"]),
-            optax.adam(PPO["learning_rate"]),
+            optax.adam(learning_rate),
         )
         self.opt_state = self.optimizer.init(self.params)
+        # the warm start's obs stds, the reference for `std_ratios`
+        self.reference_std: dict[str, np.ndarray] | None = None
         self.update = jax.jit(self._update)
         self.regret = jax.jit(self._regret)
 
+    def warm_start(self, params: Any, source: str) -> None:
+        """Normalizer, policy and value from a brax_ued checkpoint; the
+        optimizer state starts fresh."""
+        normalizer, policy, value = params
+        for name, got, want in (
+            ("policy", policy, self.params.policy),
+            ("value", value, self.params.value),
+            ("normalizer mean", normalizer.mean, self.normalizer.mean),
+        ):
+            got_shapes = jax.tree.map(jnp.shape, got)
+            want_shapes = jax.tree.map(jnp.shape, want)
+            if got_shapes != want_shapes:
+                raise ValueError(
+                    f"--init_from {source}: {name} shapes {got_shapes} differ from "
+                    f"this run's {want_shapes}; warm start from a checkpoint of the "
+                    "same profile and network"
+                )
+        self.normalizer = jax.tree.map(jnp.asarray, normalizer)
+        self.reference_std = {k: np.asarray(v) for k, v in normalizer.std.items()}
+        self.params = ppo_losses.PPONetworkParams(
+            policy=jax.tree.map(jnp.asarray, policy),
+            value=jax.tree.map(jnp.asarray, value),
+        )
+        self.opt_state = self.optimizer.init(self.params)
+
     def inference_params(self) -> tuple[Any, Any, Any]:
         return (self.normalizer, self.params.policy, self.params.value)
+
+    def std_ratios(self) -> dict[str, float]:
+        """Per obs block, max and min of the obs std over the warm start's."""
+        if self.reference_std is None:
+            return {}
+        # brax types the stds as a generic nest; ours is a dict of blocks
+        std: Any = self.normalizer.std
+        out = {}
+        for block, reference in self.reference_std.items():
+            ratio = np.asarray(std[block]) / reference
+            out[f"normalizer/std_ratio_max/{block}"] = float(ratio.max())
+            out[f"normalizer/std_ratio_min/{block}"] = float(ratio.min())
+        return out
 
     def _loss(self, params, normalizer, data, key):
         return ppo_losses.compute_ppo_loss(
@@ -176,7 +438,7 @@ class Student:
             entropy_cost=PPO["entropy_cost"],
             discounting=PPO["discounting"],
             gae_lambda=PPO["gae_lambda"],
-            clipping_epsilon=PPO["clipping_epsilon"],
+            clipping_epsilon=self.clipping_epsilon,
         )
 
     def _update(self, params, opt_state, normalizer, data, key):
@@ -187,6 +449,8 @@ class Student:
             params, opt_state, key = carry
             key, loss_key = jax.random.split(key)
             (_, metrics), grads = grad_fn(params, normalizer, batch, loss_key)
+            # before clip_by_global_norm
+            metrics = {**metrics, "grad_norm": optax.global_norm(grads)}
             updates, opt_state = self.optimizer.update(grads, opt_state)
             return (optax.apply_updates(params, updates), opt_state, key), metrics
 
@@ -204,7 +468,16 @@ class Student:
         (params, opt_state, _), metrics = jax.lax.scan(
             epoch, (params, opt_state, key), None, PPO["num_updates_per_batch"]
         )
-        return params, opt_state, normalizer, jax.tree.map(jnp.mean, metrics)
+        means = jax.tree.map(jnp.mean, metrics)
+        return (
+            params,
+            opt_state,
+            normalizer,
+            {
+                **means,
+                "grad_norm_max": metrics["grad_norm"].max(),
+            },
+        )
 
     def _regret(self, params, normalizer, data):
         value_apply = self.network.value_network.apply
@@ -230,9 +503,10 @@ def make_unroll(env: FunctionalEnv, make_policy: Any, dr_in_axes: Any):
         _, state, reward, done, info = env.step(
             jax.random.key(0), state, action, hfield, dr_model
         )
-        return state, reward, done, info["truncation"]
+        return state, reward, done, info["truncation"], info["diverged"]
 
-    v_step = jax.vmap(step_one, in_axes=(0, 0, 0, dr_in_axes))
+    # the arena's hfield_data is shared by every env (warp needs it unbatched)
+    v_step = jax.vmap(step_one, in_axes=(0, 0, None, dr_in_axes))
 
     @functools.partial(jax.jit, static_argnames=("deterministic", "length"))
     def unroll(inference, state, key, hfield, dr_model, deterministic, length):
@@ -242,10 +516,11 @@ def make_unroll(env: FunctionalEnv, make_policy: Any, dr_in_axes: Any):
             state, key = carry
             key, act_key = jax.random.split(key)
             action, extras = policy(state.obs, act_key)
-            cmd_vx = state.info["command"][:, 0]
-            next_state, reward, done, truncation = v_step(
+            cmd = state.info["command"][:, :3]
+            next_state, reward, done, truncation, diverged = v_step(
                 state, action, hfield, dr_model
             )
+            linvel = jax.vmap(body_velocity)(next_state.data)
             transition = types.Transition(
                 observation=state.obs,
                 action=action,
@@ -258,9 +533,22 @@ def make_unroll(env: FunctionalEnv, make_policy: Any, dr_in_axes: Any):
                     "state_extras": {"truncation": truncation},
                     "log": {
                         "fell": done * (1.0 - truncation),
+                        "diverged": diverged,
                         "reward": reward,
-                        "cmd_vx": cmd_vx,
-                        "forward_vel": jax.vmap(body_velocity)(next_state.data)[:, 0],
+                        "cmd_vx": cmd[:, 0],
+                        "forward_vel": linvel[:, 0],
+                        "cmd": cmd,
+                        # per-term rewards as the env reports them: before
+                        # reward.scales and the x dt
+                        "reward_terms": {
+                            k.removeprefix("reward/"): v
+                            for k, v in next_state.metrics.items()
+                            if k.startswith("reward/")
+                        },
+                        # free-joint angular qvel is body-frame: [5] = yaw rate
+                        "vel": jnp.concatenate(
+                            [linvel[:, :2], next_state.data.qvel[:, 5:6]], axis=-1
+                        ),
                         "xy": next_state.data.qpos[:, :2],
                     },
                 },
@@ -317,8 +605,8 @@ class LevelBuffer:
         self.last_seen[idx] = now
 
 
-def min_travel(args: argparse.Namespace) -> float:
-    return args.min_travel * ROBOT_SCALE[args.robot]
+def min_travel(robot: str, metres: float) -> float:
+    return metres * ROBOT_SCALE[robot]
 
 
 def run_levels(
@@ -332,15 +620,19 @@ def run_levels(
     student = student or ctx["student"]
     key = ctx["next_key"]()
     rendered = ctx["space"].render(levels)
-    hfield = jnp.repeat(jnp.asarray(rendered), args.envs_per_lane, axis=0)
-    dr_model, _ = env.sample_dr(ctx["next_key"](), args.num_lanes * args.envs_per_lane)
-    reset_keys = jax.random.split(key, hfield.shape[0])
-    _, state = ctx["reset"](reset_keys, hfield, dr_model)
+    layout: TileLayout = ctx["layout"]
+    hfield = ctx["assemble"](jnp.asarray(rendered))
+    tile_xy = layout.tile_xy(args.num_lanes, args.envs_per_lane)
+    n = args.num_lanes * args.envs_per_lane
+    dr_model, _ = env.sample_dr(ctx["next_key"](), n)
+    reset_keys = jax.random.split(key, n)
+    _, state = ctx["reset"](reset_keys, hfield, dr_model, tile_xy)
     start_xy = state.data.qpos[:, :2]
-    regret = jnp.zeros(hfield.shape[0])
-    episode_return = jnp.zeros(hfield.shape[0])
-    fell_any = jnp.zeros(hfield.shape[0])
-    logs = []
+    regret = jnp.zeros(n)
+    episode_return = jnp.zeros(n)
+    fell_any = jnp.zeros(n)
+    leaked = jnp.zeros(n, bool)
+    logs, ppo_logs = [], []
     for _ in range(args.level_steps // PPO["unroll_length"]):
         state, data = ctx["unroll"](
             student.inference_params(),
@@ -352,37 +644,53 @@ def run_levels(
             length=PPO["unroll_length"],
         )
         if train:
-            student.params, student.opt_state, student.normalizer, _ = student.update(
+            student.params, student.opt_state, student.normalizer, ppo = student.update(
                 student.params,
                 student.opt_state,
                 student.normalizer,
                 data,
                 ctx["next_key"](),
             )
+            ppo_logs.append(ppo)
         regret = regret + student.regret(student.params, student.normalizer, data)
         episode_return = episode_return + data.reward.sum(axis=1)
         fell_any = jnp.maximum(fell_any, data.extras["log"]["fell"].max(axis=1))
+        xy = data.extras["log"]["xy"]
+        reads = layout.leaked(xy, tile_xy[:, None], env.travel.sensing)
+        leaked = leaked | reads.any(axis=1)
         logs.append(jax.tree.map(jnp.mean, data.extras["log"]))
     lane_regret = np.asarray(regret.reshape(args.num_lanes, -1).mean(axis=1))
     lane_returns = np.asarray(episode_return.reshape(args.num_lanes, -1))
     travel = jnp.linalg.norm(state.data.qpos[:, :2] - start_xy, axis=-1)
-    success = np.asarray((fell_any == 0) & (travel >= min_travel(args)), dtype=float)
+    reached = travel >= min_travel(args.robot, args.min_travel)
+    success = np.asarray((fell_any == 0) & reached, dtype=float)
     lane_success = success.reshape(args.num_lanes, -1).mean(axis=1)
     lane_regret = lane_regret / (args.level_steps // PPO["unroll_length"])
     # learnability (SFL): highest where the student sometimes succeeds
     learnability = lane_success * (1.0 - lane_success)
     log = jax.tree.map(lambda *x: float(np.mean(x)), *logs)
+    ppo_log = {}
+    if ppo_logs:
+        stacked = jax.tree.map(lambda *x: np.asarray(x), *ppo_logs)
+        ppo_log = {f"ppo/{k}": float(v.mean()) for k, v in stacked.items()}
+        ppo_log["ppo/grad_norm_max"] = float(stacked["grad_norm_max"].max())
     return {
+        **ppo_log,
         "regret": lane_regret,
         "score": learnability if args.score == "learnability" else lane_regret,
         "lane_returns": lane_returns,
         "train_success": float(success.mean()),
         "learnability_mean": float(learnability.mean()),
         "falls_per_step": log["fell"],
+        # env steps that diverged and were ended (FunctionalEnv._end_diverged)
+        "diverged_per_step": log["diverged"],
         "reward_per_step": log["reward"],
         "cmd_vx": log["cmd_vx"],
         "forward_vel": log["forward_vel"],
+        **{f"reward_term/{k}": v for k, v in log["reward_terms"].items()},
         "travel": float(travel.mean()),
+        # envs whose feet or height scan reached another lane's level
+        "tile_leak_frac": float(leaked.mean()),
         "lane_roughness": mean_abs_height(ctx["space"].config, rendered),
         "levels": levels,
     }
@@ -390,33 +698,63 @@ def run_levels(
 
 def evaluate(ctx: dict[str, Any], rng: np.random.Generator) -> dict[str, float]:
     args, out = ctx["args"], {}
+    per_chunk = min(args.eval_levels, ctx["layout"].n_tiles)
     for difficulty in EVAL_DIFFICULTIES:
         levels = ctx["space"].scaled(rng, args.eval_levels, difficulty)
-        hfield = jnp.repeat(jnp.asarray(ctx["space"].render(levels)), 2, axis=0)
-        keys = jax.random.split(ctx["next_key"](), hfield.shape[0])
-        _, state = ctx["eval_reset"](keys, hfield)
-        start_xy = state.data.qpos[:, :2]
-        state, data = ctx["eval_unroll"](
-            ctx["student"].inference_params(),
-            state,
-            ctx["next_key"](),
-            hfield,
-            None,
-            deterministic=True,
-            length=args.level_steps,
+        rendered = jnp.asarray(ctx["space"].render(levels))
+        chunks = [
+            eval_chunk(ctx, rendered[start : start + per_chunk])
+            for start in range(0, args.eval_levels, per_chunk)
+        ]
+        fell, travel, forward_vel, cmd_vx, cmd_tracked = (
+            np.concatenate(x) for x in zip(*chunks)
         )
-        log = data.extras["log"]
-        fell = np.asarray(log["fell"].max(axis=1))
-        travel = np.asarray(jnp.linalg.norm(log["xy"][:, -1] - start_xy, axis=-1))
         tag = f"eval/d{difficulty}"
         out[f"{tag}/success_rate"] = float(
-            ((fell == 0) & (travel >= min_travel(args))).mean()
+            ((fell == 0) & (travel >= min_travel(args.robot, args.min_travel))).mean()
         )
+        out[f"{tag}/cmd_success_rate"] = float(cmd_tracked.mean())
         out[f"{tag}/fall_rate"] = float(fell.mean())
         out[f"{tag}/mean_travel"] = float(travel.mean())
-        out[f"{tag}/forward_vel"] = float(log["forward_vel"].mean())
-        out[f"{tag}/cmd_vx"] = float(log["cmd_vx"].mean())
+        out[f"{tag}/forward_vel"] = float(forward_vel.mean())
+        out[f"{tag}/cmd_vx"] = float(cmd_vx.mean())
     return out
+
+
+def eval_chunk(ctx: dict[str, Any], rendered: jax.Array) -> tuple[np.ndarray, ...]:
+    """Two deterministic episodes per level, levels on the arena's tiles:
+    per env fell, travel, mean forward and commanded velocity, and whether
+    the command was tracked (eval_brax's `cmd_success_rate`)."""
+    hfield = ctx["assemble"](rendered)
+    tile_xy = ctx["layout"].tile_xy(rendered.shape[0], 2)
+    keys = jax.random.split(ctx["next_key"](), tile_xy.shape[0])
+    _, state = ctx["eval_reset"](keys, hfield, tile_xy)
+    start_xy = state.data.qpos[:, :2]
+    state, data = ctx["eval_unroll"](
+        ctx["student"].inference_params(),
+        state,
+        ctx["next_key"](),
+        hfield,
+        None,
+        deterministic=True,
+        length=ctx["args"].level_steps,
+    )
+    log = data.extras["log"]
+    travel = jnp.linalg.norm(log["xy"][:, -1] - start_xy, axis=-1)
+    fell = np.asarray(log["fell"].max(axis=1))
+    errors = tracking_errors(
+        np.asarray(log["cmd"]),
+        np.asarray(log["vel"]),
+        round(TRACK_SKIP_S / ctx["dt"]),
+        TRACK_FLOOR_LIN * ROBOT_SCALE[ctx["args"].robot],
+    )
+    return (
+        fell,
+        np.asarray(travel),
+        np.asarray(log["forward_vel"].mean(axis=1)),
+        np.asarray(log["cmd_vx"].mean(axis=1)),
+        tracked({"fell": fell, **errors}),
+    )
 
 
 def level_composition(space: LevelSpace, levels: np.ndarray) -> dict[str, float]:
@@ -572,32 +910,61 @@ def paired_iteration(ctx: dict[str, Any]) -> dict[str, Any]:
 
 
 def build(args: argparse.Namespace) -> dict[str, Any]:
-    config = dataclasses.replace(
-        hfield_config(args), n_edits=args.n_edits, edit_scale=args.edit_scale
-    )
+    spec = run_spec(args)
+    check_spec_arena(spec)
     space = make_level_space(
         args.level_space,
-        config,
+        HFieldConfig(**spec["hfield"]),
         n_edits=args.n_edits,
         edit_scale=args.edit_scale,
         robot_scale=ROBOT_SCALE[args.robot],
     )
+    layout = TileLayout(HFieldConfig(**spec["hfield"]))
+    if args.num_lanes > layout.n_tiles:
+        raise ValueError(
+            f"--num_lanes {args.num_lanes} exceeds the arena's {layout.n_tiles} "
+            "tiles, one level each; rebuild it with a larger hfield_params.tiles"
+        )
     num_envs = args.num_lanes * args.envs_per_lane
-    env = make_env(args, config, num_envs, train=True)
-    eval_env = make_env(args, config, 2 * args.eval_levels, train=False)
+    env = make_env(spec, num_envs, train=True)
+    reach = env.travel.reach(args.level_steps, env.travel.sensing)
+    layout.check_reach(reach, f"--level_steps {args.level_steps}")
+    eval_env = make_env(spec, 2 * min(args.eval_levels, layout.n_tiles), train=False)
+    if args.checkpoint_dir:
+        checkpoint = Path(args.checkpoint_dir) / f"{args.name}.pkl"
+        path = write_sidecar(checkpoint, spec, env.observation_size, env.action_size)
+        print(f"wrote {path}", flush=True)
     key_state = {"key": jax.random.key(args.seed)}
 
     def next_key() -> jax.Array:
         key_state["key"], key = jax.random.split(key_state["key"])
         return key
 
-    student = Student(env, next_key())
+    student = Student(
+        env, spec["network"], next_key(), args.clipping_epsilon, args.learning_rate
+    )
+    if args.init_from:
+        init_spec, params = load_run(Path(args.init_from))
+        if init_spec["network"] != spec["network"]:
+            raise ValueError(
+                f"--init_from {args.init_from}: network {init_spec['network']} "
+                f"differs from this run's {spec['network']}"
+            )
+        student.warm_start(params, args.init_from)
     paired = args.mode == "paired"
-    antagonist = Student(env, next_key()) if paired else None
+    antagonist = (
+        Student(
+            env, spec["network"], next_key(), args.clipping_epsilon, args.learning_rate
+        )
+        if paired
+        else None
+    )
     adversary = Adversary(args, space.gen_shape, next_key()) if paired else None
     _, dr_in_axes = env.sample_dr(jax.random.key(0), num_envs)
-    reset = jax.jit(jax.vmap(env.reset, in_axes=(0, 0, dr_in_axes)))
-    eval_reset = jax.jit(jax.vmap(lambda k, h: eval_env.reset(k, h)))
+    reset = jax.jit(jax.vmap(env.reset, in_axes=(0, None, dr_in_axes, 0)))
+    eval_reset = jax.jit(
+        jax.vmap(lambda k, h, t: eval_env.reset(k, h, tile_xy=t), in_axes=(0, None, 0))
+    )
     return {
         "args": args,
         "env": env,
@@ -605,23 +972,27 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "antagonist": antagonist,
         "adversary": adversary,
         "space": space,
+        "layout": layout,
+        "assemble": jax.jit(layout.assemble),
         "rng": np.random.default_rng(args.seed),
         "next_key": next_key,
         "reset": reset,
         "eval_reset": eval_reset,
         "unroll": make_unroll(env, student.make_policy, dr_in_axes),
         "eval_unroll": make_unroll(eval_env, student.make_policy, None),
+        "dt": cast(Any, eval_env._env.unwrapped).dt,
         "children": np.zeros((0, *space.shape)),
     }
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--mode",
         required=True,
         choices=["dr", "dr_easy", "dr_mixed", "accel", "plr", "paired"],
     )
+    p.add_argument("--profile", default="benchmark", choices=list(ARENAS))
     p.add_argument("--robot", default="wojtek", choices=list(ROBOT_SCALE))
     p.add_argument("--name", required=True)
     p.add_argument("--entity", default="")
@@ -633,7 +1004,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--level_steps", type=int, default=300)
     p.add_argument("--amplitude", type=float, default=0.3)
     p.add_argument("--level_space", default="grid", choices=["grid", "param"])
-    p.add_argument("--coarse_n", type=int, default=13)
+    p.add_argument(
+        "--coarse_n", type=int, default=None, help="default: the profile's arena"
+    )
     p.add_argument("--pad_radius", type=float, default=0.55)
     p.add_argument("--pad_taper", type=float, default=0.2)
     p.add_argument("--replay_prob", type=float, default=0.8)
@@ -652,7 +1025,55 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--eval_levels", type=int, default=512)
     p.add_argument("--min_travel", type=float, default=1.0)
     p.add_argument("--checkpoint_dir", default=None)
-    return p.parse_args()
+    p.add_argument(
+        "--env_override",
+        default=None,
+        help="JSON file of TRAINING_ONLY env keys merged onto the profile's",
+    )
+    p.add_argument("--clipping_epsilon", type=float, default=PPO["clipping_epsilon"])
+    p.add_argument("--learning_rate", type=float, default=PPO["learning_rate"])
+    p.add_argument(
+        "--init_from",
+        default=None,
+        help="brax_ued .pkl (sidecar beside it) to start the student from",
+    )
+    args = p.parse_args(argv)
+    if args.profile == "deploy" and args.robot != "wojtek":
+        p.error("--profile deploy is Wojtek's robot setup; use --robot wojtek")
+    if args.env_override:
+        if args.robot == "go1":
+            p.error("--env_override edits Wojtek's env config; Go1 has none")
+        try:
+            load_env_override(args.env_override)
+        except (ValueError, TypeError) as e:
+            p.error(str(e))
+    if args.coarse_n is None:
+        args.coarse_n = ARENAS[args.profile]["coarse_n"]
+    return args
+
+
+# a warm-started obs std that moved this much was poisoned by blown-up states
+STD_RATIO_LIMIT = 10.0
+
+
+def normalizer_problem(log: dict[str, Any]) -> str | None:
+    for key, value in log.items():
+        if not key.startswith("normalizer/std_ratio"):
+            continue
+        if not 1.0 / STD_RATIO_LIMIT <= value <= STD_RATIO_LIMIT:
+            return (
+                f"{key} = {value:.3g} is outside [1/{STD_RATIO_LIMIT:g}, "
+                f"{STD_RATIO_LIMIT:g}] of the --init_from normalizer"
+            )
+    return None
+
+
+def save_checkpoint(checkpoint: Path | None, student: Student, env_steps: int) -> str:
+    if checkpoint is None:
+        return "none (no --checkpoint_dir)"
+    checkpoint.parent.mkdir(parents=True, exist_ok=True)
+    brax_model.save_params(str(checkpoint), student.inference_params())
+    return f"{checkpoint} at {env_steps} env steps"
 
 
 def main() -> None:
@@ -668,7 +1089,14 @@ def main() -> None:
         project=args.project,
         name=args.name,
         tags=["brax-ued", args.mode, args.robot],
-        config={**vars(args), "ppo": PPO},
+        config={
+            **vars(args),
+            "ppo": {
+                **PPO,
+                "clipping_epsilon": args.clipping_epsilon,
+                "learning_rate": args.learning_rate,
+            },
+        },
     )
     ctx = build(args)
     buffer = LevelBuffer(args.buffer_size)
@@ -677,6 +1105,11 @@ def main() -> None:
     sims_per_iteration = 2 if args.mode == "paired" else 1
     env_steps, it, start = 0, 0, time.time()
     sim_steps, student_train_steps = 0, 0
+    checkpoint = (
+        Path(args.checkpoint_dir) / f"{args.name}.pkl" if args.checkpoint_dir else None
+    )
+    last_finite = ctx["student"].inference_params()
+    saved_at = "none (no eval yet)"
     while env_steps < args.num_timesteps:
         out: dict[str, Any]
         if args.mode in ("accel", "plr"):
@@ -690,6 +1123,11 @@ def main() -> None:
         sim_steps += sims_per_iteration * steps_per_iteration
         # replay == 1 exactly when the student's PPO updated on this data
         student_train_steps += out["replay"] * steps_per_iteration
+        params = ctx["student"].inference_params()
+        check_finite(
+            params, last_finite, checkpoint, f"iteration {it}, env_steps {env_steps}"
+        )
+        last_finite = params
         regret = np.asarray(out.pop("regret"))
         out["level_roughness_m"] = float(np.mean(out.pop("lane_roughness")))
         out.update(level_composition(ctx["space"], out.pop("levels")))
@@ -708,18 +1146,25 @@ def main() -> None:
             "student_train_steps": student_train_steps,
             "elapsed_s": time.time() - launch,
         }
+        log.update(ctx["student"].std_ratios())
+        problem = normalizer_problem(log)
+        if problem:
+            run.log(log)
+            raise FloatingPointError(
+                f"iteration {it} ({env_steps} env steps): {problem} "
+                f"({log['diverged_per_step']:.2e} of its env steps diverged and "
+                f"were ended); the last healthy checkpoint is {saved_at}"
+            )
         if it % args.eval_every == 0 or env_steps >= args.num_timesteps:
             log.update(evaluate(ctx, np.random.default_rng(1234)))
+            # a crash keeps the latest evaluated policy (not only the final one)
+            saved_at = save_checkpoint(checkpoint, ctx["student"], env_steps)
         run.log(log)
         print(
             {k: round(v, 3) if isinstance(v, float) else v for k, v in log.items()},
             flush=True,
         )
         it += 1
-    if args.checkpoint_dir:
-        path = Path(args.checkpoint_dir) / f"{args.name}.pkl"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        brax_model.save_params(str(path), ctx["student"].inference_params())
     run.summary["final/elapsed_h"] = (time.time() - launch) / 3600
     run.summary["final/sim_steps"] = sim_steps
     run.summary["final/student_train_steps"] = student_train_steps

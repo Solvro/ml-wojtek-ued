@@ -5,6 +5,65 @@ Covers `src/wojtek_env/` (the extracted env library) and `src/utils/env.py`
 packaged** — treat it as a stable dependency; research code consumes it, does
 not edit it.
 
+## Upstream sync {#upstream-sync}
+
+- **Synced from w01-tek `e44c1a9`** (`training/wojtek_rl/`, 2026-10-15).
+  Previous copy: extracted 2026-08-11.
+- Upstream modules are copied as-is into the `envs/`, `terrain/`, `tools/`
+  layout; only `wojtek_rl` imports and module-path strings are rewritten.
+  `paths.py`, `gymnasium/`, `tools/check_gym.py` and the `__init__.py` files
+  are ours.
+- Every local delta vs `e44c1a9` (re-apply on the next sync). None is
+  inference-relevant: obs layout, action pipeline, PD/ctrl config and network
+  inputs are upstream's.
+
+| file | delta | why | scope |
+|---|---|---|---|
+| every ported module | `wojtek_rl` imports / module-path strings → `wojtek_env.{envs,terrain,tools}` | package layout | neither |
+| `envs/env.py` | spawn pose: every leg joint, passive four-bar joints included, from the settled closed-loop pose (`_spawn_joint_qpos`, `_dsecond`, see below); `_settle_height_grid` also returns the joints and runs at every construction (~0.7 s CPU), not only under `real_pose_ref`; `_height_ctrl` / `_pose_ref` stay verbatim | upstream leaves the closure open at reset | training-only (reset state) |
+| `envs/env.py` | `_get_reward` also returns `fall_causes`; `step` writes `fall_{min_height,tilt,toggle,base_contact}_at_done` | read by `utils/ppo_helpers.py` | training-only (metrics) |
+| `paths.py` | ours: assets under `assets/wojtek_description/`, `"accel"` and `"accel_deploy"` in `TERRAIN_KINDS`, no room/HF/policy constants | repo layout; accel arenas for UED | training-only |
+| `envs/__init__.py`, `gymnasium/`, `tools/check_gym.py` | ours: re-exports, Gymnasium wrapper | convenience API | training-only |
+| `utils/env.py` (ours, wraps the upstream env) | `FunctionalEnv._end_diverged`: a step with a non-finite `qpos`/`qvel`/obs/reward or any \|`qvel`\| > 200 ends the episode with reward 0 ([divergence guard](#functionalenv--the-training-bridge)) | MJX blow-ups poison brax's running obs normalizer | training-only (episode termination; in eval_brax a diverged env scores a fall). Not in the deploy contract: `tests/deploy` passes unchanged |
+- Generated `wojtek_mjx.xml` / `scene_mjx.xml` are byte-identical to upstream
+  `ros/src/wojtek_description/mujoco/` at `e44c1a9`.
+- Model-free upstream unit tests live in `tests/wojtek_env/` (mirrors the
+  package layout); tests that build an MJX env were not ported.
+
+### What the e44c1a9 sync changed for existing experiments
+
+- **No default changed.** Every new feature ships off (`0.0` / `enable=False`).
+  At default config and with `movement_overrides()`, obs / reward / qpos match
+  the previous copy bit-for-bit over 20 jax-backend CPU steps.
+- New `info` keys on every joystick state: `gyro_bias`, `gyro_vib`,
+  `gyro_vib_gain`, `last_base_vz`, `last_gyro_xy`, `last_qvel_probe`.
+- New `reward/*` metrics (scale 0 by default): `energy_cmd`, `slip_cmd`,
+  `probe_sat`, `probe_slip`, `probe_transient`, `probe_free_transient`,
+  `base_accel`, `tau_ff_swing`, `tau_ff`, `target_sag`. `scripts/brax_ppo.py`
+  logs every env metric, so its wandb runs gain these columns.
+- `biped` task registered (`env_biped.py`; closure is `base` + `env_getup`).
+- `FunctionalEnv` auto-reset only restores `data`/`obs`, not `info`; the
+  per-episode `gyro_bias` draw therefore stays fixed per env slot there (same
+  as every other `info` field).
+
+### New opt-in knobs (joystick, `envs/env.py` / `envs/base.py`)
+
+- `obs_noise.gyro_bias` — per-episode uniform gyro bias, actor obs only.
+- `obs_noise.gyro_vib` / `gyro_vib_decay` — gyro resonator driven by the
+  torque change (`base.gyro_vib_step`, rings at half the control rate);
+  actor obs only.
+- `tau_ff.enable` / `scale` / `rate_weight` — feed-forward torque head:
+  `action_size` becomes 24, the second 12 go to `qfrc_applied` with the same
+  latency as the position targets.
+- `obs.history_len` — `proprio_history` obs component (RMA-style history).
+- Obs components `foot_friction`, `env_factors` (friction, gain / kd / force
+  scale, base mass and CoM offset vs the nominal model) — privileged inputs
+  for RMA; they read the (possibly DR-swapped) `_mjx_model`.
+- Reward: `base_accel` (+ `base_accel_ang_weight`, `base_accel_wz_fade`/
+  `_floor`), `energy_cmd`, `slip_cmd`, `target_sag` (+ `target_sag_wz_fade`),
+  `tau_ff_swing`, `tau_ff`, `probe_*` diagnostics,
+  `feet_landing_wz_fade`/`_floor`, `terrain_gate.flat_pitch_spin_exempt`.
+
 ## Tasks and the registry
 
 `wojtek_env/envs/registry.py` maps task name → (env class, default config):
@@ -12,6 +71,8 @@ not edit it.
 - `joystick` — velocity-command locomotion (`WojtekJoystick`). Default task.
 - `getup` — recover to standing (`WojtekGetup`).
 - `jump` — jump task (`WojtekJump`).
+- `biped` — rear up onto the hind legs and hold (`WojtekBiped`); from
+  upstream, unused by any script here.
 
 ```python
 from wojtek_env.envs import registry
@@ -40,7 +101,7 @@ task-independent ones for `scripts/ppo_dr.py`/`accel.py`/`accel_top_k.py`:
 - `real_pose_ref` — judge pose/height against the kinematic standing family
   instead of commanded ctrl targets (removes a PD-sag-dependent penalty
   floor; sim2real correctness fix, not just a shaping knob).
-- Spawn pose (`WojtekJoystick.reset`, local edit to the extracted env): every
+- Spawn pose (`WojtekJoystick.reset`, local patch on top of upstream): every
   leg joint, passive four-bar joints included, comes from the settled
   closed-loop pose for the commanded height (`_spawn_joint_qpos`, tabled per
   `DSECOND_TABLE` rung by `_settle_height_grid`). Previously only the
@@ -147,15 +208,17 @@ gain/kd actuator scale — the library's baseline domain randomization. Passing
 a `dr_cfg` dict (shape mirrors `randomize._DEFAULT_DR`) turns on extra,
 independently-gated fields: `com_offset`, `joint_gains` (per-actuator instead
 of one shared scale), `dof` (damping/armature/frictionloss), `foot_friction`,
-`motor_strength`. None of this repo's trainer scripts expose `dr_cfg`
-overrides yet — `scripts/ppo_dr.py` (see [ppo.md](ppo.md#domain-randomization-scriptsppo_drpy))
-uses the baseline five-field form via `FunctionalEnv(domain_randomize=True)`.
+`motor_strength`. `FunctionalEnv(..., dr_config=...)` passes one through;
+`brax_ued.py --profile deploy` uses upstream `terrain_blind_v4_4d`'s
+([deploy.md](deploy.md#profile)). `scripts/ppo_dr.py` (see [ppo.md](ppo.md#domain-randomization-scriptsppo_drpy))
+and the benchmark profile use the baseline five-field form via
+`FunctionalEnv(domain_randomize=True)`.
 
 `terrain/terrain_wrapper.py`'s `wrap_for_terrain_brax_training` also accepts a
 `randomization_fn` and applies it through mujoco_playground's
 `BraxDomainRandomizationVmapWrapper`, but no script currently wires
 `randomize.py` through that path — `FunctionalEnv` uses its own swap
-mechanism instead (below), consistent with the hfield swap it already does.
+mechanism instead (below), consistent with the `hfield_data` `tree_replace` it already does.
 
 ## FunctionalEnv — the training bridge
 
@@ -164,65 +227,142 @@ wraps `registry.make_env` + brax `EpisodeWrapper` and exposes pure `reset`/`step
 usable under `jit`/`vmap`.
 
 - `go1_hfield=HFieldConfig(...)` builds Playground's Go1 on that arena
-  (`robots/go1.py`) instead of Wojtek; hfield swap and DR work the same, but
-  Go1 reads terrain heights straight from `hfield_data` (no lookup).
+  (`robots/go1.py`) instead of Wojtek; the arena and DR work the same, but
+  Go1 reads terrain heights straight from `hfield_data` (no lookup) and
+  spawns on `Go1Terrain.spawn_xy`.
 
 - **Split obs.** `observation_size` / every `Obs` carries `actor` (`state`) and
   `critic` (`privileged_state`) separately — asymmetric actor-critic.
 - **Auto-reset semantics.** `step` freezes `data`/`obs` to the episode's first
   values on `done` (via `first_data`/`first_obs` stashed at reset), so a
   vmapped batch stays aligned.
-- **Heightfield swap.** Both `reset` and `step` take optional `hfield_data`.
-  `_swapped_model` temporarily does
-  `base._mjx_model = model.tree_replace({"hfield_data": hfield_data})` around the
-  call, then restores it. This is the mechanism ACCEL uses to run a different
-  level per rollout **without recompiling MJX** (see below).
+- **Divergence guard.** A step whose `qpos`, `qvel`, obs or reward is not
+  finite, or with any |`qvel`| above `QVEL_DIVERGED` (200 m/s or rad/s;
+  random actions on full-difficulty levels peak at ~75), ends the episode
+  (`done` 1, reward and per-env metrics 0, then the auto-reset above) and
+  sets `info["diverged"]` (brax_ued logs `diverged_per_step`). MJX blows
+  up now and then on one env (deploy profile, warp: ~1-5 env steps per
+  2.5M); its obs reach brax's running obs normalizer, and with a
+  warm-started count of 1.5e9 they never wash out: in deploy-accel-ft one
+  such env multiplied the joint-velocity stds 100-640000x and the policy
+  collapsed; a nan one turns every env nan (deploy_ws_accel_seed2).
+  `info` is not reset, so an env whose `info` went nan stays ended until
+  the next `reset`.
+- **Shared tiled arena.** `reset(key, hfield_data, dr_model, tile_xy)` and
+  `step(..., hfield_data, dr_model)` take the arena's `hfield_data`
+  (`hfield.tiles.TileLayout.assemble`: every level of the iteration on its
+  own tile) — **one array for every env**, vmapped with `in_axes=None`.
+  `tile_xy` is the env's tile centre, where it spawns; `reset` raises if an
+  arena comes without it. `_swapped_model` temporarily does
+  `base._mjx_model = model.tree_replace({"hfield_data": hfield_data})` around
+  the call, then restores it, so a new iteration's levels need no MJX
+  recompilation (see below). Details: [tiled arena](#tiled-arena).
 - **Domain randomization swap.** `reset`/`step` also take an optional
   `dr_model` — a full `mjx.Model` (from `FunctionalEnv.sample_dr`, above) that
   `_swapped_model` installs as `_mjx_model` outright instead of
   `tree_replace`-ing one field. The two compose: passing both swaps
-  `dr_model` in first, then `tree_replace`s `hfield_data` on top. No script
-  currently needs both at once (`scripts/ppo_dr.py` has no hfield curriculum,
-  `scripts/accel*.py` build `FunctionalEnv` without `domain_randomize=True`).
+  `dr_model` in first, then `tree_replace`s `hfield_data` on top
+  (`brax_ued.py`, `ppo_dr_terrain.py`).
 
-## Why hfield swapping is free {#hfield-mutability}
+## Why the arena swap is free {#hfield-mutability}
 
 `mjx.Model` registers a field as a dynamic pytree leaf iff it is a `jax.Array`.
 
-- `hfield_data` → `jax.Array` → real dynamic leaf → swappable at runtime and
-  **vmappable per env with no MJX recompilation**.
-- `hfield_size` (radii, elevation, base) → plain `numpy.ndarray` → static
-  metadata, baked in at compile time; changing it needs a new model.
+- `hfield_data` → `jax.Array` → real dynamic leaf → swappable at runtime with
+  no MJX recompilation.
+- `hfield_size` (radii, elevation, base) and `hfield_nrow`/`ncol` → plain
+  `numpy.ndarray` / int → static, baked in at compile time; changing them
+  needs a new model.
 
-Consequence: fix the grid resolution and elevation envelope once (in
-`HFieldConfig`), and the heightfield *values* become a cheap, JAX-native,
-batchable "level genome" — which is what makes ACCEL practical at RL scale.
+Consequence: fix the arena geometry once (`HFieldConfig`: level grid,
+elevation envelope, tile count, gap), and the heightfield *values* become a
+cheap, JAX-native "level genome" — which is what makes ACCEL practical at RL
+scale.
 
 Two things must follow the swap, or the level only exists on paper:
 
 - **Terrain lookup** — height scan, base height, foot contact/clearance and
   the base-contact/min-height falls read `Arena.lookup`, not `hfield_data`.
-  The accel arena's lookup is static zeros, so `FunctionalEnv._swapped_model`
+  The accel arena's static lookup is flat, so `FunctionalEnv._swapped_model`
   also swaps `base._terrain.lookup` for `base_z + hfield_data * elevation`
-  (`HFieldGeometry`, `utils/env.py`). Requires an arena whose lookup is the
-  single heightfield's grid (the `accel` arena); otherwise it fails fast.
-- **Warp physics** — MJWarp's collision kernel indexes `hfield_data` without a
-  world id, and `mjx` flattens a vmapped `(B, N)` `hfield_data` to `(B*N,)`,
-  so on `sim.backend=warp` every env in a batch collides with the **first**
-  env's heightfield. The `jax` backend handles per-env `hfield_data`
-  correctly. Measured on an H100 (2026-10-07, job 6051735): warp
-  29.6k env-steps/s, jax 13.3k (4096 envs, random levels), and warp also
-  overflowed `njmax`/`naconmax` on random terrain, dropping constraints.
-  So `utils.env_overrides.accel_arena_overrides` pins `sim.backend=jax` for
-  every accel-arena script, and `FunctionalEnv` raises if an `hfield_data`
-  swap reaches a warp env. `src/scripts/check_hfield_batch.py --backend jax`
-  re-checks it (flat vs pit levels; `--bench_envs N` times throughput).
+  (`HFieldGeometry`, `utils/env.py`) and points every spawn-table entry
+  (`origin_xy`) at the env's `tile_xy`. Requires an arena whose lookup is the
+  single heightfield's grid (the `accel` arenas); otherwise it fails fast.
+- **Warp physics** — MJWarp's collision kernel indexes `hfield_data` without
+  a world id, and `mjx` flattens a vmapped `(B, N)` `hfield_data` to
+  `(B*N,)`, so a per-env (batched) heightfield on `sim.backend=warp` makes
+  every env collide with the **first** env's level. The tiled arena avoids
+  it by construction: `hfield_data` is unbatched, so warp is valid and
+  `accel_arena_overrides` leaves `sim.backend` at `auto` (warp on a GPU, jax
+  on CPU) with upstream's terrain buffers (`naconmax_per_env` 116, `njmax`
+  1024). Never vmap `hfield_data` with `in_axes=0`: nothing can detect it
+  inside the vmap. `src/scripts/check_hfield_batch.py` checks it per
+  backend (flat/pit tiles; `--compare` = jax vs warp; `--bench_envs N`
+  times it).
+- **Warp memory** — warp allocates its collision scratch (EPA buffers,
+  ~0.3 GB each at 8192 envs) outside JAX's pool; upstream measured a
+  mid-run OOM with JAX preallocating. `FunctionalEnv` refuses warp unless
+  `XLA_PYTHON_CLIENT_PREALLOCATE=false`
+  ([setup.md](setup.md#tiled-arena-requirements)).
+- **Warp CUDA graphs** — mjx's warp FFI (`GraphMode.WARP`) captures one
+  CUDA graph per set of buffer addresses, each owning its own collision
+  scratch, and caches 32 per callable. Upstream's single jitted `ppo.train`
+  step reuses its buffers; brax_ued's separate jitted reset / unroll / eval
+  calls pass new ones every call, and the first two sanity runs died with
+  a CUDA OOM at the third iteration, with JAX preallocating (job 6109872)
+  and without (6110159, 15 of 80 GB in use). `FunctionalEnv` caps the
+  cache at `WARP_GRAPH_CACHE` = 4 (`configure_warp`) when it builds a warp
+  env; with both settings the run completed (job 6110213, ~16 GB).
+
+## Tiled arena {#tiled-arena}
+
+`hfield/tiles.py` `TileLayout(HFieldConfig)`; the `accel` / `accel_deploy`
+assets are built with it (`hfield/arena.py`).
+
+- `tiles x tiles` square cells (`HFieldConfig.tiles`, default 16 = 256
+  tiles), row-major from `(-half, -half)`. Tile i holds level i, its
+  `grid_size x grid_size` patch centred in the cell; spawns at the centre,
+  on the level's flat pad (`pad_radius`, ± `pad_jitter` 0.15 m).
+- Between neighbouring patches: a flat `gap` (the neutral plane, height 0),
+  `reach - patch_radius` rounded up to an even number of cells, at least 2.
+  `reach` (default 10 m) bounds how far from its tile centre a robot reads
+  terrain within one level, so it cannot read a neighbour's level. Budget
+  (`utils.env.TravelBounds`): spawn jitter + `steps x ctrl_dt x` max command
+  speed + sensing (feet 0.35 m, or the height scan's far corner 1.48 m when
+  any obs reads it; the critic does). Deploy, 300 steps: 0.15 + 6 x 1.30
+  (vx 1.2, vy 0.5) + 1.48 = 9.43 m; benchmark (fast walk 1.2 m/s): 8.93 m.
+  Benchmark: gap 7 m, 4161² nodes (208 m, 69 MB); deploy: gap 4 m, 5121²
+  nodes (256 m, 105 MB); Go1: `reach` x 2.5, gap 17.5 m.
+- `TileLayout.check_reach`: every script that puts several levels on the
+  arena (`brax_ued`, `eval_brax`, `eval_sim2sim`, `eval_levels`,
+  `accel_top_k`, `ppo_dr_terrain`) fails at startup when its steps per
+  level exceed the budget; training counts the critic's scan, eval only the
+  deterministic policy's obs and feet. 1000-step levels need ~28 m: not
+  supported (`eval_sim` runs one level, neighbours flat).
+- `TileLayout.leaked(xy, tile_xy, sensing)`: base past `patch_radius + gap
+  - sensing` (Chebyshev) from the own centre = reads another tile.
+  `brax_ued.py` logs `tile_leak_frac` (envs that got there during the
+  iteration, with the critic's sensing).
+- vs the old per-level arena: inside the patch identical; past the patch
+  edge the robot meets the flat gap where it met the flat apron before. The
+  lookup there now reads that flat ground (the old lookup clamped to the
+  patch edge's heights, which the physics did not have).
+- One model update per iteration: `assemble` (jitted, on device) writes the
+  iteration's rendered levels into the arena; unused tiles stay flat.
+- Float32 positions differ per tile, which perturbs a standing robot
+  slightly (chaotic spawn settle): ~0.5 mm in the 2x2-tile test arena
+  (`tests/utils/test_env.py`), far below a level's features.
+- CPU rendering (`render_video.py`, `paper_terrains.py`, `eval_sim.py`)
+  uses `hfield.arena.single_tile_spec`: the scene cut to one tile with the
+  level at the origin; the renderer meshes the whole hfield, which for the
+  full arena is millions of cells.
 
 ## Assets {#assets}
 
 `wojtek_env/paths.py` centralises repo-relative paths. Generated arena file sets
 (`terrain_paths(kind)`) are `scene` XML, `hfield` binary, `spec` JSON, `lookup`
-NPZ, one set per kind in `TERRAIN_KINDS = (train, eval, eval_deep, test, accel)`.
+NPZ, one set per kind in `TERRAIN_KINDS = (train, eval, eval_deep, test, accel,
+accel_deploy)`; `tests/utils/test_env.py` writes a small tiled arena as `test`.
 
 They **must** live next to the robot XML: the scene includes the robot by
 relative path and MuJoCo resolves `<hfield file=>` against the robot's mesh

@@ -9,6 +9,8 @@ from config.hfield_config import HFieldConfig
 class ArenaConfig:
     hfield_params: HFieldConfig = field(default_factory=HFieldConfig)
     seed: int = 0
+    # wojtek_env.paths.TERRAIN_KINDS entry the files are written under
+    arena: str = "accel"
 
 
 cs = ConfigStore.instance()

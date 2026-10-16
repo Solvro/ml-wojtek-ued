@@ -1,4 +1,7 @@
 export PYTHONPATH := "src"
+# warp (sim.backend auto on a GPU) allocates outside JAX's pool; utils/env.py
+# refuses warp without this
+export XLA_PYTHON_CLIENT_PREALLOCATE := "false"
 
 # List available recipes
 default:
@@ -70,10 +73,15 @@ lint:
 build:
     uv run python -m wojtek_env.tools.build_model
 
-# Write the "accel" terrain arena's static assets (scene/hfield/spec/lookup)
+# Write the "accel" terrain arena's static assets (scene/hfield/spec/lookup); pass hfield_params.* overrides
 [group('build')]
-build-accel-arena:
-    uv run python -m hfield.arena
+build-accel-arena *args:
+    uv run python -m hfield.arena {{ args }}
+
+# Write the 12x12 m "accel_deploy" arena that `brax_ued.py --profile deploy` loads
+[group('build')]
+build-deploy-arena:
+    just build-accel-arena arena=accel_deploy hfield_params.patch_radius=6.0 hfield_params.cell_size=0.05 hfield_params.amplitude=0.3 hfield_params.coarse_n=25 hfield_params.pad_radius=0.55 hfield_params.pad_taper=0.2
 
 # --- training ---
 
@@ -113,3 +121,25 @@ eval-levels *args:
 [group('eval')]
 eval-sim *args:
     uv run mjpython src/scripts/eval_sim.py {{ args }}
+
+# mp4 clips of a brax_ued.py checkpoint on generated levels (e.g. `just render-video --checkpoint run.pkl --level 0.75:3`); MUJOCO_GL defaults to cgl on macOS, egl elsewhere
+[group('eval')]
+render-video *args:
+    MUJOCO_GL="${MUJOCO_GL:-$([ "$(uname)" = Darwin ] && echo cgl || echo egl)}" uv run python src/scripts/render_video.py {{ args }}
+
+# --- deploy ---
+
+# Export a `brax_ued.py --profile deploy` checkpoint to the robot's policy.npz + policy_meta.json (`just export --checkpoint run.pkl [--out dir]`)
+[group('deploy')]
+export *args:
+    JAX_PLATFORMS=cpu uv run python src/scripts/export_policy.py {{ args }}
+
+# Import a w01-tek train.py checkpoint as a deploy-profile .pkl + sidecar (`just import-upstream --checkpoint <run>/checkpoints/<step> --out run.pkl --mode accel --name run --profile deploy ...`)
+[group('deploy')]
+import-upstream *args:
+    JAX_PLATFORMS=cpu uv run python src/scripts/import_upstream.py {{ args }}
+
+# Write the sidecar <run>.json of a pre-sidecar brax_ued.py checkpoint (`just write-sidecar --checkpoint run.pkl <its brax_ued.py flags>`)
+[group('eval')]
+write-sidecar *args:
+    uv run python src/scripts/write_sidecar.py {{ args }}
