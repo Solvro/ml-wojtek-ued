@@ -212,8 +212,8 @@ def test_a_poisoned_obs_std_is_a_student_problem(tmp_path: Path) -> None:
     ratios = s.std_ratios()
     assert set(ratios.values()) == {1.0}
     assert student_problem(s, ratios) is None
-    std = dict(s.normalizer.std)
-    std["state"] = std["state"].at[3].multiply(20.0)
-    s.normalizer = s.normalizer.replace(std=std)
+    normalizer: Any = s.normalizer
+    std = {**normalizer.std, "state": normalizer.std["state"].at[3].multiply(20.0)}
+    s.normalizer = normalizer.replace(std=std)
     problem = student_problem(s, s.std_ratios())
     assert problem is not None and "std_ratio_max/state" in problem
