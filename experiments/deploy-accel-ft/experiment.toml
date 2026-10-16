@@ -2,7 +2,7 @@ name = "deploy-accel-ft"
 question = "Does an ACCEL fine-tune of the upstream 1.5B terrain_blind_v4_4d policy beat that base on the deploy arena (warp)?"
 
 envs = ["deploy"]
-conditions = ["accel", "accel_lr1e-4", "dr"]
+conditions = ["accel", "accel_lr1e-4", "dr", "accel_hard_lr1e-4", "dr_lr1e-4", "accel_sfl_lr1e-4", "accel_lr1e-4_1b"]
 seeds = [0, 1, 2]
 total_steps = 300_000_000
 
@@ -11,7 +11,7 @@ entity = "dominikgalus9-wroc-aw-university-of-science-and-technology"
 project = "wojtyla"
 # added through the wandb API once the runs exist
 tag = "deploy-accel-ft"
-run_name = '^dft2_(?P<env>deploy)_(?P<condition>accel|accel_lr1e-4|dr)_seed(?P<seed>\d+)$'
+run_name = '^dft2_(?P<env>deploy)_(?P<condition>accel|accel_lr1e-4|dr|accel_hard_lr1e-4|dr_lr1e-4|accel_sfl_lr1e-4|accel_lr1e-4_1b)_seed(?P<seed>\d+)$'
 
 [metric]
 keys = ["eval/d1.0/cmd_success_rate"]
@@ -85,6 +85,22 @@ label = "launch 2: train 0-2 A accel, 3-5 B accel lr1e-4, 6-8 C dr; 300M"
 [[cluster.jobs]]
 id = 6111936
 label = "launch 2: eval_brax 0-8, aftercorr train"
+
+[[cluster.jobs]]
+id = 6112488
+label = "launch 3 (code ce15a38): setup"
+
+[[cluster.jobs]]
+id = 6112489
+label = "launch 3: train 0-11 (hard, dr lr1e-4, sfl, B to 1B)"
+
+[[cluster.jobs]]
+id = 6112490
+label = "launch 3: eval 0-11, aftercorr train"
+
+[[cluster.jobs]]
+id = 6112491
+label = "launch 3: flat-only evals of launch 2 + base"
 
 [report]
 url = "https://claude.ai/code/artifact/8d375cee-c869-4b66-a942-8331da0f9d4d"

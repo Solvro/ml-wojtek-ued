@@ -12,7 +12,7 @@ Upstream: `/home/jakgil6519/workspace/w01tek-e44c1a9`, base checkpoint
 | 2026-10-16 10:40 | 6111594 | base eval_brax (native + v10box), afterok 6111593 |
 | 2026-10-16 10:40 | 6111595 | train array 0-8 (A accel, B accel lr 1e-4, C dr; seeds 0-2), 1B steps, afterok 6111593 |
 | 2026-10-16 10:40 | 6111596 | eval_brax array 0-8, aftercorr 6111595 |
-| 2026-10-16 11:50 | 6111595, 6111596 | cancelled: launch 1 runs reached 50-150M; A seed1 and all C seeds collapsed |
+| 2026-10-16 ~11:05 | 6111595, 6111596 | cancelled: launch 1 runs reached 50-150M; A seed1 and all C seeds collapsed |
 
 ## Launch 1 finding: env blow-ups poison the obs normalizer
 
@@ -40,10 +40,10 @@ Approved by the coordinator: ~18 GPU-h total incl. launch 1.
 
 | date | job | what |
 |---|---|---|
-| 2026-10-16 12:15 | 6111933 | setup, frozen copy `$PDW/copies/dft-b84a645` |
-| 2026-10-16 12:15 | 6111934 | base eval_brax (native + v10box) |
-| 2026-10-16 12:15 | 6111935 | train array 0-8, 300M steps |
-| 2026-10-16 12:15 | 6111936 | eval_brax array 0-8, aftercorr 6111935 |
+| 2026-10-16 11:30 | 6111933 | setup, frozen copy `$PDW/copies/dft-b84a645` |
+| 2026-10-16 11:30 | 6111934 | base eval_brax (native + v10box) |
+| 2026-10-16 11:30 | 6111935 | train array 0-8, 300M steps |
+| 2026-10-16 11:30 | 6111936 | eval_brax array 0-8, aftercorr 6111935 |
 
 ## Results (launch 2, 300M)
 
@@ -52,3 +52,15 @@ Approved by the coordinator: ~18 GPU-h total incl. launch 1.
   success +1.3, fall −9.3, cmd +0.1. Details: `report.md`, page
   https://claude.ai/code/artifact/8d375cee-c869-4b66-a942-8331da0f9d4d
 - Cost: 10.6 GPU-h total (sacct).
+
+## Launch 3 (code ce15a38, budget raised to ~25 GPU-h)
+
+Coordinator: run all three proposals; flat guard on >=512 levels; winner
+across ACCEL arms only (DR arms are controls).
+
+| date | job | what |
+|---|---|---|
+| 2026-10-16 12:42 | 6112488 | setup, frozen copy `$PDW/copies/dft-ce15a38` |
+| 2026-10-16 12:42 | 6112489 | train 0-11: accel_hard_lr1e-4, dr_lr1e-4, accel_sfl_lr1e-4 (300M from base), accel_lr1e-4_1b (+700M from launch 2's B) |
+| 2026-10-16 12:42 | 6112490 | eval 0-11 (flat 1024 + native + v10box), aftercorr 6112489 |
+| 2026-10-16 12:42 | 6112491 | flat-only 1024-level eval of launch 2's 9 policies + base |
