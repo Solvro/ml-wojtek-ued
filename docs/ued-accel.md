@@ -548,7 +548,9 @@ the backend is the sidecar's (v10 and earlier: jax).
 - `flat/...`: `--flat_levels` (default `suite_instances`) flat levels
   (`scaled(0)`), the no-terrain reference (success, fall rate, travel,
   CVaR). Runs last on its own rng/key, so every other set keeps its v8
-  levels and keys. `--flat_only` evaluates this set alone (64 levels
+  levels and keys. `--flat_only` evaluates only flat levels, with reset
+  keys of its own (not the full eval's flat keys): compare `--flat_only`
+  runs with each other, not with a full eval's `flat/...` (64 levels
   resolve only ±4 points; deploy-accel-ft guards use 1024).
 - 95% bootstrap CIs over levels for mean and CVaR; `level_success_corr`
   between passes; suite CVaR is over the 28 terrain×strength cells.

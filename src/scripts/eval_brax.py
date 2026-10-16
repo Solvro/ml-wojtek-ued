@@ -497,7 +497,11 @@ def main() -> None:
         default=None,
         help="flat levels (default: --suite_instances)",
     )
-    p.add_argument("--flat_only", action="store_true", help="evaluate flat only")
+    p.add_argument(
+        "--flat_only",
+        action="store_true",
+        help="evaluate flat levels only (own reset keys, not the full eval's)",
+    )
     p.add_argument(
         "--arena",
         choices=list(ARENAS),
