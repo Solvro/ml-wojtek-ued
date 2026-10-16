@@ -23,7 +23,15 @@
 - **Warm start held:** falls/step ~1e-4 for the whole 150M (go/no-go at
   ~30M: 1e-4, far below 0.05), train success 0.71-0.76. Seed 2 diverged to
   NaN at 140.1M (reward, travel, regret NaN from that iteration on); its
-  final checkpoint is unusable and it is excluded.
+  final checkpoint is unusable and it is excluded. Localised from wandb:
+  iteration 55 (137.6M, a replay iteration) logged finite rollout metrics
+  (falls/step 8e-5, reward 0.051), iteration 56's rollout and eval are NaN
+  at every difficulty, so the params went NaN inside iteration 55's PPO
+  updates, not in the physics. The cause is not recoverable: brax_ued
+  discards the update's loss metrics and saved no intermediate checkpoint.
+  brax_ued now stops on non-finite params and keeps the last finite ones
+  (`<name>_last_finite.pkl`); its eval rows (all 0.000) came from the NaN
+  checkpoint, which `load_run` now refuses.
 - **The deploy numbers are low because the deploy eval is harder, not the
   policy:** on the v10 arena with a forward command inside both command
   boxes (v10box), upstream 1.5B scores d1.0 0.630 vs v10 seed4's 0.606,
