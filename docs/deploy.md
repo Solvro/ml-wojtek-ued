@@ -207,7 +207,7 @@ answered from the policy store.
      console reads its command box from the same contract
    - `./sim.sh policy:=<dir>` from the host does the same (every
      `name:=value` passes through); `hw:=mock` runs the node graph only
-   - the launch prints `>> policy dft2_deploy_accel_sfl_lr1e-4_seed1 from
+   - the launch prints `>> policy <policy_name> from
      local:<dir>; servo settings kp=<kp> kd=<kd> max_torque=<max_torque>`
 3. Robot: upstream runs the RPi stack only through `wojtek-robot.service`
    (RT-pinned; "there's no non-RT way to run it" apart from the `--dry-run`
