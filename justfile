@@ -134,6 +134,11 @@ render-video *args:
 export *args:
     JAX_PLATFORMS=cpu uv run python src/scripts/export_policy.py {{ args }}
 
+# Import a w01-tek train.py checkpoint as a deploy-profile .pkl + sidecar (`just import-upstream --checkpoint <run>/checkpoints/<step> --out run.pkl --mode accel --name run --profile deploy ...`)
+[group('deploy')]
+import-upstream *args:
+    JAX_PLATFORMS=cpu uv run python src/scripts/import_upstream.py {{ args }}
+
 # Write the sidecar <run>.json of a pre-sidecar brax_ued.py checkpoint (`just write-sidecar --checkpoint run.pkl <its brax_ued.py flags>`)
 [group('eval')]
 write-sidecar *args:

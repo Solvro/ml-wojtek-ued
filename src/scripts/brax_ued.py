@@ -221,6 +221,7 @@ def run_spec(args: argparse.Namespace) -> dict[str, Any]:
         "env_overrides": env_overrides(args),
         "dr_config": deploy_dr_config() if args.profile == "deploy" else None,
         "network": NETWORKS[args.profile],
+        "init_from": args.init_from,
         "args": vars(args),
     }
 
@@ -242,6 +243,33 @@ def write_sidecar(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(sidecar, indent=2) + "\n")
     return path
+
+
+def all_finite(tree: Any) -> bool:
+    return all(bool(jnp.all(jnp.isfinite(x))) for x in jax.tree.leaves(tree))
+
+
+def last_finite_path(checkpoint: Path) -> Path:
+    return checkpoint.with_name(f"{checkpoint.stem}_last_finite.pkl")
+
+
+def check_finite(
+    params: Any, last_finite: Any, checkpoint: Path | None, where: str
+) -> None:
+    # NaN params never recover (deploy-warmstart seed 2 ran 10M steps on them)
+    if all_finite(params):
+        return
+    saved = "no --checkpoint_dir, nothing saved"
+    if checkpoint is not None:
+        path = last_finite_path(checkpoint)
+        brax_model.save_params(str(path), last_finite)
+        sidecar_path(path).write_text(sidecar_path(checkpoint).read_text())
+        saved = f"the last finite params are in {path}"
+    raise FloatingPointError(
+        f"{where}: the student's normalizer, policy or value params are "
+        f"non-finite after its PPO update; {saved}. Rerun with another --seed "
+        "or a lower learning rate, or --init_from the last finite params"
+    )
 
 
 def load_run(checkpoint: Path) -> tuple[dict[str, Any], Any]:
@@ -266,6 +294,11 @@ def load_run(checkpoint: Path) -> tuple[dict[str, Any], Any]:
         raise ValueError(
             f"{checkpoint} has observation sizes {got}, its sidecar {path} says "
             f"{want}; the two files come from different runs"
+        )
+    if not all_finite(params):
+        raise ValueError(
+            f"{checkpoint} has non-finite params: its run diverged. Use "
+            f"{last_finite_path(checkpoint)} if brax_ued.py wrote one"
         )
     return spec, params
 
@@ -349,6 +382,30 @@ class Student:
         self.opt_state = self.optimizer.init(self.params)
         self.update = jax.jit(self._update)
         self.regret = jax.jit(self._regret)
+
+    def warm_start(self, params: Any, source: str) -> None:
+        """Normalizer, policy and value from a brax_ued checkpoint; the
+        optimizer state starts fresh."""
+        normalizer, policy, value = params
+        for name, got, want in (
+            ("policy", policy, self.params.policy),
+            ("value", value, self.params.value),
+            ("normalizer mean", normalizer.mean, self.normalizer.mean),
+        ):
+            got_shapes = jax.tree.map(jnp.shape, got)
+            want_shapes = jax.tree.map(jnp.shape, want)
+            if got_shapes != want_shapes:
+                raise ValueError(
+                    f"--init_from {source}: {name} shapes {got_shapes} differ from "
+                    f"this run's {want_shapes}; warm start from a checkpoint of the "
+                    "same profile and network"
+                )
+        self.normalizer = jax.tree.map(jnp.asarray, normalizer)
+        self.params = ppo_losses.PPONetworkParams(
+            policy=jax.tree.map(jnp.asarray, policy),
+            value=jax.tree.map(jnp.asarray, value),
+        )
+        self.opt_state = self.optimizer.init(self.params)
 
     def inference_params(self) -> tuple[Any, Any, Any]:
         return (self.normalizer, self.params.policy, self.params.value)
@@ -833,6 +890,14 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         return key
 
     student = Student(env, spec["network"], next_key(), args.clipping_epsilon)
+    if args.init_from:
+        init_spec, params = load_run(Path(args.init_from))
+        if init_spec["network"] != spec["network"]:
+            raise ValueError(
+                f"--init_from {args.init_from}: network {init_spec['network']} "
+                f"differs from this run's {spec['network']}"
+            )
+        student.warm_start(params, args.init_from)
     paired = args.mode == "paired"
     antagonist = (
         Student(env, spec["network"], next_key(), args.clipping_epsilon)
@@ -910,6 +975,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="JSON file of TRAINING_ONLY env keys merged onto the profile's",
     )
     p.add_argument("--clipping_epsilon", type=float, default=PPO["clipping_epsilon"])
+    p.add_argument(
+        "--init_from",
+        default=None,
+        help="brax_ued .pkl (sidecar beside it) to start the student from",
+    )
     args = p.parse_args(argv)
     if args.profile == "deploy" and args.robot != "wojtek":
         p.error("--profile deploy is Wojtek's robot setup; use --robot wojtek")
@@ -950,6 +1020,10 @@ def main() -> None:
     sims_per_iteration = 2 if args.mode == "paired" else 1
     env_steps, it, start = 0, 0, time.time()
     sim_steps, student_train_steps = 0, 0
+    checkpoint = (
+        Path(args.checkpoint_dir) / f"{args.name}.pkl" if args.checkpoint_dir else None
+    )
+    last_finite = ctx["student"].inference_params()
     while env_steps < args.num_timesteps:
         out: dict[str, Any]
         if args.mode in ("accel", "plr"):
@@ -963,6 +1037,11 @@ def main() -> None:
         sim_steps += sims_per_iteration * steps_per_iteration
         # replay == 1 exactly when the student's PPO updated on this data
         student_train_steps += out["replay"] * steps_per_iteration
+        params = ctx["student"].inference_params()
+        check_finite(
+            params, last_finite, checkpoint, f"iteration {it}, env_steps {env_steps}"
+        )
+        last_finite = params
         regret = np.asarray(out.pop("regret"))
         out["level_roughness_m"] = float(np.mean(out.pop("lane_roughness")))
         out.update(level_composition(ctx["space"], out.pop("levels")))
@@ -989,10 +1068,8 @@ def main() -> None:
             flush=True,
         )
         it += 1
-    if args.checkpoint_dir:
-        path = Path(args.checkpoint_dir) / f"{args.name}.pkl"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        brax_model.save_params(str(path), ctx["student"].inference_params())
+    if checkpoint is not None:
+        brax_model.save_params(str(checkpoint), ctx["student"].inference_params())
     run.summary["final/elapsed_h"] = (time.time() - launch) / 3600
     run.summary["final/sim_steps"] = sim_steps
     run.summary["final/student_train_steps"] = student_train_steps

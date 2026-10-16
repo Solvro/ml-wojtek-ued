@@ -59,6 +59,7 @@ just eval --algo ppo     # evaluate the latest checkpoint of an algo
 | `just render-video *args` | mp4 clips of a `brax_ued.py` checkpoint walking generated levels ([docs](docs/ued-accel.md#render-video)) |
 | `just write-sidecar *args` | backfill the `<run>.json` sidecar of a pre-sidecar `brax_ued.py` checkpoint from its training flags ([docs](docs/deploy.md#sidecar)) |
 | `just export *args` | `--checkpoint <run>.pkl [--out dir]`: deploy-profile checkpoint → `policy.npz` + `policy_meta.json` for the robot, validated against the robot runtime ([docs](docs/deploy.md#export)) |
+| `just import-upstream *args` | `--checkpoint <w01-tek run>/checkpoints/<step> --out <run>.pkl <brax_ued flags>`: upstream `train.py` checkpoint → brax_ued `.pkl` + sidecar, for export or `--init_from` ([docs](docs/deploy.md#warm-start)) |
 
 ## Env usage
 

@@ -347,6 +347,12 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   every consumer rebuilds env and network from it
   ([deploy.md](deploy.md#sidecar)). `brax_ued.py` also checks the built
   arena's geometry against the run before training.
+- Non-finite guard, every iteration: NaN/Inf in the student's normalizer,
+  policy or value stops the run (`FloatingPointError` naming iteration and
+  `env_steps`); with `--checkpoint_dir` the previous iteration's params go to
+  `<name>_last_finite.pkl` (+ sidecar), no `<name>.pkl` is written.
+  `load_run` refuses a checkpoint with non-finite params (eval, export,
+  render, `--init_from`).
 - Eval every `eval_every` iterations: deterministic policy on `eval_levels`
   fresh uniform levels (2 episodes each, in chunks of at most `tiles²`
   levels) at difficulties 0.25/0.5/0.75/1.0 — `eval/d<d>/success_rate` (no
@@ -357,6 +363,8 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   `level/<param>` = mean physical value (`ParamSpace.physical`, robot
   units), `level/slope_deg_abs` / `level/step_height_m_abs` = mean |value|
   of the signed parameters, `level/genome_dist` = mean |genome - `flat`|.
+- `--init_from <run>.pkl`: warm start from a brax_ued or imported
+  upstream checkpoint ([deploy.md](deploy.md#warm-start)).
 - `--env_override <file.json>` (TRAINING_ONLY env keys merged onto the
   profile's, [deploy.md](deploy.md#profile)), `--clipping_epsilon` (PPO
   clip, default 0.2).
@@ -507,6 +515,14 @@ the backend is the sidecar's (v10 and earlier: jax).
     `_lin_rel`, `_yaw_rel` per random/param set.
   - Suite sets report it too: `suite/<terrain>_<k>/cmd_success_rate`, and
     `suite/cmd_success_rate` = mean over them (npz `suite_cmd_success`).
+- Eval-only overrides (the trained network is unchanged; both are
+  training-only to the policy): `--arena {benchmark,deploy}` evaluates on
+  that profile's arena geometry instead of the checkpoint's;
+  `--command_box VX_LO VX_HI VY_LO VY_HI WZ_LO WZ_HI HEIGHT` samples one
+  uniform command in that box with every special draw (stand, spin,
+  strafe, backward, arc, terrain bias) off. v10-comparable eval of a
+  deploy policy: `--arena benchmark --command_box 0.2 0.6 -0.2 0.2 -0.4 0.4
+  0.14`. `render_video.py --arena` renders on another arena the same way.
 - `--level_space param` adds `param/uniform` (2048 levels drawn from the
   full 8-parameter space: heterogeneous, so CVaR reads a real tail) and
   capability envelopes `axis/<feature>`: one feature (rough, slope up/down,
