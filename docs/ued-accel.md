@@ -347,6 +347,12 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   every consumer rebuilds env and network from it
   ([deploy.md](deploy.md#sidecar)). `brax_ued.py` also checks the built
   arena's geometry against the run before training.
+- Non-finite guard, every iteration: NaN/Inf in the student's normalizer,
+  policy or value stops the run (`FloatingPointError` naming iteration and
+  `env_steps`); with `--checkpoint_dir` the previous iteration's params go to
+  `<name>_last_finite.pkl` (+ sidecar), no `<name>.pkl` is written.
+  `load_run` refuses a checkpoint with non-finite params (eval, export,
+  render, `--init_from`).
 - Eval every `eval_every` iterations: deterministic policy on `eval_levels`
   fresh uniform levels (2 episodes each, in chunks of at most `tiles²`
   levels) at difficulties 0.25/0.5/0.75/1.0 — `eval/d<d>/success_rate` (no
