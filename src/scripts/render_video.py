@@ -28,12 +28,14 @@ from hfield.level_space import make_level_space
 from hfield.tiles import TileLayout
 from robots.go1 import Go1Terrain, scene_xml
 from scripts.brax_ued import (
+    ARENAS,
     ROBOT_SCALE,
     check_spec_arena,
     load_run,
     make_env,
     spec_network,
 )
+from scripts.eval_brax import eval_spec
 from utils.env import FunctionalEnv
 
 # mujoco is a C extension that ty cannot introspect
@@ -180,12 +182,19 @@ def parse_args() -> argparse.Namespace:
         help="held command (m/s, m/s, rad/s); the default arc stays on the arena",
     )
     p.add_argument("--seed", type=int, default=0, help="reset key")
+    p.add_argument(
+        "--arena",
+        choices=list(ARENAS),
+        default=None,
+        help="render on this profile's arena instead of the checkpoint's",
+    )
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     spec, params = load_run(Path(args.checkpoint))
+    spec = eval_spec(spec, args.arena, None)
     config = HFieldConfig(**spec["hfield"])
     check_spec_arena(spec)
     env = make_env(spec, num_envs=1, train=False)

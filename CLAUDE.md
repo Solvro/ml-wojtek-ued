@@ -17,7 +17,7 @@ it when the code changes.**
 | Config fields, Hydra overrides | [docs/configuration.md](docs/configuration.md) |
 | Layout rules, tooling, adding features, gotchas | [docs/development.md](docs/development.md) |
 | Running training/eval on the cluster | [docs/slurm_recommended.md](docs/slurm_recommended.md) |
-| Deploy profile, checkpoint sidecar, export to the robot (`src/deploy/`) | [docs/deploy.md](docs/deploy.md) |
+| Deploy profile, checkpoint sidecar, export to the robot (`src/deploy/`), upstream checkpoint import / warm start | [docs/deploy.md](docs/deploy.md) |
 
 ## Where code lives
 

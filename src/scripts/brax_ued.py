@@ -221,6 +221,7 @@ def run_spec(args: argparse.Namespace) -> dict[str, Any]:
         "env_overrides": env_overrides(args),
         "dr_config": deploy_dr_config() if args.profile == "deploy" else None,
         "network": NETWORKS[args.profile],
+        "init_from": args.init_from,
         "args": vars(args),
     }
 
@@ -349,6 +350,30 @@ class Student:
         self.opt_state = self.optimizer.init(self.params)
         self.update = jax.jit(self._update)
         self.regret = jax.jit(self._regret)
+
+    def warm_start(self, params: Any, source: str) -> None:
+        """Normalizer, policy and value from a brax_ued checkpoint; the
+        optimizer state starts fresh."""
+        normalizer, policy, value = params
+        for name, got, want in (
+            ("policy", policy, self.params.policy),
+            ("value", value, self.params.value),
+            ("normalizer mean", normalizer.mean, self.normalizer.mean),
+        ):
+            got_shapes = jax.tree.map(jnp.shape, got)
+            want_shapes = jax.tree.map(jnp.shape, want)
+            if got_shapes != want_shapes:
+                raise ValueError(
+                    f"--init_from {source}: {name} shapes {got_shapes} differ from "
+                    f"this run's {want_shapes}; warm start from a checkpoint of the "
+                    "same profile and network"
+                )
+        self.normalizer = jax.tree.map(jnp.asarray, normalizer)
+        self.params = ppo_losses.PPONetworkParams(
+            policy=jax.tree.map(jnp.asarray, policy),
+            value=jax.tree.map(jnp.asarray, value),
+        )
+        self.opt_state = self.optimizer.init(self.params)
 
     def inference_params(self) -> tuple[Any, Any, Any]:
         return (self.normalizer, self.params.policy, self.params.value)
@@ -833,6 +858,14 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         return key
 
     student = Student(env, spec["network"], next_key(), args.clipping_epsilon)
+    if args.init_from:
+        init_spec, params = load_run(Path(args.init_from))
+        if init_spec["network"] != spec["network"]:
+            raise ValueError(
+                f"--init_from {args.init_from}: network {init_spec['network']} "
+                f"differs from this run's {spec['network']}"
+            )
+        student.warm_start(params, args.init_from)
     paired = args.mode == "paired"
     antagonist = (
         Student(env, spec["network"], next_key(), args.clipping_epsilon)
@@ -910,6 +943,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="JSON file of TRAINING_ONLY env keys merged onto the profile's",
     )
     p.add_argument("--clipping_epsilon", type=float, default=PPO["clipping_epsilon"])
+    p.add_argument(
+        "--init_from",
+        default=None,
+        help="brax_ued .pkl (sidecar beside it) to start the student from",
+    )
     args = p.parse_args(argv)
     if args.profile == "deploy" and args.robot != "wojtek":
         p.error("--profile deploy is Wojtek's robot setup; use --robot wojtek")
