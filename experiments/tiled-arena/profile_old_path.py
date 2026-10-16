@@ -104,7 +104,8 @@ def main() -> None:
         sim = {"backend": backend, "naconmax_per_env": 116, "njmax": 1024}
         return brax_ued.merge_overrides(out, {"sim": sim})
 
-    brax_ued.env_overrides = overrides
+    # patched in place: 4b91bce's brax_ued has no backend or env hook
+    brax_ued.env_overrides = overrides  # ty: ignore[invalid-assignment]
     made: list[Any] = []
     make_env = brax_ued.make_env
 
@@ -112,7 +113,7 @@ def main() -> None:
         made.append(make_env(*margs, **kw))
         return made[-1]
 
-    brax_ued.make_env = recording_make_env
+    brax_ued.make_env = recording_make_env  # ty: ignore[invalid-assignment]
     t0 = time.perf_counter()
     ctx = brax_ued.build(args)
     rec: dict[str, Any] = {

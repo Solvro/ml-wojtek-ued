@@ -43,7 +43,8 @@ src/
     logging.py       wandb or a jsonl fallback Logger
   hfield/            heightfield levels for ACCEL  (see ued-accel.md)
     manager.py       HFieldManager: generate / mutate / upsample a level
-    arena.py         write the static "accel" MJCF arena assets
+    arena.py         write the static tiled "accel" MJCF arena assets
+    tiles.py         TileLayout: one level per tile of the shared arena
     playground.py    offscreen render demo of generated levels
   ued/               the ACCEL algorithm  (see ued-accel.md)
     types.py         RolloutFn, Curator, PPOTrainer

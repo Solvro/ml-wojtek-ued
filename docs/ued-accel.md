@@ -376,6 +376,26 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   `pad_radius`, height scale, level grid, tiles, gap); the error names the
   `just build-accel-arena arena=<kind> hfield_params...` command for it.
 
+## Throughput {#throughput}
+
+H100, 8192 envs (256 lanes x 32), `scripts/profile_brax_ued.py`; full
+numbers and the old loop's profile in `experiments/tiled-arena/report.md`.
+
+- v10 loop (jax, per-env hfield swap): 12.9k env steps/s, ~9.7k end to
+  end. Physics is 98% of an iteration; the per-env swap itself costs
+  nothing (a shared level on jax is the same 12.9k).
+- Tiled arena on warp: 263k (benchmark) / 257k (deploy) env steps/s; a
+  training iteration (2.46M steps, 15 unroll + PPO update pairs) ~10.8 s
+  = ~227k steps/s; `evaluate` 17-23 s (jax: 106 s).
+- 32M steps of `--mode accel` in ~5 min wall clock, ~2 min of it
+  compilation (`t7_tiled_wojtek_accel_seed0`).
+- Warp is not jax: a jax-trained v10 policy scores 1.5-3 points higher on
+  terrain under warp and stands 7-11 mm higher; compare runs within one
+  backend. On jax the tiled arena reproduces v10's final eval inside its
+  95% CIs.
+- Whole-device GPU memory: ~16 GB on warp (JAX preallocation off), so
+  larger batches fit.
+
 ## Level spaces — `hfield/level_space.py` {#level-spaces}
 
 `brax_ued.py` takes `--level_space {grid,param}` (eval scripts read it from

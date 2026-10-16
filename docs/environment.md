@@ -283,15 +283,25 @@ Two things must follow the swap, or the level only exists on paper:
   `accel_arena_overrides` leaves `sim.backend` at `auto` (warp on a GPU, jax
   on CPU) with upstream's terrain buffers (`naconmax_per_env` 116, `njmax`
   1024). Never vmap `hfield_data` with `in_axes=0`: nothing can detect it
-  inside the vmap.
+  inside the vmap. `src/scripts/check_hfield_batch.py` checks it per
+  backend (flat/pit tiles; `--compare` = jax vs warp; `--bench_envs N`
+  times it).
 - **Warp memory** — warp allocates its collision scratch (EPA buffers,
-  ~0.3-0.7 GB per call at 8192 envs) outside JAX's pool, so with JAX's
-  default 75% preallocation a run dies with a CUDA OOM after a few
-  iterations (seen 2026-10-16, job 6109872). `FunctionalEnv` refuses warp
-  unless `XLA_PYTHON_CLIENT_PREALLOCATE=false`; the justfile, `slurm.sh` and
-  `slurm/*.sbatch` export it. Upstream's presets ask for
-  `XLA_PYTHON_CLIENT_PREALLOC=false`, which is not a variable JAX reads. `src/scripts/check_hfield_batch.py` checks it per backend
-  (flat/pit tiles; `--compare` = jax vs warp; `--bench_envs N` times it).
+  ~0.3 GB each at 8192 envs) outside JAX's pool. Upstream measured a
+  mid-run OOM with JAX preallocating and calls turning it off mandatory on
+  terrain; `FunctionalEnv` refuses warp unless
+  `XLA_PYTHON_CLIENT_PREALLOCATE=false`, and the justfile, `slurm.sh` and
+  `slurm/*.sbatch` export it. Upstream's presets spell it
+  `XLA_PYTHON_CLIENT_PREALLOC=false`, which is not a variable JAX reads.
+- **Warp CUDA graphs** — mjx's warp FFI (`GraphMode.WARP`) captures one
+  CUDA graph per set of buffer addresses, each owning its own collision
+  scratch, and caches 32 per callable. Upstream's single jitted `ppo.train`
+  step reuses its buffers; brax_ued's separate jitted reset / unroll / eval
+  calls pass new ones every call, and the first two sanity runs died with
+  a CUDA OOM at the third iteration, with JAX preallocating (job 6109872)
+  and without (6110159, 15 of 80 GB in use). `FunctionalEnv` caps the
+  cache at `WARP_GRAPH_CACHE` = 4 (`configure_warp`) when it builds a warp
+  env; with both settings the run completed (job 6110213, ~16 GB).
 
 ## Tiled arena {#tiled-arena}
 
