@@ -49,7 +49,7 @@ just eval algo=ppo       # evaluate the latest checkpoint of an algo
 | `just lint` | `ruff check` + `ruff format --check` on `src` |
 | `just build` | build the MJX model (`wojtek_mjx.xml` + `scene_mjx.xml`) |
 | `just build-accel-arena *args` | write the `accel` arena (scene/hfield/spec/lookup); `hfield_params.*` overrides set its geometry, `arena=<kind>` the file set |
-| `just build-deploy-arena` | write the 12x12 m `accel_deploy` arena `brax_ued.py --profile deploy` loads |
+| `just build-deploy-arena` | write the 12x12 m `accel_deploy` arena `brax_ued.py --profile deploy\|robot` loads |
 | `just train *args` | PPO training; args are Hydra overrides (e.g. `just train training_params.epochs=8`) |
 | `just train-dr *args` | PPO training with baseline domain randomization (`scripts/ppo_dr.py`) |
 | `just accel *args` | ACCEL training, single-level-per-iteration variant; needs `build-accel-arena` first |

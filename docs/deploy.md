@@ -182,7 +182,7 @@ is the one loaded.
 
 ## Sidecar `<run>.json` {#sidecar}
 
-`brax_ued.py` writes it beside `<run>.pkl` at launch (both profiles).
+`brax_ued.py` writes it beside `<run>.pkl` at launch (every profile).
 `export_policy.py`, `eval_brax.py`, `eval_sim2sim.py` and `render_video.py`
 rebuild env and network from it (`brax_ued.load_run`), no geometry flags.
 

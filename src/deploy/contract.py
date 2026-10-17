@@ -144,7 +144,7 @@ def build_contract(env: Any, run: dict[str, Any], checkpoint: str = "") -> dict:
         raise NotImplementedError(
             "this policy observes the gait clock ('phase'); the deploy "
             "runtime has no implementation of the speed-blended walk/trot "
-            "clock -- train with --profile deploy"
+            "clock -- train with --profile deploy or robot"
         )
 
     c = env._config.command

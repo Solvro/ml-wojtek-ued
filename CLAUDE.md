@@ -44,7 +44,7 @@ it when the code changes.**
 - **Namespace packages** — no `__init__.py` in research code; imports are
   absolute via `PYTHONPATH=src`.
 - **Generated assets are gitignored** — run `just build` and
-  `just build-accel-arena` (`just build-deploy-arena` for `--profile deploy`)
+  `just build-accel-arena` (`just build-deploy-arena` for `--profile deploy|robot`)
   before anything that loads the robot / an arena; warp needs
   `XLA_PYTHON_CLIENT_PREALLOCATE=false`
   ([docs/setup.md](docs/setup.md#tiled-arena-requirements)).

@@ -1,4 +1,4 @@
-"""Export a `brax_ued.py --profile deploy` checkpoint in w01-tek's robot format.
+"""Export a `brax_ued.py --profile deploy|robot` checkpoint for the robot.
 
 Port of w01-tek `training/wojtek_rl/export_policy.py` @ e44c1a9. Writes into
 `--out` (default `<checkpoint stem>_deploy/` beside the .pkl):
