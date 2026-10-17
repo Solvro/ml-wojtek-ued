@@ -210,7 +210,8 @@ independently-gated fields: `com_offset`, `joint_gains` (per-actuator instead
 of one shared scale), `dof` (damping/armature/frictionloss), `foot_friction`,
 `motor_strength`. `FunctionalEnv(..., dr_config=...)` passes one through;
 `brax_ued.py --profile deploy` uses upstream `terrain_blind_v4_4d`'s
-([deploy.md](deploy.md#profile)). `scripts/ppo_dr.py` (see [ppo.md](ppo.md#domain-randomization-scriptsppo_drpy))
+([deploy.md](deploy.md#profile)), `--profile robot` `flat_quiet_v6`'s (the
+same block). `scripts/ppo_dr.py` (see [ppo.md](ppo.md#domain-randomization-scriptsppo_drpy))
 and the benchmark profile use the baseline five-field form via
 `FunctionalEnv(domain_randomize=True)`.
 

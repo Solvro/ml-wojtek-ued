@@ -1,0 +1,104 @@
+name = "robot-ft"
+question = "Does T8's winning ACCEL fine-tune beat its base when the base is an upstream-trained policy on the contract of the policy running on the robot?"
+
+envs = ["robot"]
+conditions = ["accel_sfl_lr1e-4", "dr_lr1e-4"]
+seeds = [0, 1, 2]
+total_steps = 300_000_000
+
+[wandb]
+entity = "dominikgalus9-wroc-aw-university-of-science-and-technology"
+project = "wojtyla"
+# added through the wandb API once the runs exist
+tag = "robot-ft"
+run_name = '^rft_(?P<env>robot)_(?P<condition>accel_sfl_lr1e-4|dr_lr1e-4)_seed(?P<seed>\d+)$'
+
+[metric]
+keys = ["eval/d1.0/cmd_success_rate"]
+x = ["env_steps"]
+label = "command-conditioned success, uniform levels d=1.0"
+final_window = 0.1
+
+[reference]
+condition = "dr_lr1e-4"
+thresholds = [0.5]
+
+# Win criterion, fixed before the fine-tunes launch (T10 brief), on the
+# final eval_brax evals (eval.sbatch) and upstream's battery report
+# (battery.sbatch); base = the imported upstream base on the same backend,
+# arena, levels and reset keys. analyze.py implements it.
+# - primary: random/d1.0/cmd_success_rate AND random/d1.0/success_rate above
+#   the base with non-overlapping 95% CIs (arm: seeds x levels bootstrap,
+#   base: levels), pooled AND for every seed alone (as T8);
+# - guards (as T8): random/d0.25 success drop <= 0.02; d1.0 fall rate not
+#   worse (paired difference CI low <= 0);
+# - flat guard (flat-family robot policy), 1024 flat levels: success and
+#   cmd_success not lower beyond noise (paired difference CI high >= 0),
+#   fall rate not worse (paired difference CI low <= 0);
+# - quiet guard, upstream's own report (`run.sh report`, flat scene), every
+#   seed: energy (power.mean_total, W) and the landing-impact proxy
+#   (foot_force_proxy.peak_accel_mps2) not above the base x 1.05, battery
+#   falls not more than the base's. Touchdown velocity is not in upstream's
+#   battery at e44c1a9.
+# - the winner is picked among ACCEL arms only; DR lr 1e-4 is the control.
+#   A winning arm exports its seed with the best d1.0 success + cmd_success.
+
+[[secondary]]
+key = "eval/d1.0/success_rate"
+label = "success, uniform levels d=1.0"
+
+[[secondary]]
+key = "eval/d0.25/success_rate"
+label = "success, d=0.25 (guard)"
+
+[[secondary]]
+key = "eval/d1.0/fall_rate"
+label = "fall rate, d=1.0 (guard)"
+
+[[secondary]]
+key = "diverged_per_step"
+label = "diverged env steps / step"
+note = "ended by FunctionalEnv._end_diverged"
+
+[cluster]
+ssh_host = "wcss"
+
+[[cluster.jobs]]
+id = 6113986
+label = "upstream train.py +experiment=flat_quiet_v6 (kp 20), 2B: submitted before the target moved to the RPi's policy; not used"
+
+[[cluster.jobs]]
+id = 6114800
+label = "robot base: upstream train.py UPSTREAM_RUNS['robot'], 2B, rft_upstream_seed0"
+
+[[cluster.jobs]]
+id = 6114846
+label = "setup: model, arenas, base import + export check (code 0895699)"
+
+[[cluster.jobs]]
+id = 6114847
+label = "train 0-5: accel_sfl_lr1e-4, dr_lr1e-4; 300M"
+
+[[cluster.jobs]]
+id = 6114848
+label = "eval_brax base"
+
+[[cluster.jobs]]
+id = 6114849
+label = "eval_brax 0-5"
+
+[[cluster.jobs]]
+id = 6114850
+label = "battery report: imported base, upstream base run"
+
+[[cluster.jobs]]
+id = 6114851
+label = "battery report 0-5"
+
+[[cluster.jobs]]
+id = 6118261
+label = "battery 0-6 rerun (converted runs loaded the base checkpoint; not used)"
+
+[[cluster.jobs]]
+id = 6118269
+label = "battery 0-6, checkpoint_dir fixed"

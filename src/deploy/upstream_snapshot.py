@@ -1,14 +1,14 @@
-"""Snapshot what w01-tek resolves for the deploy experiment, with its own code.
+"""Snapshot what w01-tek resolves for a robot profile's run, with its own code.
 
-Composes upstream's Hydra config for `+experiment=terrain_blind_v4_4d`
-(read-only), then records: the full resolved env config (`run.json`'s
+Composes upstream's Hydra config with the profile's `train.py` overrides
+(`brax_ued.UPSTREAM_RUNS`; read-only checkout), then records: the full resolved env config (`run.json`'s
 `env_config` minus the per-host `sim.num_envs`), the `dr` block, the PPO
 network factory kwargs (`train.py build_ppo_params` + the network group, with
 brax's defaults for activation / distribution made explicit), and the
-contract upstream's exporter builds. tests/deploy compares `--profile deploy`
+contract upstream's exporter builds. tests/deploy compares the profile
 against it.
 
-    uv run python -m deploy.upstream_snapshot --w01-tek ../w01-tek
+    uv run python -m deploy.upstream_snapshot --w01-tek ../w01-tek --profile robot
 """
 
 import argparse
@@ -22,8 +22,9 @@ from typing import Any
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
-EXPERIMENT = "terrain_blind_v4_4d"
-OUT = Path(__file__).resolve().parents[2] / f"tests/deploy/upstream_{EXPERIMENT}.json"
+from scripts.brax_ued import UPSTREAM_RUNS
+
+TESTS = Path(__file__).resolve().parents[2] / "tests/deploy"
 
 
 def network_kwargs(cfg: Any) -> dict[str, Any]:
@@ -45,19 +46,23 @@ def network_kwargs(cfg: Any) -> dict[str, Any]:
     }
 
 
-def snapshot(w01_tek: Path) -> dict[str, Any]:
+def snapshot(w01_tek: Path, overrides: list[str]) -> dict[str, Any]:
     from wojtek_rl.deploy_contract import build_contract
     from wojtek_rl.export_policy import build_env
     from wojtek_rl.registry import TASKS, _apply_overrides
 
     conf = w01_tek / "training/wojtek_rl/conf"
     with initialize_config_dir(version_base=None, config_dir=str(conf)):
-        cfg = compose(config_name="config", overrides=[f"+experiment={EXPERIMENT}"])
+        cfg = compose(config_name="config", overrides=overrides)
     task = str(cfg.task.name)
-    overrides = OmegaConf.to_container(cfg.task.env, resolve=True)
+    env_overrides = OmegaConf.to_container(cfg.task.env, resolve=True)
     env_config = TASKS[task][1]()
-    _apply_overrides(env_config, overrides)
-    run = {"run_name": EXPERIMENT, "task": task, "env_config": env_config.to_dict()}
+    _apply_overrides(env_config, env_overrides)
+    run = {
+        "run_name": str(cfg.run_name),
+        "task": task,
+        "env_config": env_config.to_dict(),
+    }
     env_dict = json.loads(json.dumps(run["env_config"]))
     del env_dict["sim"]["num_envs"]
     commit = subprocess.run(
@@ -68,7 +73,7 @@ def snapshot(w01_tek: Path) -> dict[str, Any]:
     ).stdout.strip()
     return {
         "w01_tek_commit": commit,
-        "experiment": EXPERIMENT,
+        "hydra_overrides": overrides,
         "task": task,
         "env_config": env_dict,
         "dr": OmegaConf.to_container(cfg.dr, resolve=True),
@@ -80,15 +85,17 @@ def snapshot(w01_tek: Path) -> dict[str, Any]:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--w01-tek", type=Path, required=True, help="w01-tek checkout")
-    p.add_argument("--out", type=Path, default=OUT)
+    p.add_argument("--profile", required=True, choices=list(UPSTREAM_RUNS))
+    p.add_argument("--out", type=Path, default=None)
     args = p.parse_args()
+    out = args.out or TESTS / f"upstream_{args.profile}.json"
     # keep the upstream checkout untouched
     sys.dont_write_bytecode = True
     sys.path.insert(0, str(args.w01_tek.resolve() / "training"))
-    record = snapshot(args.w01_tek.resolve())
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(record, indent=2) + "\n")
-    print(f"wrote {args.out} (w01-tek {record['w01_tek_commit']})")
+    record = snapshot(args.w01_tek.resolve(), UPSTREAM_RUNS[args.profile])
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(record, indent=2) + "\n")
+    print(f"wrote {out} (w01-tek {record['w01_tek_commit']})")
 
 
 if __name__ == "__main__":

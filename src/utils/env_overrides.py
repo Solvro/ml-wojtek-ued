@@ -25,7 +25,7 @@ def accel_arena_overrides(pad_radius: float, arena: str = "accel") -> dict[str, 
 def deploy_overrides() -> dict[str, Any]:
     # task.env of w01-tek e44c1a9 `+experiment=terrain_blind_v4_4d`, resolved
     # by its Hydra config (docs/deploy.md); keep verbatim, the deploy runtime
-    # and tests/deploy/upstream_terrain_blind_v4_4d.json depend on it
+    # and tests/deploy/upstream_deploy.json depend on it
     return {
         "obs": {
             "state": (
@@ -212,7 +212,8 @@ def deploy_overrides() -> dict[str, Any]:
 
 
 def deploy_dr_config() -> dict[str, Any]:
-    # top-level `dr` block of the same resolved experiment
+    # top-level `dr` block of the same resolved experiment; flat_quiet_v6
+    # (the robot profile) resolves to the same block
     return {
         "com_offset": {"enable": False, "xy": 0.02, "z": 0.01},
         "joint_gains": {"enable": True, "gain_pct": 0.2, "kd_pct": 0.2},
@@ -224,6 +225,151 @@ def deploy_dr_config() -> dict[str, Any]:
         },
         "foot_friction": {"enable": True, "range": (0.4, 1.35)},
         "motor_strength": {"enable": True, "range": (0.5, 1.1)},
+    }
+
+
+def robot_overrides() -> dict[str, Any]:
+    # task.env of w01-tek e44c1a9 `+experiment=flat_quiet_v6` with
+    # brax_ued.UPSTREAM_RUNS["robot"]'s overrides, resolved by its Hydra
+    # config: the contract of the policy the robot runs
+    # (docs/deploy.md#robot-profile); keep verbatim,
+    # tests/deploy/upstream_robot.json depends on it
+    return {
+        "obs": {
+            "state": (
+                "gyro",
+                "gravity",
+                "joint_pos",
+                "joint_vel",
+                "last_act",
+                "command",
+                "phase",
+            ),
+            "privileged": (
+                "gyro",
+                "gravity",
+                "joint_pos",
+                "joint_vel",
+                "last_act",
+                "command",
+                "linvel",
+                "foot_contact",
+            ),
+            "include": ("joint_pos", "joint_vel", "last_act", "command"),
+        },
+        "latency": {"enable": True, "min_substeps": 0, "max_substeps": 5},
+        "encoder": {"enable": True, "range": 0.02},
+        "terrain": {
+            "enable": False,
+            "arena": "train",
+            "flat_row": False,
+            "spawn_yaw": True,
+            "pad_jitter": 0.15,
+            "init_level_frac": 0.5,
+            "spawn_level": -1,
+            "demote_fraction": 0.5,
+            "spawn_mode": "pad",
+            "spawn_grace_sec": 0.0,
+            "pinned_frac": 0.0,
+            "pinned_flat_frac": 0.0,
+            "demote_strikes": 1,
+            "stair_tread_range": None,
+            "type_caps": None,
+            "pad_radius": None,
+        },
+        "height_scan": {
+            "enable": False,
+            "x_range": (0.65, 1.45),
+            "y_range": (-0.3, 0.3),
+            "nx": 5,
+            "ny": 5,
+            "clip": 0.3,
+            "hold_steps": 3,
+            "delay_steps": 1,
+            "dark": False,
+            "mask": {
+                "enable": True,
+                "mount": (0.32, 0.0, 0.07),
+                "pitch_deg": 15.0,
+                "hfov_deg": 90.7,
+                "vfov_deg": 61.2,
+                "min_depth": 0.3,
+                "max_depth": 3.0,
+                "occlusion": True,
+                "occlusion_samples": 8,
+                "occlusion_margin": 0.02,
+            },
+            "corrupt": {
+                "enable": False,
+                "noise_prob": 0.6,
+                "drift_prob": 0.3,
+                "blackout_prob": 0.1,
+                "noise_std": 0.02,
+                "drift_z": 0.05,
+                "drift_tilt": 0.05,
+                "dropout_prob": 0.05,
+                "pitch_jitter_deg": 0.0,
+                "mount_jitter": 0.0,
+            },
+        },
+        "action_scale": (0.25, 0.25, 0.25),
+        "pd_kp": 40.0,
+        "pd_kd": 0.8,
+        "max_torque": 12.0,
+        "abduction_ctrl_limit": 0.44,
+        "knee_target_max": 3.15,
+        "tau_ff": {"enable": True, "scale": 3.0, "rate_weight": 0.25},
+        "command": {
+            "vx": (-0.8, 1.2),
+            "vy": (-0.5, 0.5),
+            "wz": (-1.0, 1.0),
+            "height": (0.125, 0.125),
+            "zero_prob": 0.25,
+            "pure_wz_prob": 0.25,
+            "pure_vy_prob": 0.2,
+            "pure_slow_prob": 0.15,
+        },
+        "push": {"vel": 0.8},
+        "reward": {
+            "tracking_sigma": 0.1,
+            "pose_leg_weight": 0.1,
+            "apex_target": 0.05,
+            "scales": {
+                "tracking_lin_vel": 4.0,
+                "tracking_ang_vel": 1.6,
+                "termination": -1.0,
+                "feet_apex": 5.0,
+                "feet_air_time": 0.0,
+                "high_step": 0.0,
+                "feet_phase": 0.0,
+                "contact_match": 0.0,
+                "orientation": -5.0,
+                "pose": -1.0,
+                "stand_still": -2.5,
+                "stand_feet_down": -30.0,
+                "feet_slip": -0.35,
+                "action_rate": -0.25,
+                "torques": -0.0006,
+                "torque_rate": 0.0,
+                "torque_limit": 0.0,
+                "action_accel": 0.0,
+                "energy": 0.0,
+                "tau_ff_swing": -0.5,
+                "tau_ff": -0.001,
+                "height_tracking": 0.0,
+                "lin_vel_z": 0.0,
+                "ang_vel_xy": 0.0,
+                "target_sag": -10.0,
+                "feet_landing": -15.0,
+                "energy_cmd": 1.0,
+                "base_accel": -0.02,
+            },
+            "target_sag_wz_fade": 0.1,
+            "feet_landing_wz_fade": 0.1,
+            "feet_landing_wz_floor": 0.35,
+            "base_accel_wz_fade": 0.1,
+            "base_accel_wz_floor": 0.35,
+        },
     }
 
 

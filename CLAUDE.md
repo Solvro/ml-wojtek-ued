@@ -32,7 +32,7 @@ it when the code changes.**
 - `src/deploy/` — robot export: `contract.py` (port of w01-tek
   `deploy_contract.py`), `runtime.py` (the robot's `policy.py`, verbatim,
   ruff-excluded — never edit), `upstream_snapshot.py` (regenerates
-  `tests/deploy/upstream_terrain_blind_v4_4d.json`).
+  `tests/deploy/upstream_<profile>.json`, one per robot profile).
 - `src/ued/` — the ACCEL algorithm, split by role (`types`, `regret`, `levels`,
   `stopper`, `curriculum`). Keep the split; don't recreate a `helpers` grab-bag.
 
@@ -44,7 +44,7 @@ it when the code changes.**
 - **Namespace packages** — no `__init__.py` in research code; imports are
   absolute via `PYTHONPATH=src`.
 - **Generated assets are gitignored** — run `just build` and
-  `just build-accel-arena` (`just build-deploy-arena` for `--profile deploy`)
+  `just build-accel-arena` (`just build-deploy-arena` for `--profile deploy|robot`)
   before anything that loads the robot / an arena; warp needs
   `XLA_PYTHON_CLIENT_PREALLOCATE=false`
   ([docs/setup.md](docs/setup.md#tiled-arena-requirements)).

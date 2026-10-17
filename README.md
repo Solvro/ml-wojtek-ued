@@ -20,7 +20,7 @@ Full docs live in [`docs/`](docs/):
 | [configuration.md](docs/configuration.md) | every Hydra config field + override examples |
 | [development.md](docs/development.md) | layout rules, tooling, conventions, gotchas |
 | [slurm_recommended.md](docs/slurm_recommended.md) | recommended `sbatch` commands for training + eval |
-| [deploy.md](docs/deploy.md) | `brax_ued.py --profile deploy`, checkpoint sidecar, export to the robot's `policy.npz` + `policy_meta.json` |
+| [deploy.md](docs/deploy.md) | `brax_ued.py --profile deploy` / `--profile robot` (the policy the robot runs), checkpoint sidecar, export to the robot's `policy.npz` + `policy_meta.json` |
 
 Start with [overview.md](docs/overview.md).
 
@@ -49,7 +49,7 @@ just eval algo=ppo       # evaluate the latest checkpoint of an algo
 | `just lint` | `ruff check` + `ruff format --check` on `src` |
 | `just build` | build the MJX model (`wojtek_mjx.xml` + `scene_mjx.xml`) |
 | `just build-accel-arena *args` | write the `accel` arena (scene/hfield/spec/lookup); `hfield_params.*` overrides set its geometry, `arena=<kind>` the file set |
-| `just build-deploy-arena` | write the 12x12 m `accel_deploy` arena `brax_ued.py --profile deploy` loads |
+| `just build-deploy-arena` | write the 12x12 m `accel_deploy` arena `brax_ued.py --profile deploy\|robot` loads |
 | `just train *args` | PPO training; args are Hydra overrides (e.g. `just train training_params.epochs=8`) |
 | `just train-dr *args` | PPO training with baseline domain randomization (`scripts/ppo_dr.py`) |
 | `just accel *args` | ACCEL training, single-level-per-iteration variant; needs `build-accel-arena` first |
@@ -59,7 +59,7 @@ just eval algo=ppo       # evaluate the latest checkpoint of an algo
 | `just eval-sim *args` | watch a checkpoint walk random ACCEL levels in the MuJoCo viewer; needs `build-accel-arena` first |
 | `just render-video *args` | mp4 clips of a `brax_ued.py` checkpoint walking generated levels ([docs](docs/ued-accel.md#render-video)) |
 | `just write-sidecar *args` | backfill the `<run>.json` sidecar of a pre-sidecar `brax_ued.py` checkpoint from its training flags ([docs](docs/deploy.md#sidecar)) |
-| `just export *args` | `--checkpoint <run>.pkl [--out dir]`: deploy-profile checkpoint → `policy.npz` + `policy_meta.json` for the robot, validated against the robot runtime ([docs](docs/deploy.md#export)) |
+| `just export *args` | `--checkpoint <run>.pkl [--out dir]`: deploy- or robot-profile checkpoint → `policy.npz` + `policy_meta.json` for the robot, validated against the robot runtime ([docs](docs/deploy.md#export)) |
 | `just import-upstream *args` | `--checkpoint <w01-tek run>/checkpoints/<step> --out <run>.pkl <brax_ued flags>`: upstream `train.py` checkpoint → brax_ued `.pkl` + sidecar, for export or `--init_from` ([docs](docs/deploy.md#warm-start)) |
 
 ## Env usage

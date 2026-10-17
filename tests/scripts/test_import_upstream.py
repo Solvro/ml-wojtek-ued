@@ -23,16 +23,21 @@ from scripts.brax_ued import (
 from utils.env import ObsSize
 
 DEPLOY = ["--mode", "accel", "--name", "imported", "--profile", "deploy"]
+ROBOT = ["--mode", "accel", "--name", "imported", "--profile", "robot"]
 STEP = 123456
 
 
-def deploy_env() -> Any:
-    return export_policy.build_env(run_spec(parse_args(DEPLOY)))
+def profile_env(flags: list[str] = DEPLOY) -> Any:
+    return export_policy.build_env(run_spec(parse_args(flags)))
+
+
+def profile_size(flags: list[str] = DEPLOY) -> ObsSize:
+    obs = profile_env(flags).reset(jax.random.key(0)).obs
+    return ObsSize(obs["state"].shape[-1], obs["privileged_state"].shape[-1])
 
 
 def deploy_size() -> ObsSize:
-    obs = deploy_env().reset(jax.random.key(0)).obs
-    return ObsSize(obs["state"].shape[-1], obs["privileged_state"].shape[-1])
+    return profile_size(DEPLOY)
 
 
 def fake_upstream(
@@ -40,15 +45,17 @@ def fake_upstream(
     critic: int | None = None,
     hidden: list[int] | None = None,
     env_edit: dict[str, Any] | None = None,
+    flags: list[str] = DEPLOY,
 ) -> Path:
     """A w01-tek run dir: run.json + checkpoints/<step> as train.py saves it."""
-    spec = run_spec(parse_args(DEPLOY))
-    size = deploy_size()
+    spec = run_spec(parse_args(flags))
+    env = profile_env(flags)
+    size = profile_size(flags)
     size = ObsSize(size.actor, critic or size.critic)
     network = dict(spec["network"])
     if hidden:
         network["policy_hidden_layer_sizes"] = hidden
-    nets = make_network(network, size, 12)
+    nets = make_network(network, size, env.action_size)
     keys = jax.random.split(jax.random.key(7), 3)
     normalizer = running_statistics.init_state(
         {
@@ -67,14 +74,14 @@ def fake_upstream(
                 "state": {"shape": [size.actor]},
                 "privileged_state": {"shape": [size.critic]},
             },
-            "action_size": 12,
+            "action_size": env.action_size,
             "normalize_observations": True,
             "network_factory_kwargs": network,
         }
     )
     run_dir = tmp_path / "runs" / "upstream"
     ppo_checkpoint.save(str(run_dir / "checkpoints"), STEP, params, config)
-    env_config = json.loads(json.dumps(deploy_env()._config.to_dict()))
+    env_config = json.loads(json.dumps(env._config.to_dict()))
     env_config.update(env_edit or {})
     (run_dir / "run.json").write_text(
         json.dumps({"run_name": "upstream", "env_config": env_config})
@@ -104,6 +111,25 @@ def test_import_round_trips_through_export(tmp_path: Path) -> None:
     assert (tmp_path / "deploy" / "policy.npz").exists()
 
 
+def test_robot_import_round_trips_through_export_with_the_tau_ff_head(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "imported.pkl"
+    spec = run_import(fake_upstream(tmp_path, flags=ROBOT), out, ROBOT)
+    assert spec["profile"] == "robot"
+    assert spec["action_size"] == 24
+    meta = export_policy.export(out, tmp_path / "deploy")
+    assert meta["action_size"] == 24
+    assert meta["tau_ff"] == {"enable": True, "scale": 3.0}
+
+
+def test_deploy_checkpoint_is_refused_as_robot(tmp_path: Path) -> None:
+    out = tmp_path / "imported.pkl"
+    with pytest.raises(ValueError, match=r"robot profile(.|\n)*pd_kd(.|\n)*tau_ff"):
+        run_import(fake_upstream(tmp_path), out, ROBOT)
+    assert not out.exists()
+
+
 def test_consumed_key_mismatch_is_refused(tmp_path: Path) -> None:
     checkpoint = fake_upstream(tmp_path, env_edit={"action_scale": [0.5, 0.5, 0.5]})
     out = tmp_path / "imported.pkl"
@@ -125,7 +151,7 @@ def test_network_mismatch_is_refused(tmp_path: Path) -> None:
 
 
 def test_benchmark_profile_is_refused(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="--profile deploy"):
+    with pytest.raises(ValueError, match="--profile deploy or robot"):
         run_import(fake_upstream(tmp_path), tmp_path / "x.pkl", DEPLOY[:4])
 
 

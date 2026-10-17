@@ -56,7 +56,7 @@ on warp when a GPU is present ([environment.md](environment.md#tiled-arena)).
   `pad_taper`, or the arena kind. `hfield.arena.check_arena` fails with the
   exact command when the arena differs from the run's.
   - `accel` (benchmark): `just build-accel-arena [hfield_params.*]`
-  - `accel_deploy` (`--profile deploy`): `just build-deploy-arena`
+  - `accel_deploy` (`--profile deploy|robot`): `just build-deploy-arena`
   - arenas are gitignored; on WCSS `slurm.sh` builds the `accel` arena
     (`HFIELD_ARGS`, [slurm_recommended.md](slurm_recommended.md)), the
     `brax_ued.sbatch` array needs its arena built beforehand.

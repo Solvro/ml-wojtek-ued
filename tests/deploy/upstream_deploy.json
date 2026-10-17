@@ -1,6 +1,8 @@
 {
   "w01_tek_commit": "e44c1a9075c5c33f0bb2f485583f641f3e2c6e1f",
-  "experiment": "terrain_blind_v4_4d",
+  "hydra_overrides": [
+    "+experiment=terrain_blind_v4_4d"
+  ],
   "task": "joystick",
   "env_config": {
     "abduction_ctrl_limit": 0.44,
@@ -376,7 +378,7 @@
   },
   "contract": {
     "schema_version": 2,
-    "run_name": "terrain_blind_v4_4d",
+    "run_name": "wojtek_terrain_blind_v4_4d",
     "checkpoint": "",
     "task": "joystick",
     "obs_size": 46,
