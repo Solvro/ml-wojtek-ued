@@ -173,6 +173,12 @@ is the one loaded.
   deploy. Arena, command speeds and `just build-deploy-arena` as deploy.
 - v10-comparable eval: `--command_box 0.2 0.6 -0.2 0.2 -0.4 0.4 0.125`
   (the height is a policy input, trained at 0.125 only).
+- experiments/robot-ft: an upstream-trained 2B base on this profile, then
+  T8's ACCEL SFL lr 1e-4 recipe and DR lr 1e-4 (300M, 3 seeds each): no arm
+  beats the base, both lose flat success; no export
+  ([report](../experiments/robot-ft/report.md)). `experiments/robot-ft/
+  to_upstream_run.py` turns a robot-profile `.pkl` into a w01-tek run dir
+  for upstream's battery (`run.sh report`).
 
 ## Sidecar `<run>.json` {#sidecar}
 

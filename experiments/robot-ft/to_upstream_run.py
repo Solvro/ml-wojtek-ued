@@ -52,13 +52,24 @@ def convert(checkpoint: Path, base_run: Path, out_run: Path) -> Path:
     run = json.loads((base_run / "run.json").read_text())
     run["run_name"] = out_run.name
     run["converted_from"] = {"checkpoint": str(checkpoint.resolve())}
+    # the battery loads the latest step under checkpoint_dir, not run_dir's
+    run["checkpoint_dir"] = str((out_run / "checkpoints").resolve())
     out_run.mkdir(parents=True, exist_ok=True)
     (out_run / "run.json").write_text(json.dumps(run, indent=2))
+    # brax's save expects kernel-init callables; the base's json holds their
+    # names, so save without them and write the base's config file back
+    kwargs = {
+        k: None if k.endswith("kernel_init_fn") else v
+        for k, v in config["network_factory_kwargs"].items()
+    }
     ppo_checkpoint.save(
         str(out_run / "checkpoints"),
         int(base_ckpt.name),
         tuple(params),
-        config_dict.ConfigDict(config),
+        config_dict.ConfigDict({**config, "network_factory_kwargs": kwargs}),
+    )
+    (out_run / "checkpoints" / base_ckpt.name / CONFIG).write_text(
+        (base_ckpt / CONFIG).read_text()
     )
     return out_run
 

@@ -24,3 +24,16 @@ Upstream: `/home/jakgil6519/workspace/w01tek-e44c1a9` (w01-tek `e44c1a9`).
 | 2026-10-16 15:28 | 6113986 | upstream `train.py +experiment=flat_quiet_v6` (kp 20), 2B, warp, 8192 envs; submitted before the HOLD |
 | 2026-10-16 ~16:50 | 6113986 | (finished 16:40, 1.22 GPU-h; wrong plant, not used) |
 | 2026-10-16 ~16:55 | 6114800 | robot base: upstream `train.py` `UPSTREAM_RUNS["robot"]`, 2B, run `rft_upstream_seed0` |
+| 2026-10-16 17:05 | 6114846 | setup (CPU), frozen copy `$PDW/copies/rft-0895699`, afterok 6114800 |
+| 2026-10-16 17:05 | 6114847 | train 0-5: accel_sfl_lr1e-4, dr_lr1e-4 x seeds 0-2, 300M |
+| 2026-10-16 17:05 | 6114848 | eval_brax base (array 6: flat 1024 + native + v10box) |
+| 2026-10-16 17:05 | 6114849 | eval_brax 0-5, aftercorr train |
+| 2026-10-16 17:05 | 6114850 | upstream battery report: 6 imported base (converted), 7 the upstream run itself |
+| 2026-10-16 17:05 | 6114851 | upstream battery report 0-5, aftercorr train |
+| 2026-10-16 18:14 | 6114850, 6114851 | battery: tasks 0-6 failed (brax save wants kernel-init callables; fixed in to_upstream_run.py, copied into the frozen copy); task 7 (upstream run) done |
+| 2026-10-17 | 6118261 | battery 0-6 rerun: ran, but every converted run loaded the base (run.json's checkpoint_dir pointed at the base); not used |
+| 2026-10-17 | 6118269 | battery 0-6 with checkpoint_dir fixed; converted base = upstream run's report exactly |
+
+## Result
+
+No arm wins (results.json, report.md); no export. 7.5 GPU-h.
