@@ -77,6 +77,5 @@ scripts through `just` (or export `PYTHONPATH=src` yourself) so these resolve.
 
 ## What lands where
 
-Gitignored outputs (`.gitignore`): `artifacts/` (`brax_ued.py` checkpoints), `wandb/`, `runs/`, `outputs/` +
-`multirun/` (Hydra),
-and the generated `*_mjx.xml` / `terrain*` assets.
+Gitignored outputs (`.gitignore`): `artifacts/` (`brax_ued.py` checkpoints),
+`wandb/`, `runs/`, `outputs/` + `multirun/` (Hydra), and the generated `*_mjx.xml` / `terrain*` assets.
