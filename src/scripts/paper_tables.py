@@ -1,15 +1,15 @@
 """Paper tables from `eval_brax.py` final evals and training summaries.
 
-Reads `<prefix>_<method>_seed<k>_final_eval.{json,npz}` from `--eval_dir`
-for every `--prefix robot=prefix` and writes bare booktabs `tabular`s
-(the paper owns float, caption and label) plus a per-run CSV to `--out`:
+Reads `<prefix>_<method>_seed<k>_final_eval.{json,npz}` from `eval_dir`
+for every `prefixes.<robot>=<prefix>` and writes bare booktabs `tabular`s
+(the paper owns float, caption and label) plus a per-run CSV to `out`:
 
 - `main.tex`: success (%) per method, column groups per robot: uniform,
   CVaR25, solvable subset, OOD suite, flat; mean +- std over seeds, best
   per column in bold.
 - `envelopes.tex`: the 7 `axis/<feature>/envelope` values per robot x method.
 - `compute.tex`: GPU-hours and simulated / student-trained env steps, from
-  `--train_summaries` (run name -> wandb summary, see `--dump_wandb`).
+  `train_summaries` (run name -> wandb summary, see `dump_wandb`).
 - `results.csv`: one row per run, every value the tables use.
 
 Solvable subset: `param/uniform` levels that at least one run of the robot
@@ -17,11 +17,13 @@ Solvable subset: `param/uniform` levels that at least one run of the robot
 on pass B on that subset and vice versa, averaged, so selection noise does
 not inflate it. Needs the per-level `param_uniform_travel` (v10 evals).
 
-`--dump_wandb FILE` fetches the training-run summaries for the prefixes from
-wandb and writes the JSON `--train_summaries` reads, then exits.
+`dump_wandb=FILE` fetches the training-run summaries for the prefixes from
+wandb and writes the JSON `train_summaries` reads, then exits.
+
+Configured by Hydra: `conf/paper_tables.yaml`, typed by
+`config.schema.PaperTablesConfig`.
 """
 
-import argparse
 import csv
 import dataclasses
 import json
@@ -31,9 +33,12 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+import hydra
 import numpy as np
 import wandb
+from omegaconf import DictConfig
 
+from config.schema import CONF_DIR, PaperTablesConfig, Robot, to_dataclass
 from hfield.level_space import PARAMS
 from scripts.brax_ued import ROBOT_SCALE
 from scripts.eval_brax import AXES
@@ -41,7 +46,7 @@ from scripts.eval_brax import AXES
 ENTITY = "dominikgalus9-wroc-aw-university-of-science-and-technology"
 PROJECT = "wojtyla"
 ROBOT_LABEL = {"wojtek": "W01-TEK", "go1": "Go1"}
-MIN_TRAVEL_M = 1.0  # eval_brax.py --min_travel, at Wojtek's size
+MIN_TRAVEL_M = 1.0  # eval_brax.py min_travel, at Wojtek's size
 METHODS = {
     "dr": "DR",
     "dr_easy": "DR-easy",
@@ -103,7 +108,7 @@ def load_runs(eval_dir: Path, robot: str, prefix: str) -> list[Run]:
     if not runs:
         raise FileNotFoundError(
             f"no {prefix}_<method>_seed<k>_final_eval.json in {eval_dir}; "
-            "check --eval_dir and the --prefix robot=prefix pairs"
+            "check eval_dir and the prefixes.<robot>=<prefix> overrides"
         )
     return runs
 
@@ -130,7 +135,7 @@ def add_solvable(runs: list[Run]) -> None:
     if any(not np.array_equal(levels[0], other) for other in levels[1:]):
         raise ValueError(
             f"{robot}: runs were evaluated on different param/uniform levels; "
-            "rerun eval_brax.py with the same --seed and --num_levels"
+            "rerun eval_brax.py with the same seed and num_levels"
         )
     min_travel = MIN_TRAVEL_M * ROBOT_SCALE[robot]
     success = np.stack(
@@ -300,50 +305,47 @@ def dump_wandb(prefixes: dict[str, str], path: Path) -> None:
     print(f"wrote {len(summaries)} run summaries to {path}")
 
 
-def parse_prefixes(pairs: list[str]) -> dict[str, str]:
-    prefixes = {}
-    for pair in pairs:
-        robot, _, prefix = pair.partition("=")
-        if robot not in ROBOT_SCALE or not prefix:
-            raise ValueError(
-                f"--prefix {pair!r}: expected robot=prefix with robot in "
-                f"{list(ROBOT_SCALE)}, e.g. wojtek=v10_wojtek"
-            )
-        prefixes[robot] = prefix
-    return prefixes
+def run_prefixes(prefixes: dict[Robot, str | None]) -> dict[str, str]:
+    """The robots with a run prefix set, in config order."""
+    chosen = {str(robot): prefix for robot, prefix in prefixes.items() if prefix}
+    if not chosen:
+        raise ValueError(
+            "no run prefix set; pass prefixes.<robot>=<prefix>, e.g. "
+            "prefixes.wojtek=v10_wojtek prefixes.go1=v10_go1"
+        )
+    return chosen
 
 
-def main() -> None:
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--eval_dir", type=Path)
-    p.add_argument("--prefix", nargs="+", action="extend", required=True)
-    p.add_argument("--out", type=Path, default=Path("artifacts/paper/tables"))
-    p.add_argument("--train_summaries", type=Path)
-    p.add_argument("--dump_wandb", type=Path, help="write summaries JSON, exit")
-    args = p.parse_args()
-    prefixes = parse_prefixes(args.prefix)
-    if args.dump_wandb:
-        dump_wandb(prefixes, args.dump_wandb)
+@hydra.main(config_path=CONF_DIR, config_name="paper_tables", version_base="1.3")
+def main(dict_cfg: DictConfig) -> None:
+    tables(to_dataclass(dict_cfg, PaperTablesConfig))
+
+
+def tables(cfg: PaperTablesConfig) -> None:
+    prefixes = run_prefixes(cfg.prefixes)
+    if cfg.dump_wandb:
+        dump_wandb(prefixes, Path(cfg.dump_wandb))
         return
-    if args.eval_dir is None:
-        p.error("--eval_dir is required unless --dump_wandb is given")
+    if cfg.eval_dir is None:
+        raise ValueError("set eval_dir=<dir of eval_brax.py outputs>, or dump_wandb")
     summaries = {}
-    if args.train_summaries:
-        summaries = json.loads(args.train_summaries.read_text())
+    if cfg.train_summaries:
+        summaries = json.loads(Path(cfg.train_summaries).read_text())
     runs = {}
     for robot, prefix in prefixes.items():
-        runs[robot] = load_runs(args.eval_dir, robot, prefix)
+        runs[robot] = load_runs(Path(cfg.eval_dir), robot, prefix)
         add_solvable(runs[robot])
         add_train_summaries(runs[robot], prefix, summaries)
-    args.out.mkdir(parents=True, exist_ok=True)
-    (args.out / "main.tex").write_text(main_table(runs))
-    (args.out / "envelopes.tex").write_text(envelopes_table(runs))
+    out = Path(cfg.out)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "main.tex").write_text(main_table(runs))
+    (out / "envelopes.tex").write_text(envelopes_table(runs))
     if summaries:
-        (args.out / "compute.tex").write_text(compute_table(runs))
+        (out / "compute.tex").write_text(compute_table(runs))
     else:
-        warnings.warn("no --train_summaries: compute.tex not written")
-    write_csv(runs, args.out / "results.csv")
-    print(f"wrote tables for {sum(map(len, runs.values()))} runs to {args.out}")
+        warnings.warn("no train_summaries: compute.tex not written")
+    write_csv(runs, out / "results.csv")
+    print(f"wrote tables for {sum(map(len, runs.values()))} runs to {out}")
 
 
 if __name__ == "__main__":

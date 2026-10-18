@@ -73,14 +73,48 @@ lint:
 build:
     uv run python -m wojtek_env.tools.build_model
 
-# Write the "accel" terrain arena's static assets (scene/hfield/spec/lookup)
+# Write the "accel" terrain arena's static assets (scene/hfield/spec/lookup); args are Hydra overrides of conf/arena.yaml (default arena=v10)
 [group('build')]
 build-accel-arena *args:
     uv run python -m hfield.arena {{ args }}
 
+# --- training ---
+
+# Train with brax_ued.py; args are Hydra overrides of conf/train.yaml (e.g. `just train mode=accel name=my_run`)
+[group('train')]
+train *args:
+    uv run python src/scripts/brax_ued.py {{ args }}
+
+# Throughput profile of a brax_ued.py iteration (conf/profile.yaml, e.g. `just profile backend=warp`)
+[group('train')]
+profile *args:
+    uv run python src/scripts/profile_brax_ued.py {{ args }}
+
 # --- evaluation ---
 
-# mp4 clips of a brax_ued.py checkpoint on generated levels (e.g. `just render-video --checkpoint run.pkl --level 0.75:3`); MUJOCO_GL defaults to cgl on macOS, egl elsewhere
+# Final eval of a checkpoint (conf/eval.yaml, e.g. `just eval checkpoint=run.pkl name=run_eval out_dir=evals`)
+[group('eval')]
+eval *args:
+    uv run python src/scripts/eval_brax.py {{ args }}
+
+# The checkpoint on CPU MuJoCo physics variants (conf/sim2sim.yaml)
+[group('eval')]
+sim2sim *args:
+    uv run python src/scripts/eval_sim2sim.py {{ args }}
+
+# mp4 clips of a brax_ued.py checkpoint on generated levels (conf/render.yaml, e.g. `just render-video checkpoint=run.pkl levels=[0.75:3]`); MUJOCO_GL defaults to cgl on macOS, egl elsewhere
 [group('eval')]
 render-video *args:
     MUJOCO_GL="${MUJOCO_GL:-$([ "$(uname)" = Darwin ] && echo cgl || echo egl)}" uv run python src/scripts/render_video.py {{ args }}
+
+# --- paper ---
+
+# LaTeX tables from eval_brax.py outputs (conf/paper_tables.yaml)
+[group('paper')]
+paper-tables *args:
+    uv run python src/scripts/paper_tables.py {{ args }}
+
+# Figures from wandb histories and rendered terrains (conf/paper_figures.yaml); MUJOCO_GL as in render-video
+[group('paper')]
+paper-figures *args:
+    MUJOCO_GL="${MUJOCO_GL:-$([ "$(uname)" = Darwin ] && echo cgl || echo egl)}" uv run python src/scripts/paper_figures.py {{ args }}

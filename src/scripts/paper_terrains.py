@@ -4,10 +4,9 @@
 strength (every other feature flat) plus uniform samples at d=0.5 and d=1.
 `robots.pdf`: both robots on the same uniform level, each in its own arena
 scale, to show that the space is defined relative to robot size.
-Run through `paper_figures.py --terrains` (needs MUJOCO_GL=cgl on macOS).
+Run through `paper_figures.py terrains=true` (needs MUJOCO_GL=cgl on macOS).
 """
 
-import argparse
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +15,7 @@ import mujoco
 import numpy as np
 
 from config.hfield_config import HFieldConfig
+from config.schema import Backend, Robot
 from hfield.level_space import PARAMS, ParamSpace
 from scripts.brax_ued import ROBOT_SCALE, hfield_config, make_env
 from scripts.paper_tables import ROBOT_LABEL
@@ -40,21 +40,9 @@ FEATURES = (
 )
 
 
-def _args(robot: str) -> argparse.Namespace:
-    return argparse.Namespace(
-        robot=robot,
-        amplitude=0.3,
-        coarse_n=13,
-        pad_radius=0.55,
-        pad_taper=0.2,
-        backend="jax",
-    )
-
-
-def _model(robot: str) -> tuple[Any, ParamSpace, HFieldConfig]:
-    args = _args(robot)
-    config = hfield_config(args)
-    env = make_env(args, config, num_envs=1, train=False)
+def _model(robot: Robot, arena: HFieldConfig) -> tuple[Any, ParamSpace, HFieldConfig]:
+    config = hfield_config(robot, arena)
+    env = make_env(robot, Backend.jax, config, num_envs=1, train=False)
     space = ParamSpace(config, robot_scale=ROBOT_SCALE[robot])
     base: Any = env._env.env
     return render_model(base, config), space, config
@@ -113,9 +101,9 @@ def _grid(images: list[tuple[str, np.ndarray]], cols: int, path: Path) -> None:
     plt.close(fig)
 
 
-def plot_terrains(out: Path) -> None:
+def plot_terrains(out: Path, arena: HFieldConfig) -> None:
     rng = np.random.default_rng(3)
-    model, space, config = _model("wojtek")
+    model, space, config = _model(Robot.wojtek, arena)
     levels = [(title, _level(space, genes)) for title, genes in FEATURES]
     levels += [
         ("uniform, $d=0.5$", space.scaled(rng, 1, 0.5)[0]),
@@ -130,8 +118,8 @@ def plot_terrains(out: Path) -> None:
 
     shared = space.scaled(rng, 1, 0.6)[0]
     pair: list[tuple[str, Any]] = []
-    for robot in ROBOT_SCALE:
-        model, space, config = _model(robot)
+    for robot in Robot:
+        model, space, config = _model(robot, arena)
         _restyle(model)
         hfield = space.render(shared[None])[0]
         pair.append(

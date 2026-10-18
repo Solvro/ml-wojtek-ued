@@ -83,7 +83,7 @@ class TileLayout:
         if k > self.n_tiles:
             raise ValueError(
                 f"{k} levels but the arena has {self.n_tiles} tiles "
-                f"({n} per side); rebuild it with hfield_params.tiles="
+                f"({n} per side); rebuild it with arena.tiles="
                 f"{math.ceil(math.sqrt(k))} or run fewer levels at once"
             )
         flat = jnp.full((self.n_tiles, g, g), 0.5, jnp.float32)

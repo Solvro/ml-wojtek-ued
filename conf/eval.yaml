@@ -1,0 +1,28 @@
+defaults:
+  - eval_schema
+  - _self_
+  - robot: wojtek
+  - level_space: grid
+  - arena: v10
+
+checkpoint: ???
+name: ???
+entity: ""
+project: wojtyla
+out_dir: ???
+backend: auto
+num_levels: 2048
+episodes: 4
+suite_instances: 64
+chunk_envs: 4096
+level_steps: 300
+min_travel: 1.0
+alphas: [0.1, 0.25]
+seed: 1234
+tags: []
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: artifacts/hydra/${name}

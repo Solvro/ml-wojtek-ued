@@ -1,34 +1,39 @@
 """Paper figures from wandb training histories and the level space.
 
-- `--dump_history FILE`: fetch, per finished `<prefix>_<method>_seed<k>`
+- `dump_history=FILE`: fetch, per finished `<prefix>_<method>_seed<k>`
   run, the logged eval curves and training-level composition; write JSON.
-- `--history FILE --out DIR`: `curves.pdf` (eval success vs env steps, mean
+- `history=FILE out=DIR`: `curves.pdf` (eval success vs env steps, mean
   over seeds with min-max band) and `composition.pdf` (mean physical value
   of each level parameter among training levels, Wojtek units).
-- `--terrains --out DIR`: `terrains.pdf`, one rendered example level per
-  feature at full strength and a uniform sample, both robots.
+- `terrains=true out=DIR`: `terrains.pdf`, one rendered example level per
+  feature at full strength and a uniform sample, both robots, on `arena`.
+
+Configured by Hydra: `conf/paper_figures.yaml`, typed by
+`config.schema.PaperFiguresConfig`.
 """
 
-import argparse
 import json
 import re
 from pathlib import Path
 from typing import Any
 
+import hydra
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import wandb
+from omegaconf import DictConfig
 
+from config.schema import CONF_DIR, PaperFiguresConfig, to_dataclass
 from scripts.brax_ued import ROBOT_SCALE
 from scripts.paper_tables import (
     ENTITY,
     METHODS,
     PROJECT,
     ROBOT_LABEL,
-    parse_prefixes,
+    run_prefixes,
 )
 
 EVAL_KEYS = ("eval/d0.5/success_rate", "eval/d1.0/success_rate")
@@ -177,27 +182,26 @@ def plot_composition(
     plt.close(fig)
 
 
-def main() -> None:
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--prefix", nargs="+", action="extend", default=[])
-    p.add_argument("--dump_history", type=Path)
-    p.add_argument("--history", type=Path)
-    p.add_argument("--terrains", action="store_true")
-    p.add_argument("--out", type=Path, default=Path("artifacts/paper/figs"))
-    args = p.parse_args()
-    prefixes = parse_prefixes(args.prefix) if args.prefix else {}
-    if args.dump_history:
-        dump_history(prefixes, args.dump_history)
+@hydra.main(config_path=CONF_DIR, config_name="paper_figures", version_base="1.3")
+def main(dict_cfg: DictConfig) -> None:
+    figures(to_dataclass(dict_cfg, PaperFiguresConfig))
+
+
+def figures(cfg: PaperFiguresConfig) -> None:
+    if cfg.dump_history:
+        dump_history(run_prefixes(cfg.prefixes), Path(cfg.dump_history))
         return
-    args.out.mkdir(parents=True, exist_ok=True)
-    if args.history:
-        history = json.loads(args.history.read_text())
-        plot_curves(history, prefixes, args.out)
-        plot_composition(history, prefixes, args.out)
-    if args.terrains:
+    out = Path(cfg.out)
+    out.mkdir(parents=True, exist_ok=True)
+    if cfg.history:
+        prefixes = run_prefixes(cfg.prefixes)
+        history = json.loads(Path(cfg.history).read_text())
+        plot_curves(history, prefixes, out)
+        plot_composition(history, prefixes, out)
+    if cfg.terrains:
         from scripts.paper_terrains import plot_terrains
 
-        plot_terrains(args.out)
+        plot_terrains(out, cfg.arena)
 
 
 if __name__ == "__main__":

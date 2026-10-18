@@ -13,7 +13,7 @@ it when the code changes.**
 | Install, deps/pins, building assets, running | [docs/setup.md](docs/setup.md) |
 | The env, tasks, terrain, `FunctionalEnv`, the shared tiled arena | [docs/environment.md](docs/environment.md) |
 | `brax_ued.py` trainer, curriculum modes, heightfield levels, eval/render/paper scripts | [docs/ued-accel.md](docs/ued-accel.md) |
-| `HFieldConfig` fields, arena-builder Hydra overrides | [docs/configuration.md](docs/configuration.md) |
+| Hydra configs (`conf/`, `config/schema.py`), any CLI argument | [docs/configuration.md](docs/configuration.md) |
 | Layout rules, tooling, adding features, gotchas | [docs/development.md](docs/development.md) |
 | Running training/eval on the cluster | `slurm/*.sbatch`, [docs/ued-accel.md](docs/ued-accel.md#brax-ued) |
 
@@ -26,6 +26,8 @@ it when the code changes.**
   Add new work here as sibling packages.
 - `src/scripts/brax_ued.py` — the only trainer (brax PPO pieces + our level
   loop on the shared tiled arena); the eval/render/paper scripts import from it.
+- `conf/` — Hydra YAML, one primary per entry point plus the `robot`, `mode`,
+  `level_space`, `arena` groups; `src/config/schema.py` types each primary.
 
 ## Project-specific rules (override / complement the global)
 
@@ -37,6 +39,13 @@ it when the code changes.**
 - **Generated assets are gitignored** — run `just build` and
   `just build-accel-arena` before anything that loads the robot / `accel` arena.
 - `just lint` is ruff-only; run `ty check` manually.
+- **Hydra, no argparse** — every research entry point (`src/scripts/`,
+  `hfield.arena`) is `@hydra.main` over `conf/<name>.yaml` (the frozen
+  `wojtek_env` tools and the `main.py` viewer keep their own flags). YAML
+  holds the values, the schema dataclass (fields `= MISSING`) types them:
+  a new option is a schema field plus a YAML value, never a default in
+  code. Wojtek runs and `just build-accel-arena` must read the same `arena`
+  group (`check_arena` enforces it).
 - **Shared tiled arena** — every level of an iteration sits on its own tile
   of one `hfield_data`; never vmap `hfield_data` per env (warp collides every
   env with the first one's). Warp needs `XLA_PYTHON_CLIENT_PREALLOCATE=false`

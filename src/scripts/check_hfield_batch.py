@@ -1,33 +1,37 @@
 """Check that every env of a batch stands on its own tile of the shared arena.
 
 Tiles alternate flat (0.5 everywhere) and pit (the whole patch, pad
-included, `--pit` m below the flat plane). Spawn sits at the pad height, so
-a pit env drops onto the pit floor and stands `--pit` m lower than a flat
+included, `pit` m below the flat plane). Spawn sits at the pad height, so
+a pit env drops onto the pit floor and stands `pit` m lower than a flat
 env, with no more dones: physics (the arena hfield) and the terrain lookup
 (base height, falls) must both read the env's own tile. Prints the mean
-base z over the last quarter and the dones over `--steps` of zero action.
+base z over the last quarter and the dones over `steps` of zero action.
 
-- `--compare`: the same batch on the jax and the warp backend. Fails when
+- `compare=true`: the same batch on the jax and the warp backend. Fails when
   the backends disagree on a tile's terrain: per-tile pit depth (flat z -
-  pit z of the neighbouring tile) differing by more than `--tol` m, or
+  pit z of the neighbouring tile) differing by more than `tol` m, or
   different dones. Also prints the largest base-z gap between backends,
   which is backend physics, not the arena: warp stands the robot ~7-11 mm
   higher than jax on every tile (job 6109870).
-- `--bench_envs N`: env steps per second on the arena, N envs.
+- `bench_envs=N`: env steps per second on the arena, N envs.
 
-Needs the benchmark `accel` arena (`just build-accel-arena ...`).
+Needs the `accel` arena built from the same `arena` config
+(`just build-accel-arena`). Configured by Hydra: `conf/check_hfield.yaml`,
+typed by `config.schema.CheckHFieldConfig`.
 """
 
-import argparse
 import sys
 import time
 from typing import Any
 
+import hydra
 import jax
 import jax.numpy as jnp
 import numpy as np
+from omegaconf import DictConfig
 
 from config.hfield_config import HFieldConfig
+from config.schema import CONF_DIR, Backend, CheckHFieldConfig, to_dataclass
 from hfield.arena import check_arena
 from hfield.tiles import TileLayout
 from utils.env import FunctionalEnv
@@ -39,13 +43,10 @@ from utils.env_overrides import (
 )
 from wojtek_env import paths
 
-# the benchmark arena brax_ued.py builds
-CONFIG = HFieldConfig(amplitude=0.3, coarse_n=13, pad_radius=0.55, pad_taper=0.2)
 
-
-def make_env(backend: str, num_envs: int) -> FunctionalEnv:
+def make_env(config: HFieldConfig, backend: Backend, num_envs: int) -> FunctionalEnv:
     overrides = merge_overrides(
-        accel_arena_overrides(CONFIG.pad_radius),
+        accel_arena_overrides(config.pad_radius),
         movement_overrides(),
         terrain_overrides(),
         # only falls may end an episode, so dones count physical drops
@@ -59,19 +60,22 @@ def make_env(backend: str, num_envs: int) -> FunctionalEnv:
     return FunctionalEnv(task="joystick", env_overrides=overrides)
 
 
-def flat_pit_levels(n: int, pit: float) -> jax.Array:
+def flat_pit_levels(config: HFieldConfig, n: int, pit: float) -> jax.Array:
     """(n, grid**2): even tiles flat, odd tiles a pit `pit` m deep."""
-    value = 0.5 - pit / (2 * CONFIG.amplitude)
-    levels = np.full((n, CONFIG.grid_size**2), 0.5, np.float32)
+    value = 0.5 - pit / (2 * config.amplitude)
+    levels = np.full((n, config.grid_size**2), 0.5, np.float32)
     levels[1::2] = value
     return jnp.asarray(levels)
 
 
 def settle(
-    env: FunctionalEnv, levels: jax.Array, envs_per_tile: int, steps: int
+    env: FunctionalEnv,
+    layout: TileLayout,
+    levels: jax.Array,
+    envs_per_tile: int,
+    steps: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Per env: base z per step and dones, zero action."""
-    layout = TileLayout(CONFIG)
     arena = layout.assemble(levels)
     tile_xy = layout.tile_xy(levels.shape[0], envs_per_tile)
     keys = jax.random.split(jax.random.key(0), tile_xy.shape[0])
@@ -105,64 +109,54 @@ def report(backend: str, z: np.ndarray, done: np.ndarray, envs_per_tile: int) ->
         print(f"  tile {i:2d} {kind} z={np.round(zs, 3)} dones={ds}")
 
 
-def bench(backend: str, num_envs: int, steps: int) -> None:
-    env = make_env(backend, num_envs)
-    layout = TileLayout(CONFIG)
+def bench(cfg: CheckHFieldConfig) -> None:
+    env = make_env(cfg.arena, cfg.backend, cfg.bench_envs)
+    layout = TileLayout(cfg.arena)
     levels = jax.random.uniform(
-        jax.random.key(1), (layout.n_tiles, CONFIG.grid_size**2)
+        jax.random.key(1), (layout.n_tiles, cfg.arena.grid_size**2)
     )
-    per_tile = num_envs // layout.n_tiles
-    run = lambda: settle(env, levels, per_tile, steps)
+    per_tile = cfg.bench_envs // layout.n_tiles
+    run = lambda: settle(env, layout, levels, per_tile, cfg.steps)
     run()
     start = time.perf_counter()
     run()
-    rate = num_envs * steps / (time.perf_counter() - start)
-    print(f"bench backend={backend} envs={num_envs}: {rate:,.0f} env-steps/s")
+    rate = cfg.bench_envs * cfg.steps / (time.perf_counter() - start)
+    print(f"bench backend={cfg.backend} envs={cfg.bench_envs}: {rate:,.0f} env-steps/s")
 
 
-def main() -> None:
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--backend", default="auto", choices=["auto", "jax", "warp"])
-    p.add_argument("--pit", type=float, default=0.05, help="m below the flat plane")
-    p.add_argument("--tiles", type=int, default=8, help="tiles in use")
-    p.add_argument("--envs_per_tile", type=int, default=2)
-    p.add_argument("--steps", type=int, default=100)
-    p.add_argument("--compare", action="store_true")
-    p.add_argument(
-        "--tol",
-        type=float,
-        default=5e-3,
-        help="m, --compare; a misread tile is off by --pit",
-    )
-    p.add_argument("--bench_envs", type=int, default=0, help="0 = skip timing")
-    args = p.parse_args()
-    check_arena(paths.terrain_paths("accel")["spec"], CONFIG, "accel")
+@hydra.main(config_path=CONF_DIR, config_name="check_hfield", version_base="1.3")
+def main(dict_cfg: DictConfig) -> None:
+    check(to_dataclass(dict_cfg, CheckHFieldConfig))
 
-    if args.bench_envs:
-        bench(args.backend, args.bench_envs, args.steps)
+
+def check(cfg: CheckHFieldConfig) -> None:
+    check_arena(paths.terrain_paths("accel")["spec"], cfg.arena, "accel")
+    if cfg.bench_envs:
+        bench(cfg)
         return
-    levels = flat_pit_levels(args.tiles, args.pit)
-    n = args.tiles * args.envs_per_tile
-    backends = ["jax", "warp"] if args.compare else [args.backend]
+    levels = flat_pit_levels(cfg.arena, cfg.tiles, cfg.pit)
+    layout = TileLayout(cfg.arena)
+    n = cfg.tiles * cfg.envs_per_tile
+    backends = [Backend.jax, Backend.warp] if cfg.compare else [cfg.backend]
     runs = {}
     for backend in backends:
-        env = make_env(backend, n)
-        runs[backend] = settle(env, levels, args.envs_per_tile, args.steps)
-        report(backend, *runs[backend], args.envs_per_tile)
-    print(f"expected: pit late z ~{args.pit} m below flat, no dones")
-    if args.compare:
+        env = make_env(cfg.arena, backend, n)
+        runs[backend] = settle(env, layout, levels, cfg.envs_per_tile, cfg.steps)
+        report(backend, *runs[backend], cfg.envs_per_tile)
+    print(f"expected: pit late z ~{cfg.pit} m below flat, no dones")
+    if cfg.compare:
         depth = {}
         for backend, (z, _) in runs.items():
-            tile_z = late_z(z, args.envs_per_tile).mean(axis=1)
+            tile_z = late_z(z, cfg.envs_per_tile).mean(axis=1)
             depth[backend] = tile_z[0::2] - tile_z[1::2]
-        depth_gap = np.abs(depth["jax"] - depth["warp"]).max()
-        z_gap = np.abs(runs["jax"][0] - runs["warp"][0]).max()
-        same_dones = np.array_equal(runs["jax"][1], runs["warp"][1])
-        ok = depth_gap <= args.tol and same_dones
+        depth_gap = np.abs(depth[Backend.jax] - depth[Backend.warp]).max()
+        z_gap = np.abs(runs[Backend.jax][0] - runs[Backend.warp][0]).max()
+        same_dones = np.array_equal(runs[Backend.jax][1], runs[Backend.warp][1])
+        ok = depth_gap <= cfg.tol and same_dones
         print(
-            f"jax vs warp: pit depth jax {depth['jax'].mean():.4f} / warp "
-            f"{depth['warp'].mean():.4f} m, max per-tile gap {depth_gap:.2e} m "
-            f"(tol {args.tol}), same dones {same_dones}: "
+            f"jax vs warp: pit depth jax {depth[Backend.jax].mean():.4f} / warp "
+            f"{depth[Backend.warp].mean():.4f} m, max per-tile gap {depth_gap:.2e} m "
+            f"(tol {cfg.tol}), same dones {same_dones}: "
             f"{'PASS' if ok else 'FAIL'}; max base-z gap {z_gap:.2e} m"
         )
         if not ok:

@@ -266,14 +266,14 @@ Two things must follow the swap, or the level only exists on paper:
   `(B*N,)`, so a per-env (batched) heightfield on `sim.backend=warp` makes
   every env collide with the **first** env's level. The tiled arena avoids
   it by construction: `hfield_data` is unbatched, so warp is valid and
-  `accel_arena_overrides` takes the backend (`brax_ued.py --backend`,
+  `accel_arena_overrides` takes the backend (`brax_ued.py backend=`,
   default `auto`: warp on a GPU, jax on CPU) with a terrain-sized contact
   pool (`naconmax_per_env` 116, over the 84-contact floor of 21
   ground-colliding geoms; `njmax` 1024). Go1 follows the same flag
   (`Go1Terrain(backend=...)`) with Playground's rough-terrain budget: 8
   contacts per env, `njmax` 60. Never vmap `hfield_data` with `in_axes=0`: nothing can detect it
   inside the vmap. `src/scripts/check_hfield_batch.py` checks it per
-  backend (flat/pit tiles; `--compare` = jax vs warp; `--bench_envs N`
+  backend (flat/pit tiles; `compare=true` = jax vs warp; `bench_envs=N`
   times it).
 - **Warp memory** — warp allocates its collision scratch (EPA buffers,
   ~0.3 GB each at 8192 envs) outside JAX's pool. Upstream measured a

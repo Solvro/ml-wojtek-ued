@@ -16,7 +16,7 @@ Full docs live in [`docs/`](docs/):
 | [setup.md](docs/setup.md) | install, dependency pins, building assets, running |
 | [environment.md](docs/environment.md) | `wojtek_env` tasks/terrain/gym, `FunctionalEnv`, the shared tiled arena |
 | [ued-accel.md](docs/ued-accel.md) | heightfield levels, the `brax_ued.py` trainer + curriculum modes, eval/render/paper scripts |
-| [configuration.md](docs/configuration.md) | `HFieldConfig` fields + arena-builder Hydra overrides |
+| [configuration.md](docs/configuration.md) | Hydra configs in `conf/`: every entry point, group and field |
 | [development.md](docs/development.md) | layout rules, tooling, conventions, gotchas |
 
 Start with [overview.md](docs/overview.md).
@@ -26,11 +26,14 @@ Start with [overview.md](docs/overview.md).
 ```bash
 just sync                # uv sync --extra dev
 just build               # wojtek.xml -> wojtek_mjx.xml + scene_mjx.xml
-just build-accel-arena   # write the tiled "accel" terrain arena (needed by brax_ued.py)
-export PYTHONPATH=src XLA_PYTHON_CLIENT_PREALLOCATE=false
-uv run python src/scripts/brax_ued.py --mode accel --name my_run --checkpoint_dir artifacts/checkpoints
-just render-video --checkpoint artifacts/checkpoints/my_run.pkl --level 0.75:3
+just build-accel-arena   # write the tiled "accel" terrain arena (arena=v10)
+just train mode=accel name=my_run checkpoint_dir=artifacts/checkpoints
+just render-video checkpoint=artifacts/checkpoints/my_run.pkl 'levels=[0.75:3]'
 ```
+
+Every entry point is configured by Hydra from `conf/` (overrides
+`key=value` / `group=option`, e.g. `robot=go1 mode=accel_sfl
+level_space=param seed=1`); see [configuration.md](docs/configuration.md).
 
 Cluster launchers: `slurm/*.sbatch` (see [ued-accel.md](docs/ued-accel.md#brax-ued)).
 
@@ -46,8 +49,16 @@ exported for every recipe. `just` lists them all.
 | `just fmt` | `ruff format` + `ruff check --fix` on `src` |
 | `just lint` | `ruff check` + `ruff format --check` on `src` |
 | `just build` | build the MJX model (`wojtek_mjx.xml` + `scene_mjx.xml`) |
-| `just build-accel-arena *args` | write the tiled `accel` arena (scene/hfield/spec/lookup); args are `hfield_params.*` Hydra overrides |
-| `just render-video *args` | mp4 clips of a `brax_ued.py` checkpoint walking generated levels (`--level D:SEED`, repeatable) |
+| `just build-accel-arena *args` | write the tiled `accel` arena (scene/hfield/spec/lookup); `conf/arena.yaml` |
+| `just train *args` | train with `brax_ued.py`; `conf/train.yaml` (`mode=` required) |
+| `just profile *args` | throughput profile of a training iteration; `conf/profile.yaml` |
+| `just eval *args` | final eval of a checkpoint; `conf/eval.yaml` |
+| `just sim2sim *args` | the checkpoint on CPU MuJoCo physics variants; `conf/sim2sim.yaml` |
+| `just render-video *args` | mp4 clips of a checkpoint walking generated levels (`levels=[D:SEED,...]`); `conf/render.yaml` |
+| `just paper-tables *args` | LaTeX tables from final evals; `conf/paper_tables.yaml` |
+| `just paper-figures *args` | paper figures from wandb + rendered terrains; `conf/paper_figures.yaml` |
+
+`*args` are Hydra overrides of the recipe's config.
 
 ## Env usage
 

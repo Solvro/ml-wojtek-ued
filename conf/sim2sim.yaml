@@ -1,0 +1,24 @@
+defaults:
+  - sim2sim_schema
+  - _self_
+  - robot: wojtek
+  - arena: v10
+
+checkpoint: ???
+name: ???
+entity: ""
+project: wojtyla
+out_dir: ???
+num_levels: 256
+episodes: 4
+suite_instances: 64
+chunk_envs: 1024
+level_steps: 300
+min_travel: 1.0
+seed: 1234
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: artifacts/hydra/${name}

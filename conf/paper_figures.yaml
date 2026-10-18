@@ -1,0 +1,18 @@
+defaults:
+  - paper_figures_schema
+  - _self_
+  - arena: v10
+
+prefixes:
+  wojtek: null
+  go1: null
+dump_history: null
+history: null
+terrains: false
+out: artifacts/paper/figs
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: artifacts/hydra/paper_figures/${now:%Y-%m-%d_%H-%M-%S}
