@@ -215,8 +215,7 @@ dict:
   `symmetry` mirror augmentation, `real_pose_ref`, `action_filter`, the
   `command.pure_*_prob` clean-command modes, `no_progress`,
   `gait.air_time_cap`, `fall.max_toggle_deg`, and the `reward` scale/gate
-  fields that were `0.0`/`False` in `registry.py`. Used by both
-  scripts.
+  fields that were `0.0`/`False` in `registry.py`.
 - `terrain_overrides()` — terrain-only (`height_scan`, `reward.terrain_gate`,
   `reward.scales.flat_pitch`, `command.terrain_bias`, `fall.on_base_contact`,
   and the `obs.state`/`obs.privileged` lists extended with

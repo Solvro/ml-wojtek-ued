@@ -13,9 +13,9 @@ repeated here.
 - **Namespace packages** — research code has no `__init__.py`. Imports are
   top-level and absolute (`from hfield.tiles import ...`), resolved via
   `PYTHONPATH=src` (exported by the `justfile`).
-- **Organize by role**, JAX/functional style: small modules grouped by function,
-  not one `helpers` grab-bag. Keep the intra-package dependency graph acyclic (leaves →
-  composers).
+- **Organize by role**, JAX/functional style: small modules grouped by
+  function, not one `helpers` grab-bag. Keep the intra-package dependency
+  graph acyclic (leaves → composers).
 
 ## Python version
 
