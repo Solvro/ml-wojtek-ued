@@ -381,6 +381,7 @@ def main() -> None:
     p.add_argument("--level_space", default="grid", choices=["grid", "param"])
     p.add_argument("--robot", default="wojtek", choices=list(ROBOT_SCALE))
     add_backend_arg(p)
+    p.add_argument("--tags", nargs="*", default=[], help="extra wandb tags")
     p.add_argument("--coarse_n", type=int, default=13)
     p.add_argument("--pad_radius", type=float, default=0.55)
     p.add_argument("--pad_taper", type=float, default=0.2)
@@ -391,7 +392,7 @@ def main() -> None:
         entity=args.entity or None,
         project=args.project,
         name=args.name,
-        tags=["brax-ued", "final-eval", args.robot],
+        tags=["brax-ued", "final-eval", args.robot, *args.tags],
         config=vars(args),
     )
     metrics, raw = evaluate(build(args))

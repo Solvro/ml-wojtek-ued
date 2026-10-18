@@ -716,6 +716,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--eval_levels", type=int, default=512)
     p.add_argument("--min_travel", type=float, default=1.0)
     p.add_argument("--checkpoint_dir", default=None)
+    p.add_argument("--tags", nargs="*", default=[], help="extra wandb tags")
     add_backend_arg(p)
     return p.parse_args(argv)
 
@@ -738,7 +739,7 @@ def main() -> None:
         entity=args.entity or None,
         project=args.project,
         name=args.name,
-        tags=["brax-ued", args.mode, args.robot],
+        tags=["brax-ued", args.mode, args.robot, *args.tags],
         config={**vars(args), "ppo": PPO},
     )
     ctx = build(args)

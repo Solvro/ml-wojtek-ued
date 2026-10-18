@@ -31,6 +31,8 @@ SEED=$((${SEED0:-0} + SLURM_ARRAY_TASK_ID % NSEEDS))
 PREFIX="${PREFIX:-v7_brax}"
 # ROBOT=go1 runs Playground's Go1 at its size (robots/go1.py)
 ROBOT="${ROBOT:-wojtek}"
+# BACKEND: auto (warp on the GPU) | jax | warp; TAGS: extra wandb tags
+read -ra TAG_ARGS <<<"${TAGS:-}"
 RUN="${PREFIX}_${MODE}_seed${SEED}"
 echo "job ${SLURM_JOB_ID} task ${SLURM_ARRAY_TASK_ID}: eval $RUN"
 
@@ -38,4 +40,4 @@ uv run --no-sync python "$SRC/scripts/eval_brax.py" \
   --checkpoint "$PDW/artifacts/brax_ued/$RUN.pkl" --name "${RUN}_final_eval" \
   --entity dominikgalus9-wroc-aw-university-of-science-and-technology \
   --project wojtyla --out_dir "$PDW/runs/final_eval" --level_space "${SPACE:-grid}" \
-  --robot "$ROBOT"
+  --robot "$ROBOT" --backend "${BACKEND:-auto}" --tags "${TAG_ARGS[@]}"
