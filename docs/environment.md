@@ -163,10 +163,11 @@ mechanism instead (below), consistent with the hfield swap it already does.
 wraps `registry.make_env` + brax `EpisodeWrapper` and exposes pure `reset`/`step`
 usable under `jit`/`vmap`.
 
-- `go1_hfield=HFieldConfig(...)` builds Playground's Go1 on that arena
-  (`robots/go1.py`) instead of Wojtek; the arena and DR work the same, but
-  Go1 reads terrain heights straight from `hfield_data` (no lookup) and
-  spawns on `Go1Terrain.spawn_xy`.
+- `robot=<TerrainRobot>` runs a Playground quadruped (`robots/`, see
+  [ued-accel.md](ued-accel.md#robots)) on the arena instead of Wojtek; the
+  arena and DR work the same, but it reads terrain heights straight from
+  `hfield_data` (no lookup) and spawns on `spawn_xy`. DR is the robot's
+  `domain_randomize` (none for Barkour, Spot).
 
 - **Split obs.** `observation_size` / every `Obs` carries `actor` (`state`) and
   `critic` (`privileged_state`) separately — asymmetric actor-critic.
@@ -269,9 +270,10 @@ Two things must follow the swap, or the level only exists on paper:
   `accel_arena_overrides` takes the backend (`brax_ued.py backend=`,
   default `auto`: warp on a GPU, jax on CPU) with a terrain-sized contact
   pool (`naconmax_per_env` 116, over the 84-contact floor of 21
-  ground-colliding geoms; `njmax` 1024). Go1 follows the same flag
-  (`Go1Terrain(backend=...)`) with Playground's rough-terrain budget: 8
-  contacts per env, `njmax` 60. Never vmap `hfield_data` with `in_axes=0`: nothing can detect it
+  ground-colliding geoms; `njmax` 1024). The Playground robots follow the same flag
+  (`backend=`) with a budget sized from the model
+  (`robots.terrain.contact_budget`; four feet: Go1's Playground
+  rough-terrain 8 contacts per env, `njmax` 60). Never vmap `hfield_data` with `in_axes=0`: nothing can detect it
   inside the vmap. `src/scripts/check_hfield_batch.py` checks it per
   backend (flat/pit tiles; `compare=true` = jax vs warp; `bench_envs=N`
   times it).
@@ -309,7 +311,8 @@ with it (`hfield/arena.py`).
   speed + sensing (feet 0.35 m, or the height scan's far corner 1.48 m when
   any obs reads it; the critic does). Benchmark, 300 steps (fast walk
   1.2 m/s): 0.15 + 6 x 1.2 + 1.48 = 8.83 m. Gap 7 m, 4161² nodes (208 m,
-  69 MB); Go1: `reach` x 2.5, gap 17.5 m.
+  69 MB); Go1: `reach` x 2.5, gap 17.5 m; every length scales by the
+  robot's `SCALE`.
 - `TileLayout.check_reach`: every script that puts several levels on the
   arena (`brax_ued`, `eval_brax`, `eval_sim2sim`) fails at startup when its steps per
   level exceed the budget; training counts the critic's scan, eval only the

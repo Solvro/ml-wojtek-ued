@@ -51,10 +51,14 @@ python src/scripts/brax_ued.py --cfg job mode=dr name=x   # print the composed c
 | option | `name` |
 |---|---|
 | `wojtek` (default) | `wojtek` |
-| `go1` | `go1` — Playground Go1 ([ued-accel.md](ued-accel.md#go1)) |
+| `go1` | `go1` — Playground Go1 ([ued-accel.md](ued-accel.md#robots)) |
+| `barkour` | `barkour` — Barkour vB |
+| `spot` | `spot` — Spot |
+| `go2` | `go2` — Unitree Go2 (Go1's env on the Go2 model) |
 
 The robot's size relative to Wojtek is `ROBOT_SCALE` in
-`scripts/brax_ued.py` (`go1` = `GO1_SCALE` 2.5, `robots/go1.py`); it scales
+`scripts/brax_ued.py` (each Playground robot's `SCALE`, `robots/*.py`: go1
+2.5, barkour 2.4, spot 4.3, go2 2.2); it scales
 the arena, level lengths, commands and `min_travel`.
 
 ### `mode/` — `ModeConfig` (train only, required)
@@ -234,7 +238,7 @@ data layout), `level_space` (always `param`), `alphas` and `tags`;
 
 | field | default | meaning |
 |---|---|---|
-| `prefixes.wojtek` / `prefixes.go1` | `null` | run-name prefix per robot; robots left null are skipped |
+| `prefixes.<robot>` (`wojtek`, `go1`, `barkour`, `spot`, `go2`) | `null` | run-name prefix per robot; robots left null are skipped |
 | `eval_dir` | `null` | tables: dir of `eval_brax.py` outputs (required unless `dump_wandb`) |
 | `train_summaries` | `null` | tables: JSON from `dump_wandb`, for `compute.tex` |
 | `dump_wandb` | `null` | tables: write training summaries JSON, exit |
