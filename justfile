@@ -1,4 +1,7 @@
 export PYTHONPATH := "src"
+# warp (sim.backend auto on a GPU) allocates outside JAX's pool; utils/env.py
+# refuses warp without this
+export XLA_PYTHON_CLIENT_PREALLOCATE := "false"
 
 # List available recipes
 default:
@@ -72,8 +75,8 @@ build:
 
 # Write the "accel" terrain arena's static assets (scene/hfield/spec/lookup)
 [group('build')]
-build-accel-arena:
-    uv run python -m hfield.arena
+build-accel-arena *args:
+    uv run python -m hfield.arena {{ args }}
 
 # --- training ---
 

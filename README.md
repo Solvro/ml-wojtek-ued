@@ -14,7 +14,7 @@ Full docs live in [`docs/`](docs/):
 |---|---|
 | [overview.md](docs/overview.md) | architecture, repo map, end-to-end data flow, glossary |
 | [setup.md](docs/setup.md) | install, dependency pins, building assets, running |
-| [environment.md](docs/environment.md) | `wojtek_env` tasks/terrain/gym, `FunctionalEnv`, hfield swapping |
+| [environment.md](docs/environment.md) | `wojtek_env` tasks/terrain/gym, `FunctionalEnv`, the shared tiled arena |
 | [ppo.md](docs/ppo.md) | A2C model, rollout, GAE, PPO loss/step, checkpoints, logging |
 | [ued-accel.md](docs/ued-accel.md) | heightfield levels + the ACCEL curriculum + convergence |
 | [configuration.md](docs/configuration.md) | every Hydra config field + override examples |
@@ -37,7 +37,8 @@ just eval --algo ppo     # evaluate the latest checkpoint of an algo
 
 ## Justfile recipes
 
-`PYTHONPATH=src` is exported for every recipe. `just` lists them all.
+`PYTHONPATH=src` and `XLA_PYTHON_CLIENT_PREALLOCATE=false` (warp backend) are
+exported for every recipe. `just` lists them all.
 
 | recipe | does |
 |---|---|
@@ -46,7 +47,7 @@ just eval --algo ppo     # evaluate the latest checkpoint of an algo
 | `just fmt` | `ruff format` + `ruff check --fix` on `src` |
 | `just lint` | `ruff check` + `ruff format --check` on `src` |
 | `just build` | build the MJX model (`wojtek_mjx.xml` + `scene_mjx.xml`) |
-| `just build-accel-arena` | write the `accel` arena (scene/hfield/spec/lookup) |
+| `just build-accel-arena *args` | write the tiled `accel` arena (scene/hfield/spec/lookup); args are `hfield_params.*` Hydra overrides |
 | `just train *args` | PPO training; args are Hydra overrides (e.g. `just train training_params.epochs=8`) |
 | `just train-dr *args` | PPO training with baseline domain randomization (`scripts/ppo_dr.py`) |
 | `just accel *args` | ACCEL training, single-level-per-iteration variant; needs `build-accel-arena` first |

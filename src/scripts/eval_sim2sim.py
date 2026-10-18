@@ -49,9 +49,11 @@ from mujoco_playground._src.locomotion.go1 import base as go1_base
 
 from config.hfield_config import HFieldConfig
 from hfield.level_space import make_level_space
+from hfield.tiles import TileLayout
 from robots.go1 import Go1Terrain, scene_xml
 from scripts.brax_ued import (
     ROBOT_SCALE,
+    check_wojtek_arena,
     hfield_config,
     make_env,
     make_network,
@@ -62,6 +64,7 @@ from scripts.eval_brax import (
     SUITE_STRENGTHS,
     SUITE_TERRAINS,
     bootstrap_ci,
+    levels_per_chunk,
     rollout,
     suite_hfield,
 )
@@ -285,9 +288,9 @@ def worker_count() -> int:
 class CpuPhysics:
     """Steps a batch of envs on CPU MuJoCo, one model and data per thread.
 
-    Envs hold their own level: `set_levels` takes the per-env hfields of
-    the next unroll, and a thread reloads its model's `hfield_data` only
-    when its next env is on a different level.
+    Every env stands on its own tile of one shared arena: `set_arena` takes
+    the next unroll's arena `hfield_data`, and each thread copies it into
+    its model once per arena.
     """
 
     def __init__(self, train_model: mujoco.MjModel, threads: int):
@@ -297,8 +300,9 @@ class CpuPhysics:
         self.geom_body = train_model.geom_bodyid.copy()
         self.geom_pos = train_model.geom_pos.copy()
         self.geom_rot = geom_rotations(train_model)
+        self.arena_id = 0
         self.use(train_model)
-        self.set_levels(np.zeros((1, train_model.nhfielddata), np.float32))
+        self.set_arena(np.zeros(train_model.nhfielddata, np.float32))
 
     def use(self, model: mujoco.MjModel) -> None:
         for size in SAME_SIZES:
@@ -319,12 +323,17 @@ class CpuPhysics:
         self.datas = [mujoco.MjData(m) for m in self.models]
         self.sensors = sensor_index(self.train_model, model)
         self.diverged = [0] * self.threads
-
-    def set_levels(self, hfields: np.ndarray) -> None:
-        self.hfields = np.asarray(hfields, np.float32)
-        changed = np.any(self.hfields[1:] != self.hfields[:-1], axis=1)
-        self.level_ids = np.cumsum(np.concatenate([[True], changed]))
         self.loaded = [-1] * self.threads
+
+    def set_arena(self, hfield: np.ndarray) -> None:
+        self.hfield = np.asarray(hfield, np.float32)
+        if self.hfield.shape != (self.train_model.nhfielddata,):
+            raise ValueError(
+                f"arena hfield_data of shape {self.hfield.shape}, the model "
+                f"holds {self.train_model.nhfielddata} nodes; pass the "
+                "TileLayout.assemble output of this model's arena"
+            )
+        self.arena_id += 1
 
     def step_env(
         self,
@@ -372,20 +381,15 @@ class CpuPhysics:
         # jax dispatch holding the GIL, which serialized the threads
         arrays = [np.asarray(x) for x in inputs]
         n = len(arrays[0])
-        if n != len(self.hfields):
-            raise ValueError(
-                f"physics batch of {n} envs but {len(self.hfields)} levels "
-                "set; call set_levels with the unroll's hfields"
-            )
         out = {f: np.empty((n, *specs[f].shape), np.float64) for f in OUT_FIELDS}
         bounds = np.linspace(0, n, self.threads + 1).astype(int)
 
         def work(thread: int) -> None:
             m, d = self.models[thread], self.datas[thread]
+            if self.loaded[thread] != self.arena_id:
+                m.hfield_data[:] = self.hfield
+                self.loaded[thread] = self.arena_id
             for i in range(bounds[thread], bounds[thread + 1]):
-                if self.level_ids[i] != self.loaded[thread]:
-                    m.hfield_data[:] = self.hfields[i]
-                    self.loaded[thread] = self.level_ids[i]
                 if not self.step_env(m, d, n_substeps, [x[i] for x in arrays]):
                     self.diverged[thread] += 1
                 for f in OUT_FIELDS:
@@ -584,7 +588,12 @@ def evaluate(
 
 def build(args: argparse.Namespace) -> dict[str, Any]:
     config = hfield_config(args)
-    env = make_env(args, config, args.chunk_envs, train=False)
+    check_wojtek_arena(args, config)
+    layout = TileLayout(config)
+    env = make_env(args, config, levels_per_chunk(args, layout) * args.episodes, False)
+    # scored on the deterministic policy: its own obs and feet, not the critic
+    reach = env.travel.reach(args.level_steps, env.travel.actor_sensing)
+    layout.check_reach(reach, f"--level_steps {args.level_steps}")
     base = cast(Any, env)._env.unwrapped
     physics = CpuPhysics(base.mj_model, worker_count())
     make_policy = ppo_networks.make_inference_fn(make_network(env))
@@ -599,7 +608,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         deterministic: bool,
         length: int,
     ) -> Any:
-        physics.set_levels(np.asarray(hfield))
+        physics.set_arena(np.asarray(hfield))
         with cpu_physics(physics):
             return unroll(
                 params,
@@ -614,10 +623,14 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "args": args,
         "config": config,
+        "layout": layout,
+        "assemble": jax.jit(layout.assemble),
         "base": base,
         "physics": physics,
         "params": brax_model.load_params(args.checkpoint),
-        "reset": jax.jit(jax.vmap(lambda k, h: env.reset(k, h))),
+        "reset": jax.jit(
+            jax.vmap(lambda k, h, t: env.reset(k, h, tile_xy=t), in_axes=(0, None, 0))
+        ),
         "unroll": cpu_unroll,
     }
 
@@ -638,6 +651,8 @@ def main() -> None:
     p.add_argument("--amplitude", type=float, default=0.3)
     p.add_argument("--level_space", default="param", choices=["param"])
     p.add_argument("--robot", default="wojtek", choices=list(ROBOT_SCALE))
+    # CpuPhysics steps the jax env's data layout on CPU MuJoCo
+    p.set_defaults(backend="jax")
     p.add_argument("--coarse_n", type=int, default=13)
     p.add_argument("--pad_radius", type=float, default=0.55)
     p.add_argument("--pad_taper", type=float, default=0.2)

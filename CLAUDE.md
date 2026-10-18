@@ -11,7 +11,7 @@ it when the code changes.**
 |---|---|
 | Anything — get oriented | [docs/overview.md](docs/overview.md) |
 | Install, deps/pins, building assets, running | [docs/setup.md](docs/setup.md) |
-| The env, tasks, terrain, `FunctionalEnv`, hfield swapping | [docs/environment.md](docs/environment.md) |
+| The env, tasks, terrain, `FunctionalEnv`, the shared tiled arena | [docs/environment.md](docs/environment.md) |
 | PPO model / rollout / loss / checkpoints / logging | [docs/ppo.md](docs/ppo.md) |
 | ACCEL curriculum, heightfield levels, convergence | [docs/ued-accel.md](docs/ued-accel.md) |
 | Config fields, Hydra overrides | [docs/configuration.md](docs/configuration.md) |
@@ -38,6 +38,10 @@ it when the code changes.**
 - **Generated assets are gitignored** — run `just build` and
   `just build-accel-arena` before anything that loads the robot / `accel` arena.
 - `just lint` is ruff-only; run `ty check` manually.
+- **Shared tiled arena** — every level of an iteration sits on its own tile
+  of one `hfield_data`; never vmap `hfield_data` per env (warp collides every
+  env with the first one's). Warp needs `XLA_PYTHON_CLIENT_PREALLOCATE=false`
+  (the justfile and `slurm/` export it).
 
 ## After changing code
 

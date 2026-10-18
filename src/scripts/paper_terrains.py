@@ -11,11 +11,17 @@ import argparse
 from pathlib import Path
 from typing import Any
 
+import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import mujoco
 import numpy as np
+from mujoco_playground._src.locomotion.go1 import base as go1_base
 
+from config.hfield_config import HFieldConfig
+from hfield.arena import single_tile, single_tile_spec
 from hfield.level_space import PARAMS, ParamSpace
+from hfield.tiles import TileLayout
+from robots.go1 import Go1Terrain, scene_xml
 from scripts.brax_ued import ROBOT_SCALE, hfield_config, make_env
 from scripts.paper_tables import ROBOT_LABEL
 
@@ -40,17 +46,37 @@ FEATURES = (
 
 def _args(robot: str) -> argparse.Namespace:
     return argparse.Namespace(
-        robot=robot, amplitude=0.3, coarse_n=13, pad_radius=0.55, pad_taper=0.2
+        robot=robot,
+        amplitude=0.3,
+        coarse_n=13,
+        pad_radius=0.55,
+        pad_taper=0.2,
+        backend="jax",
     )
 
 
-def _model(robot: str) -> tuple[Any, ParamSpace]:
+def _model(robot: str) -> tuple[Any, ParamSpace, HFieldConfig]:
     args = _args(robot)
     config = hfield_config(args)
     env = make_env(args, config, num_envs=1, train=False)
     space = ParamSpace(config, robot_scale=ROBOT_SCALE[robot])
     base: Any = env._env.env
-    return base.mj_model, space
+    return render_model(base, config), space, config
+
+
+def render_model(base: Any, config: HFieldConfig) -> Any:
+    """The env's scene with its arena cut to one tile, the level at the
+    origin (`single_tile`): the CPU renderer meshes the whole hfield."""
+    if isinstance(base, Go1Terrain):
+        xml = scene_xml(single_tile(config))
+        return mj.MjModel.from_xml_string(xml, assets=go1_base.get_assets())
+    return single_tile_spec(Path(base._terrain.files["scene"]), config).compile()
+
+
+def level_on_single_tile(config: HFieldConfig, hfield: np.ndarray) -> np.ndarray:
+    """A rendered level as the `render_model` arena's hfield_data."""
+    layout = TileLayout(single_tile(config))
+    return np.asarray(layout.assemble(jnp.asarray(hfield)[None]))
 
 
 def _level(space: ParamSpace, genes: dict[str, float]) -> np.ndarray:
@@ -72,9 +98,13 @@ def _restyle(model: Any) -> None:
 
 
 def _render(
-    model: Any, hfield: np.ndarray, scale: float, elevation: float = -35.0
+    model: Any,
+    config: HFieldConfig,
+    hfield: np.ndarray,
+    scale: float,
+    elevation: float = -35.0,
 ) -> np.ndarray:
-    model.hfield_data[:] = hfield
+    model.hfield_data[:] = level_on_single_tile(config, hfield)
     data = mj.MjData(model)
     mj.mj_resetDataKeyframe(model, data, model.key("home").id)
     mj.mj_forward(model, data)
@@ -104,7 +134,7 @@ def _grid(images: list[tuple[str, np.ndarray]], cols: int, path: Path) -> None:
 
 def plot_terrains(out: Path) -> None:
     rng = np.random.default_rng(3)
-    model, space = _model("wojtek")
+    model, space, config = _model("wojtek")
     levels = [(title, _level(space, genes)) for title, genes in FEATURES]
     levels += [
         ("uniform, $d=0.5$", space.scaled(rng, 1, 0.5)[0]),
@@ -112,7 +142,7 @@ def plot_terrains(out: Path) -> None:
     ]
     rendered = space.render(np.stack([lv for _, lv in levels]))
     images = [
-        (title, _render(model, hf, 1.0))
+        (title, _render(model, config, hf, 1.0))
         for (title, _), hf in zip(levels, rendered, strict=True)
     ]
     _grid(images, 5, out / "terrains.pdf")
@@ -120,10 +150,13 @@ def plot_terrains(out: Path) -> None:
     shared = space.scaled(rng, 1, 0.6)[0]
     pair: list[tuple[str, Any]] = []
     for robot in ROBOT_SCALE:
-        model, space = _model(robot)
+        model, space, config = _model(robot)
         _restyle(model)
         hfield = space.render(shared[None])[0]
         pair.append(
-            (ROBOT_LABEL[robot], _render(model, hfield, ROBOT_SCALE[robot], -50.0))
+            (
+                ROBOT_LABEL[robot],
+                _render(model, config, hfield, ROBOT_SCALE[robot], -50.0),
+            )
         )
     _grid(pair, 2, out / "robots.pdf")
