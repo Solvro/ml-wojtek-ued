@@ -163,6 +163,7 @@ def stair_pit_half(
     and both stair types reach flat ground (0) at the rim."""
     return stair_platform_half + (n_steps - 1) * tread
 
+
 # Rough tiles: white noise sampled on this coarse pitch then bilinearly
 # upsampled, so features are foot-scale rolling ground, not per-cell spikes.
 ROUGH_COARSE_STEP = 0.15
@@ -307,8 +308,14 @@ class Arena:
 
 
 def _bilinear(
-    grid: np.ndarray, x0: float, dx: float, y0: float, dy: float,
-    x: np.ndarray, y: np.ndarray, xp=np,
+    grid: np.ndarray,
+    x0: float,
+    dx: float,
+    y0: float,
+    dy: float,
+    x: np.ndarray,
+    y: np.ndarray,
+    xp=np,
 ) -> np.ndarray:
     """Sample grid (row indexes y, col indexes x) at world (x, y), clamped.
 
@@ -358,7 +365,9 @@ def _edge_taper(lx: np.ndarray, ly: np.ndarray) -> np.ndarray:
     return np.clip((TILE_SIZE / 2 - _cheby(lx, ly)) / EDGE_TAPER, 0.0, 1.0)
 
 
-def _coarse_noise(lx: np.ndarray, ly: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+def _coarse_noise(
+    lx: np.ndarray, ly: np.ndarray, rng: np.random.Generator
+) -> np.ndarray:
     """White noise on ROUGH_COARSE_STEP pitch, bilinearly upsampled to (lx, ly)."""
     n = int(round(TILE_SIZE / ROUGH_COARSE_STEP)) + 1
     half = TILE_SIZE / 2
@@ -368,26 +377,36 @@ def _coarse_noise(lx: np.ndarray, ly: np.ndarray, rng: np.random.Generator) -> n
 
 
 def _rough_patch(
-    lx: np.ndarray, ly: np.ndarray, d: float, rng: np.random.Generator,
+    lx: np.ndarray,
+    ly: np.ndarray,
+    d: float,
+    rng: np.random.Generator,
     pad_radius: float,
 ) -> np.ndarray:
     amp = rough_amplitude(d)
     return (
-        amp * _coarse_noise(lx, ly, rng)
-        * _pad_taper(lx, ly, pad_radius) * _edge_taper(lx, ly)
+        amp
+        * _coarse_noise(lx, ly, rng)
+        * _pad_taper(lx, ly, pad_radius)
+        * _edge_taper(lx, ly)
     )
 
 
 def _overlay(
-    lx: np.ndarray, ly: np.ndarray, d: float, rng: np.random.Generator,
+    lx: np.ndarray,
+    ly: np.ndarray,
+    d: float,
+    rng: np.random.Generator,
     pad_radius: float,
 ) -> np.ndarray:
     """Coarse rough noise for slope and box-tile grounds, its own rng draw. Zero
     at the pad and at the border, so pads stay flat and borders stay seamless."""
     amp = OVERLAY_FRACTION * rough_amplitude(d)
     return (
-        amp * _coarse_noise(lx, ly, rng)
-        * _pad_taper(lx, ly, pad_radius) * _edge_taper(lx, ly)
+        amp
+        * _coarse_noise(lx, ly, rng)
+        * _pad_taper(lx, ly, pad_radius)
+        * _edge_taper(lx, ly)
     )
 
 
@@ -406,8 +425,12 @@ def _slope_patch(lx: np.ndarray, ly: np.ndarray, d: float, sign: float) -> np.nd
 
 
 def _pyramid_stair_boxes(
-    cx: float, cy: float, d: float, stair_half: float,
-    tread: float = TREAD, n_steps: int = N_STEPS,
+    cx: float,
+    cy: float,
+    d: float,
+    stair_half: float,
+    tread: float = TREAD,
+    n_steps: int = N_STEPS,
 ) -> tuple[list[Box], float]:
     """High central plateau; treads descend to ground (0) at the rim, so the
     tile border stays seamless. Boxes sit on the flat heightfield."""
@@ -422,8 +445,12 @@ def _pyramid_stair_boxes(
 
 
 def _pit_carve(
-    lx: np.ndarray, ly: np.ndarray, d: float, stair_half: float,
-    tread: float = TREAD, n_steps: int = N_STEPS,
+    lx: np.ndarray,
+    ly: np.ndarray,
+    d: float,
+    stair_half: float,
+    tread: float = TREAD,
+    n_steps: int = N_STEPS,
 ) -> np.ndarray:
     """Heightfield patch for an inverted-stairs pit: -H inside the pit square,
     0 outside, so the rim is flush with the tile ground."""
@@ -434,8 +461,12 @@ def _pit_carve(
 
 
 def _inverted_stair_boxes(
-    cx: float, cy: float, d: float, stair_half: float,
-    tread: float = TREAD, n_steps: int = N_STEPS,
+    cx: float,
+    cy: float,
+    d: float,
+    stair_half: float,
+    tread: float = TREAD,
+    n_steps: int = N_STEPS,
 ) -> tuple[list[Box], float]:
     """Terraces inside the carved pit: each ring sits on the pit floor (-H) and
     rises one riser more outward. The topmost riser (-riser -> 0) is the carve
@@ -447,7 +478,9 @@ def _inverted_stair_boxes(
     for j in range(1, n_steps):
         r_in = stair_half + (j - 1) * tread
         r_out = stair_half + j * tread
-        boxes.extend(_frame_boxes(cx, cy, r_in, r_out, top=-depth + j * riser, base=-depth))
+        boxes.extend(
+            _frame_boxes(cx, cy, r_in, r_out, top=-depth + j * riser, base=-depth)
+        )
     return boxes, -depth
 
 
@@ -535,7 +568,10 @@ def _random_grid_boxes(
 
 
 def _wave_patch(
-    lx: np.ndarray, ly: np.ndarray, d: float, rng: np.random.Generator,
+    lx: np.ndarray,
+    ly: np.ndarray,
+    d: float,
+    rng: np.random.Generator,
     pad_radius: float,
 ) -> np.ndarray:
     # Integer half-periods in both axes make the product of sines exactly 0 on
@@ -545,16 +581,20 @@ def _wave_patch(
     half = TILE_SIZE / 2
     kx = int(rng.choice(WAVE_HALF_PERIODS))
     ky = int(rng.choice(WAVE_HALF_PERIODS))
-    wave = (
-        np.sin(kx * np.pi * (lx + half) / TILE_SIZE)
-        * np.sin(ky * np.pi * (ly + half) / TILE_SIZE)
+    wave = np.sin(kx * np.pi * (lx + half) / TILE_SIZE) * np.sin(
+        ky * np.pi * (ly + half) / TILE_SIZE
     )
     return amp * wave * _pad_taper(lx, ly, pad_radius)
 
 
 def _footprint_nodes(
-    xs: np.ndarray, ys: np.ndarray, px: float, py: float,
-    hx: float, hy: float, yaw: float,
+    xs: np.ndarray,
+    ys: np.ndarray,
+    px: float,
+    py: float,
+    hx: float,
+    hy: float,
+    yaw: float,
 ) -> tuple[np.ndarray, np.ndarray] | None:
     """(row, col) indices of grid nodes under a box: its axis-aligned cell block
     when yaw == 0, else the nodes inside the rotated rectangle (node offsets
@@ -660,7 +700,8 @@ def generate(
     extended_geometry = stair_tread != TREAD or type_caps is not None
     if stair_platform_half is None:
         stair_platform_half = (
-            summit_platform_half(pad_radius) if extended_geometry
+            summit_platform_half(pad_radius)
+            if extended_geometry
             else STAIR_PLATFORM_HALF
         )
     n_cols = len(TYPES)
@@ -695,9 +736,13 @@ def generate(
             cx = grid_x0 + (j + 0.5) * tile_size
             tiles.append(
                 TileSpec(
-                    row=0, col=j, terrain_type=ttype, difficulty=0.0,
+                    row=0,
+                    col=j,
+                    terrain_type=ttype,
+                    difficulty=0.0,
                     origin=(float(cx), float(cy), 0.0),
-                    pad_radius=pad_radius, pad_height=0.0,
+                    pad_radius=pad_radius,
+                    pad_height=0.0,
                     feature_radius=0.0,
                 )
             )
@@ -706,10 +751,7 @@ def generate(
         # streams and the difficulty ramp, so a row holds the same tiles with
         # and without the flat row. Only where it sits moves.
         row = i + int(flat_row)
-        d = (
-            difficulties[i] if difficulties is not None
-            else i / (n_terrain_rows - 1)
-        )
+        d = difficulties[i] if difficulties is not None else i / (n_terrain_rows - 1)
         if ordered:
             row_types = TYPES
         else:
@@ -722,9 +764,11 @@ def generate(
                 # difficulty strictly increasing; rows 0 and n-1 stay exact so
                 # the curriculum floor and ceiling are preserved. An explicit
                 # difficulty list is taken as given, so no draw happens.
-                d = float(np.clip(
-                    d + row_rng.uniform(-0.4, 0.4) / (n_terrain_rows - 1),
-                    0.0, 1.0))
+                d = float(
+                    np.clip(
+                        d + row_rng.uniform(-0.4, 0.4) / (n_terrain_rows - 1), 0.0, 1.0
+                    )
+                )
         cy = grid_y0 + (row + 0.5) * tile_size
         ri0 = int(np.searchsorted(ys, cy - tile_size / 2))
         ri1 = int(np.searchsorted(ys, cy + tile_size / 2))
@@ -756,13 +800,13 @@ def generate(
             if ttype == "rough_uniform":
                 heights[ri0:ri1, ci0:ci1] = _rough_patch(lx, ly, dt, rng, pad_radius)
             elif ttype == "pyramid_slope":
-                heights[ri0:ri1, ci0:ci1] = (
-                    _slope_patch(lx, ly, dt, +1.0) + _overlay(lx, ly, dt, rng, pad_radius)
+                heights[ri0:ri1, ci0:ci1] = _slope_patch(lx, ly, dt, +1.0) + _overlay(
+                    lx, ly, dt, rng, pad_radius
                 )
                 pad_height = slope_plateau_height(dt)
             elif ttype == "inverted_pyramid_slope":
-                heights[ri0:ri1, ci0:ci1] = (
-                    _slope_patch(lx, ly, dt, -1.0) + _overlay(lx, ly, dt, rng, pad_radius)
+                heights[ri0:ri1, ci0:ci1] = _slope_patch(lx, ly, dt, -1.0) + _overlay(
+                    lx, ly, dt, rng, pad_radius
                 )
                 pad_height = -slope_plateau_height(dt)
             elif ttype == "pyramid_stairs":
@@ -780,23 +824,32 @@ def generate(
                 boxes.extend(tile_boxes)
             elif ttype == "discrete_obstacles":
                 heights[ri0:ri1, ci0:ci1] = _overlay(lx, ly, dt, rng, pad_radius)
-                boxes.extend(_seat_boxes(
-                    _discrete_boxes(cx, cy, dt, rng, pad_radius), heights, xs, ys
-                ))
+                boxes.extend(
+                    _seat_boxes(
+                        _discrete_boxes(cx, cy, dt, rng, pad_radius), heights, xs, ys
+                    )
+                )
             elif ttype == "random_grid":
                 heights[ri0:ri1, ci0:ci1] = _overlay(lx, ly, dt, rng, pad_radius)
-                boxes.extend(_seat_boxes(
-                    _random_grid_boxes(cx, cy, dt, rng, pad_radius), heights, xs, ys
-                ))
+                boxes.extend(
+                    _seat_boxes(
+                        _random_grid_boxes(cx, cy, dt, rng, pad_radius), heights, xs, ys
+                    )
+                )
             elif ttype == "wave":
                 heights[ri0:ri1, ci0:ci1] = _wave_patch(lx, ly, dt, rng, pad_radius)
             tiles.append(
                 TileSpec(
-                    row=row, col=j, terrain_type=ttype, difficulty=dt,
+                    row=row,
+                    col=j,
+                    terrain_type=ttype,
+                    difficulty=dt,
                     origin=(float(cx), float(cy), 0.0),
-                    pad_radius=pad_radius, pad_height=float(pad_height),
+                    pad_radius=pad_radius,
+                    pad_height=float(pad_height),
                     feature_radius=float(feature_radius),
-                    stair_tread=tread, n_steps=n_steps,
+                    stair_tread=tread,
+                    n_steps=n_steps,
                 )
             )
 
@@ -826,14 +879,29 @@ def generate(
         hfield_data = ((heights - hmin) / (hmax - hmin)).astype(np.float32)
 
     spec = TerrainSpec(
-        seed=seed, n_rows=n_rows, n_cols=n_cols, tile_size=tile_size,
-        border=border, cell_size=cell_size, ordered=ordered,
-        pad_radius=pad_radius, stair_platform_half=stair_platform_half,
-        n_steps=N_STEPS, types=TYPES,
-        x_min=x_min, x_max=x_max, y_min=y_min, y_max=y_max,
+        seed=seed,
+        n_rows=n_rows,
+        n_cols=n_cols,
+        tile_size=tile_size,
+        border=border,
+        cell_size=cell_size,
+        ordered=ordered,
+        pad_radius=pad_radius,
+        stair_platform_half=stair_platform_half,
+        n_steps=N_STEPS,
+        types=TYPES,
+        x_min=x_min,
+        x_max=x_max,
+        y_min=y_min,
+        y_max=y_max,
         hfield=HFieldSpec(
-            nrow=nrow, ncol=ncol, radius_x=total_x / 2, radius_y=total_y / 2,
-            elevation_z=elevation_z, base_z=HFIELD_BASE_Z, pos_z=pos_z,
+            nrow=nrow,
+            ncol=ncol,
+            radius_x=total_x / 2,
+            radius_y=total_y / 2,
+            elevation_z=elevation_z,
+            base_z=HFIELD_BASE_Z,
+            pos_z=pos_z,
         ),
         tiles=tuple(tiles),
         flat_row=flat_row,
@@ -841,8 +909,10 @@ def generate(
         type_caps=dict(type_caps) if type_caps else None,
     )
     return Arena(
-        spec=spec, boxes=tuple(boxes),
-        hfield_data=hfield_data, lookup=lookup.astype(np.float32),
+        spec=spec,
+        boxes=tuple(boxes),
+        hfield_data=hfield_data,
+        lookup=lookup.astype(np.float32),
     )
 
 
@@ -852,8 +922,13 @@ def lookup_height(arena: Arena, x: np.ndarray, y: np.ndarray) -> np.ndarray:
     cell_x = (s.x_max - s.x_min) / (s.hfield.ncol - 1)
     cell_y = (s.y_max - s.y_min) / (s.hfield.nrow - 1)
     return _bilinear(
-        arena.lookup, s.x_min, cell_x, s.y_min, cell_y,
-        np.asarray(x, dtype=float), np.asarray(y, dtype=float),
+        arena.lookup,
+        s.x_min,
+        cell_x,
+        s.y_min,
+        cell_y,
+        np.asarray(x, dtype=float),
+        np.asarray(y, dtype=float),
     )
 
 
@@ -889,26 +964,37 @@ def spec_to_dict(spec: TerrainSpec) -> dict:
         "n_steps": spec.n_steps,
         "types": list(spec.types),
         "extent": {
-            "x_min": spec.x_min, "x_max": spec.x_max,
-            "y_min": spec.y_min, "y_max": spec.y_max,
+            "x_min": spec.x_min,
+            "x_max": spec.x_max,
+            "y_min": spec.y_min,
+            "y_max": spec.y_max,
         },
         "hfield": {
-            "nrow": hf.nrow, "ncol": hf.ncol,
-            "radius_x": hf.radius_x, "radius_y": hf.radius_y,
-            "elevation_z": hf.elevation_z, "base_z": hf.base_z, "pos_z": hf.pos_z,
+            "nrow": hf.nrow,
+            "ncol": hf.ncol,
+            "radius_x": hf.radius_x,
+            "radius_y": hf.radius_y,
+            "elevation_z": hf.elevation_z,
+            "base_z": hf.base_z,
+            "pos_z": hf.pos_z,
         },
         "tiles": [
             {
-                "row": t.row, "col": t.col, "type": t.terrain_type,
-                "difficulty": t.difficulty, "origin": list(t.origin),
-                "pad_radius": t.pad_radius, "pad_height": t.pad_height,
+                "row": t.row,
+                "col": t.col,
+                "type": t.terrain_type,
+                "difficulty": t.difficulty,
+                "origin": list(t.origin),
+                "pad_radius": t.pad_radius,
+                "pad_height": t.pad_height,
                 **(
                     {
                         "feature_radius": t.feature_radius,
                         "stair_tread": t.stair_tread,
                         "n_steps": t.n_steps,
                     }
-                    if extended else {}
+                    if extended
+                    else {}
                 ),
             }
             for t in spec.tiles
@@ -919,7 +1005,8 @@ def spec_to_dict(spec: TerrainSpec) -> dict:
     if extended:
         out["stair_tread"] = (
             list(spec.stair_tread)
-            if isinstance(spec.stair_tread, tuple) else spec.stair_tread
+            if isinstance(spec.stair_tread, tuple)
+            else spec.stair_tread
         )
         if spec.type_caps is not None:
             out["type_caps"] = dict(spec.type_caps)

@@ -96,7 +96,7 @@ def component_mirror(name):
     if name not in table:
         raise KeyError(
             f"no mirror map for obs component {name!r}; add it to "
-            f"wojtek_env.envs.symmetry before training with symmetry on"
+            f"wojtek_env.symmetry before training with symmetry on"
         )
     return table[name]
 

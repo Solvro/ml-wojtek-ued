@@ -7,6 +7,7 @@ scale, to show that the space is defined relative to robot size.
 Run through `paper_figures.py --terrains` (needs MUJOCO_GL=cgl on macOS).
 """
 
+import argparse
 from pathlib import Path
 from typing import Any
 
@@ -14,11 +15,9 @@ import matplotlib.pyplot as plt
 import mujoco
 import numpy as np
 
-from config.hfield_config import HFieldConfig
 from hfield.level_space import PARAMS, ParamSpace
-from scripts.brax_ued import ROBOT_SCALE, make_env, parse_args, run_spec
+from scripts.brax_ued import ROBOT_SCALE, hfield_config, make_env
 from scripts.paper_tables import ROBOT_LABEL
-from scripts.render_video import level_on_single_tile, render_model
 
 # mujoco is a C extension that ty cannot introspect
 mj: Any = mujoco
@@ -39,15 +38,19 @@ FEATURES = (
 )
 
 
-def _model(robot: str) -> tuple[Any, ParamSpace, HFieldConfig]:
-    # the benchmark arena brax_ued.py trains on at its default flags
-    flags = ["--mode", "accel", "--name", "paper", "--robot", robot]
-    spec = run_spec(parse_args(flags))
-    config = HFieldConfig(**spec["hfield"])
-    env = make_env(spec, num_envs=1, train=False)
+def _args(robot: str) -> argparse.Namespace:
+    return argparse.Namespace(
+        robot=robot, amplitude=0.3, coarse_n=13, pad_radius=0.55, pad_taper=0.2
+    )
+
+
+def _model(robot: str) -> tuple[Any, ParamSpace]:
+    args = _args(robot)
+    config = hfield_config(args)
+    env = make_env(args, config, num_envs=1, train=False)
     space = ParamSpace(config, robot_scale=ROBOT_SCALE[robot])
     base: Any = env._env.env
-    return render_model(base, config), space, config
+    return base.mj_model, space
 
 
 def _level(space: ParamSpace, genes: dict[str, float]) -> np.ndarray:
@@ -69,13 +72,9 @@ def _restyle(model: Any) -> None:
 
 
 def _render(
-    model: Any,
-    config: HFieldConfig,
-    hfield: np.ndarray,
-    scale: float,
-    elevation: float = -35.0,
+    model: Any, hfield: np.ndarray, scale: float, elevation: float = -35.0
 ) -> np.ndarray:
-    model.hfield_data[:] = level_on_single_tile(config, hfield)
+    model.hfield_data[:] = hfield
     data = mj.MjData(model)
     mj.mj_resetDataKeyframe(model, data, model.key("home").id)
     mj.mj_forward(model, data)
@@ -105,7 +104,7 @@ def _grid(images: list[tuple[str, np.ndarray]], cols: int, path: Path) -> None:
 
 def plot_terrains(out: Path) -> None:
     rng = np.random.default_rng(3)
-    model, space, config = _model("wojtek")
+    model, space = _model("wojtek")
     levels = [(title, _level(space, genes)) for title, genes in FEATURES]
     levels += [
         ("uniform, $d=0.5$", space.scaled(rng, 1, 0.5)[0]),
@@ -113,7 +112,7 @@ def plot_terrains(out: Path) -> None:
     ]
     rendered = space.render(np.stack([lv for _, lv in levels]))
     images = [
-        (title, _render(model, config, hf, 1.0))
+        (title, _render(model, hf, 1.0))
         for (title, _), hf in zip(levels, rendered, strict=True)
     ]
     _grid(images, 5, out / "terrains.pdf")
@@ -121,13 +120,10 @@ def plot_terrains(out: Path) -> None:
     shared = space.scaled(rng, 1, 0.6)[0]
     pair: list[tuple[str, Any]] = []
     for robot in ROBOT_SCALE:
-        model, space, config = _model(robot)
+        model, space = _model(robot)
         _restyle(model)
         hfield = space.render(shared[None])[0]
         pair.append(
-            (
-                ROBOT_LABEL[robot],
-                _render(model, config, hfield, ROBOT_SCALE[robot], -50.0),
-            )
+            (ROBOT_LABEL[robot], _render(model, hfield, ROBOT_SCALE[robot], -50.0))
         )
     _grid(pair, 2, out / "robots.pdf")

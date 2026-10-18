@@ -74,14 +74,15 @@ def make_domain_randomize(mj_model, dr_cfg=None):
             mujoco.mj_id2name(mj_model, mujoco.mjtObj.mjOBJ_GEOM, i) or ""
             for i in range(mj_model.ngeom)
         ]
-        terrain_ids = jnp.array([
-            i for i, n in enumerate(names)
-            if n == "terrain_hfield" or n.startswith("terrain_box_")
-        ])
+        terrain_ids = jnp.array(
+            [
+                i
+                for i, n in enumerate(names)
+                if n == "terrain_hfield" or n.startswith("terrain_box_")
+            ]
+        )
     root_id = mj_model.body("root").id
-    foot_ids = jnp.array(
-        [mj_model.geom(f"{leg}_foot_sphere").id for leg in paths.LEGS]
-    )
+    foot_ids = jnp.array([mj_model.geom(f"{leg}_foot_sphere").id for leg in paths.LEGS])
 
     def domain_randomize(model, rng):
         @jax.vmap
@@ -94,13 +95,9 @@ def make_domain_randomize(mj_model, dr_cfg=None):
                 geom_friction = model.geom_friction.at[terrain_ids, 0].set(friction)
 
             base_scale = jax.random.uniform(r2, minval=0.7, maxval=1.3)
-            link_scale = jax.random.uniform(
-                r3, (model.nbody,), minval=0.9, maxval=1.1
-            )
+            link_scale = jax.random.uniform(r3, (model.nbody,), minval=0.9, maxval=1.1)
             body_mass = model.body_mass * link_scale
-            body_mass = body_mass.at[root_id].set(
-                model.body_mass[root_id] * base_scale
-            )
+            body_mass = body_mass.at[root_id].set(model.body_mass[root_id] * base_scale)
 
             if joint_cfg["enable"]:
                 rg, rk = jax.random.split(jax.random.fold_in(rng, 1), 2)
@@ -178,8 +175,8 @@ def make_domain_randomize(mj_model, dr_cfg=None):
                 foot_scale = jax.random.uniform(
                     rf, (foot_ids.shape[0],), minval=flo2, maxval=fhi2
                 )
-                out["geom_friction"] = out["geom_friction"].at[foot_ids, 0].multiply(
-                    foot_scale
+                out["geom_friction"] = (
+                    out["geom_friction"].at[foot_ids, 0].multiply(foot_scale)
                 )
 
             return out

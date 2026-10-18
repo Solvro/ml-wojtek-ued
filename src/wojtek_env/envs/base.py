@@ -22,42 +22,6 @@ from wojtek_env import paths
 from wojtek_env.terrain import terrain_env
 from wojtek_env.tools.build_model import BASE_BOX_NAMES, FOOT_RADIUS
 
-# How the 12 joint-torque changes reach the 3 gyro axes in the gyro-vib
-# sensor model (obs_noise.gyro_vib). Row x sums the legs with alternating
-# signs, so a left/right torque imbalance shakes the roll reading. Row y
-# does the same for rear versus front and pitch. Row z alternates signs
-# inside each leg. How vibration travels through a real frame to the IMU
-# is unknown and differs per machine. This matrix only has to be fixed,
-# reach all three axes, and stay the same for every policy measured. Rows
-# have unit length so the gain means the same thing on every axis.
-VIB_MIX = np.stack([
-    np.repeat([1.0, -1.0, 1.0, -1.0], 3),
-    np.repeat([1.0, 1.0, -1.0, -1.0], 3),
-    np.tile([1.0, -1.0, 1.0], 4),
-]) / np.sqrt(12.0)
-
-
-def gyro_vib_step(vib, tau_rate, gain, decay, mix=None):
-    """Advance the gyro-vib resonator by one control step.
-
-    ``x_t = -decay * x_{t-1} + gain * (mix @ tau_rate)``. The negative
-    coefficient makes the state ring at half the control rate, 25 Hz at
-    the 50 Hz control rate, where the real robot's standing oscillation
-    sat. A drive at that frequency is amplified by 1/(1-decay). A
-    constant drive is damped by 1/(1+decay). This stays a pure function
-    so the recurrence can be tested without an env.
-
-    The gain may be a traced value. The env carries it per episode in
-    ``info["gyro_vib_gain"]``, so a sweep can change it without a
-    recompile. A gain of 0 therefore selects a zero rather than
-    multiplying by one. The step then returns exactly zero whatever the
-    drive and the state were, instead of leaning on ``0 * x`` staying
-    zero. Turning the gain off also clears the state on the same step.
-    """
-    m = VIB_MIX if mix is None else mix
-    return jp.where(gain == 0.0, 0.0, -decay * vib + gain * (m @ tau_rate))
-
-
 # Actuator indices of the knee cranks (third joints), paths.LEGS order.
 KNEE_ACTUATORS = (2, 5, 8, 11)
 # Actuator indices of the abduction joints (first joints), paths.LEGS order.
@@ -176,23 +140,7 @@ class WojtekEnv(mjx_env.MjxEnv):
             [m.geom(f"{leg}_foot_sphere").id for leg in paths.LEGS]
         )
         self._base_geom_ids = np.array([m.geom(n).id for n in BASE_BOX_NAMES])
-        self._base_geom_half = jp.array(
-            m.geom_size[self._base_geom_ids][:, :3]
-        )
-        # Nominal (un-randomized) values behind the env_factors component:
-        # the per-env DR draw divided by these reads as a scale around 1.
-        # Zeros are replaced by 1 so unused slots divide harmlessly.
-        self._root_body_id = int(m.body("root").id)
-
-        def _nz(x):
-            x = np.asarray(x, dtype=np.float64)
-            return np.where(x == 0.0, 1.0, x)
-
-        self._envf_gain0 = jp.array(_nz(m.actuator_gainprm[:, 0]))
-        self._envf_kd0 = jp.array(_nz(m.actuator_biasprm[:, 2]))
-        self._envf_force0 = jp.array(_nz(m.actuator_forcerange[:, 1]))
-        self._envf_mass0 = float(_nz(m.body_mass[self._root_body_id]))
-        self._envf_ipos0 = jp.array(m.body_ipos[self._root_body_id])
+        self._base_geom_half = jp.array(m.geom_size[self._base_geom_ids][:, :3])
         self._sensor_adr = {
             name: m.sensor(name).adr[0]
             for name in ("orientation", "angular-velocity", "linear-acceleration")
@@ -353,15 +301,10 @@ class WojtekEnv(mjx_env.MjxEnv):
         noise = jax.random.uniform(rng, clean.shape, minval=-1.0, maxval=1.0)
         return clean + noise * scales
 
-    def _step_with_latency(self, data, prev, new, d, qfrc_prev=None, qfrc_new=None):
+    def _step_with_latency(self, data, prev, new, d):
         """Run n_substeps physics steps: ctrl is `prev` while the substep
         index is below d, `new` from d onward. d=n_substeps holds `prev` for
         the whole period; d=0 applies `new` immediately.
-
-        `qfrc_prev`/`qfrc_new` (optional, full nv-wide vectors) ride the
-        same switching into data.qfrc_applied — the joystick env's
-        feed-forward torque head uses this so tau_ff sees the same latency
-        as the position targets. None leaves qfrc_applied untouched.
 
         A single `jp.where` handles every d. A per-lane lax.cond would be
         wrong under the training vmap: `d` is batched, so cond runs every
@@ -371,10 +314,6 @@ class WojtekEnv(mjx_env.MjxEnv):
         def _substep(data, i):
             ctrl = jp.where(i < d, prev, new)
             data = data.replace(ctrl=ctrl)
-            if qfrc_prev is not None:
-                data = data.replace(
-                    qfrc_applied=jp.where(i < d, qfrc_prev, qfrc_new)
-                )
             return mjx.step(self._mjx_model, data), None
 
         return jax.lax.scan(_substep, data, jp.arange(self.n_substeps))[0]
@@ -384,42 +323,6 @@ class WojtekEnv(mjx_env.MjxEnv):
         return {
             "gyro": self._gyro(data),
             "gravity": self._gravity_body(data),
-            # The foot geoms' sliding-friction coefficients, read from the
-            # LIVE model. Under brax domain randomization the playground
-            # wrapper rebinds self._mjx_model to the per-env randomized
-            # model inside every vmapped reset/step, so with
-            # dr.foot_friction enabled this IS the env's own mu draw (and,
-            # since that DR gives feet contact priority, the contact
-            # friction the robot actually walks on). PRIVILEGED-ONLY in
-            # spirit: no physical sensor measures mu, so a policy whose
-            # ACTOR observes it (a mu-teacher) can never deploy — the ROS
-            # runtime refuses the component. Without foot_friction DR it
-            # degenerates to the model constant (0.9), observed variance
-            # zero.
-            "foot_friction": self._mjx_model.geom_friction[
-                self._foot_geom_ids, 0
-            ],
-            # The RMA-style privileged environment-factor vector (arXiv
-            # 2107.04034 uses mass/CoM + motor strength + friction; this is
-            # the wojtek equivalent, 44 dims): every quantity the DR wrapper
-            # rebinds per env, normalized by the nominal model so each slot
-            # reads as a scale around 1 (offsets for CoM). Same rebinding
-            # caveat as foot_friction above: without DR this is constant.
-            # PRIVILEGED: critic (or a teacher actor) only — no sensor
-            # measures these; the deploy runtime refuses the component.
-            "env_factors": jp.concatenate([
-                self._mjx_model.geom_friction[self._foot_geom_ids, 0],
-                self._mjx_model.actuator_gainprm[:, 0] / self._envf_gain0,
-                self._mjx_model.actuator_biasprm[:, 2] / self._envf_kd0,
-                self._mjx_model.actuator_forcerange[:, 1]
-                / self._envf_force0,
-                jp.atleast_1d(
-                    self._mjx_model.body_mass[self._root_body_id]
-                    / self._envf_mass0
-                ),
-                self._mjx_model.body_ipos[self._root_body_id]
-                - self._envf_ipos0,
-            ]),
             "joint_pos": data.qpos[self._qadr] - self._home_ctrl,
             "joint_vel": data.qvel[self._vadr],
             "last_act": info["last_act"],
@@ -460,30 +363,16 @@ class WojtekEnv(mjx_env.MjxEnv):
         """
         catalog = self._obs_catalog(data, info)
 
-        def gather(names, source=catalog):
-            missing = [n for n in names if n not in source]
+        def gather(names):
+            missing = [n for n in names if n not in catalog]
             if missing:
                 raise KeyError(
-                    f"unknown obs component(s) {missing}; available: "
-                    f"{sorted(source)}"
+                    f"unknown obs component(s) {missing}; available: {sorted(catalog)}"
                 )
-            return jp.concatenate([source[n] for n in names])
+            return jp.concatenate([catalog[n] for n in names])
 
         state_names = self.actor_obs_names
-        # The actor's gyro can carry two corruptions, the bias drawn at
-        # reset (info["gyro_bias"]) and the vibration-resonator state
-        # (info["gyro_vib"], see gyro_vib_step). Only the actor's copy is
-        # touched. The critic reads the clean catalog below.
-        actor_catalog = catalog
-        corrupt = jp.zeros(3)
-        present = False
-        for key in ("gyro_bias", "gyro_vib"):
-            term = info.get(key)
-            if term is not None:
-                corrupt, present = corrupt + term, True
-        if present and "gyro" in catalog:
-            actor_catalog = {**catalog, "gyro": catalog["gyro"] + corrupt}
-        state = gather(state_names, actor_catalog)
+        state = gather(state_names)
         if rng is not None:
             noise = self._config.obs_noise
             scales = jp.concatenate(

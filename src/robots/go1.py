@@ -3,9 +3,8 @@
 Playground's `Go1JoystickRoughTerrain` (feet-only collisions, its own reward
 and blind actor) with four changes so Go1 runs the same benchmark as Wojtek:
 
-- the scene is the tiled ACCEL arena (`hfield.tiles`): one swappable
-  `hfield` geom (`floor`, geom 0 so Playground's friction DR still hits it)
-  sized by `HFieldConfig`; the robot spawns on `spawn_xy`, its tile centre;
+- the scene is the ACCEL arena: one swappable `hfield` geom (`floor`, geom 0
+  so Playground's friction DR still hits it) sized by `HFieldConfig`;
 - commands walk forward, `GO1_SCALE` times Wojtek's range, so the robot
   leaves the spawn pad and meets the level within an episode;
 - a fall is Wojtek's rule at Go1's size: trunk below `FALL_HEIGHT_RATIO` of
@@ -27,7 +26,6 @@ from mujoco_playground._src.locomotion.go1 import base as go1_base
 from mujoco_playground._src.locomotion.go1 import joystick
 
 from config.hfield_config import HFieldConfig
-from hfield.tiles import TileLayout
 from wojtek_env.envs import height_scan
 
 # Go1 standing trunk height (0.258 m, measured) over Wojtek's design 0.10 m
@@ -42,8 +40,8 @@ HOME_POSE = "0.1 0.9 -1.8 -0.1 0.9 -1.8 0.1 0.9 -1.8 -0.1 0.9 -1.8"
 
 
 def scene_xml(config: HFieldConfig) -> str:
-    layout = TileLayout(config)
-    r, amp, n = layout.half, config.amplitude, layout.nodes
+    r, amp = config.patch_radius, config.amplitude
+    n = config.grid_size
     return f"""<mujoco model="go1_accel_scene">
   <include file="go1_mjx_feetonly.xml"/>
   <asset>
@@ -65,8 +63,7 @@ def scene_xml(config: HFieldConfig) -> str:
 class Go1Terrain(joystick.Joystick):
     def __init__(self, hfield: HFieldConfig, episode_length: int = 1000):
         config = joystick.default_config()
-        # the shared arena allows warp; Go1 runs have not been validated on it
-        config.impl = "jax"
+        config.impl = "jax"  # warp batches hfield_data wrong (check_hfield_batch.py)
         config.episode_length = episode_length
         config.naconmax = 8 * 8192
         config.njmax = 12 + 48
@@ -76,9 +73,6 @@ class Go1Terrain(joystick.Joystick):
         go1_base.Go1Env.__init__(self, xml_path=scene.as_posix(), config=config)
         self._post_init()
         self._hfield_config = hfield
-        self._layout = TileLayout(hfield)
-        # FunctionalEnv sets this to the env's tile centre around reset
-        self.spawn_xy = jnp.zeros(2)
         self._scan_grid = jnp.array(
             height_scan.body_grid(
                 [x * GO1_SCALE for x in SCAN_X],
@@ -94,10 +88,10 @@ class Go1Terrain(joystick.Joystick):
 
     def terrain_height(self, xy: jax.Array) -> jax.Array:
         """Bilinear terrain height (m) at world `xy` (..., 2) of the live level."""
-        c, layout = self._hfield_config, self._layout
-        n = layout.nodes
+        c = self._hfield_config
+        n = c.grid_size
         grid = self.mjx_model.hfield_data.reshape(n, n)
-        u = (xy + layout.half) / (2 * layout.half) * (n - 1)
+        u = (xy + c.patch_radius) / (2 * c.patch_radius) * (n - 1)
         u = jnp.clip(u, 0.0, n - 1.000001)
         i0 = jnp.floor(u).astype(jnp.int32)
         f = u - i0
@@ -119,12 +113,7 @@ class Go1Terrain(joystick.Joystick):
 
     def reset(self, rng: jax.Array) -> mjx_env.State:
         rng, cmd_rng = jax.random.split(rng)
-        init_q = self._init_q
-        self._init_q = init_q.at[0:2].add(self.spawn_xy)
-        try:
-            state = super().reset(rng)
-        finally:
-            self._init_q = init_q
+        state = super().reset(rng)
         state.info["command"] = self._forward_command(cmd_rng)
         return self._with_scan(
             dataclasses.replace(state, obs=self._get_obs(state.data, state.info))

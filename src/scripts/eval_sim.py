@@ -11,16 +11,11 @@ import numpy as np
 import orbax.checkpoint as ocp
 
 from config.hfield_config import HFieldConfig
-from hfield.arena import single_tile, single_tile_spec
 from hfield.manager import HFieldManager
-from hfield.tiles import TileLayout
 from modules.ppo_modules import A2C
 from ued.levels import level_to_hfield_data
 from utils.env import FunctionalEnv
 from utils.env_overrides import accel_arena_overrides, merge_overrides
-
-# mujoco is a C extension that ty cannot introspect
-mj: Any = mujoco
 
 
 def restore_model(model_dir: Path, template: A2C) -> A2C:
@@ -75,13 +70,8 @@ def main() -> None:
     jit_act = eqx.filter_jit(model.deterministic_action)
 
     base = cast(Any, env._env.unwrapped)
-    layout = TileLayout(hfield_config)
-    tile_xy = layout.tile_xy(1, 1)[0]
-    # the viewer shows a one-tile copy of the arena, the level at the origin
-    scene = Path(base._terrain.files["scene"])
-    mj_model = single_tile_spec(scene, hfield_config).compile()
-    view_layout = TileLayout(single_tile(hfield_config))
-    mj_data = mj.MjData(mj_model)
+    mj_model = base.mj_model
+    mj_data = mujoco.MjData(mj_model)
 
     key = jax.random.key(args.seed)
     episode = 0
@@ -89,13 +79,10 @@ def main() -> None:
         while viewer.is_running() and (args.episodes == 0 or episode < args.episodes):
             level = hfield_manager.generate(level_rng)
             hfield_data = level_to_hfield_data(hfield_manager, level)
-            arena = layout.assemble(hfield_data[None])
-            mj_model.hfield_data[:] = np.asarray(
-                view_layout.assemble(hfield_data[None])
-            )
+            mj_model.hfield_data[:] = np.asarray(hfield_data)
 
             key, reset_key = jax.random.split(key)
-            obs, state = env.reset(reset_key, hfield_data=arena, tile_xy=tile_xy)
+            obs, state = env.reset(reset_key, hfield_data=hfield_data)
 
             done = False
             while not done and viewer.is_running():
@@ -103,14 +90,13 @@ def main() -> None:
                 action = jit_act(obs)
                 key, step_key = jax.random.split(key)
                 obs, state, _reward, done_arr, _info = jit_step(
-                    step_key, state, action, hfield_data=arena
+                    step_key, state, action, hfield_data=hfield_data
                 )
                 done = bool(done_arr)
 
                 mj_data.qpos[:] = np.asarray(state.data.qpos)
-                mj_data.qpos[:2] -= np.asarray(tile_xy)
                 mj_data.qvel[:] = np.asarray(state.data.qvel)
-                mj.mj_forward(mj_model, mj_data)
+                mujoco.mj_forward(mj_model, mj_data)
                 viewer.sync()
                 time.sleep(max(0.0, base.dt - (time.time() - step_start)))
 

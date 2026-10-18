@@ -10,29 +10,21 @@ it when the code changes.**
 | Task / area | Read first |
 |---|---|
 | Anything — get oriented | [docs/overview.md](docs/overview.md) |
-| Install, deps/pins, building assets, tiled-arena/warp requirements, running | [docs/setup.md](docs/setup.md) |
-| The env, tasks, terrain, `FunctionalEnv`, the shared tiled arena | [docs/environment.md](docs/environment.md) |
+| Install, deps/pins, building assets, running | [docs/setup.md](docs/setup.md) |
+| The env, tasks, terrain, `FunctionalEnv`, hfield swapping | [docs/environment.md](docs/environment.md) |
 | PPO model / rollout / loss / checkpoints / logging | [docs/ppo.md](docs/ppo.md) |
 | ACCEL curriculum, heightfield levels, convergence | [docs/ued-accel.md](docs/ued-accel.md) |
 | Config fields, Hydra overrides | [docs/configuration.md](docs/configuration.md) |
 | Layout rules, tooling, adding features, gotchas | [docs/development.md](docs/development.md) |
 | Running training/eval on the cluster | [docs/slurm_recommended.md](docs/slurm_recommended.md) |
-| Deploy profile, checkpoint sidecar, export to the robot (`src/deploy/`), upstream checkpoint import / warm start | [docs/deploy.md](docs/deploy.md) |
 
 ## Where code lives
 
-- `src/wojtek_env/` — env library, synced from w01-tek `e44c1a9`
-  (`training/wojtek_rl/`). **Do not add files here**; it is ruff-excluded and
-  hatchling-packaged. The one edit point is `envs/registry.py` (register a
-  task); an upstream re-sync is the only other sanctioned change — re-apply
-  the local patches listed in
-  [docs/environment.md](docs/environment.md#upstream-sync).
+- `src/wojtek_env/` — extracted env library. **Do not add files here**; it is
+  ruff-excluded and hatchling-packaged. The one edit point is
+  `envs/registry.py` (register a task).
 - `src/{config,modules,utils,hfield,ued}/`, `src/scripts/` — research code.
   Add new work here as sibling packages.
-- `src/deploy/` — robot export: `contract.py` (port of w01-tek
-  `deploy_contract.py`), `runtime.py` (the robot's `policy.py`, verbatim,
-  ruff-excluded — never edit), `upstream_snapshot.py` (regenerates
-  `tests/deploy/upstream_<profile>.json`, one per robot profile).
 - `src/ued/` — the ACCEL algorithm, split by role (`types`, `regret`, `levels`,
   `stopper`, `curriculum`). Keep the split; don't recreate a `helpers` grab-bag.
 
@@ -44,10 +36,7 @@ it when the code changes.**
 - **Namespace packages** — no `__init__.py` in research code; imports are
   absolute via `PYTHONPATH=src`.
 - **Generated assets are gitignored** — run `just build` and
-  `just build-accel-arena` (`just build-deploy-arena` for `--profile deploy|robot`)
-  before anything that loads the robot / an arena; warp needs
-  `XLA_PYTHON_CLIENT_PREALLOCATE=false`
-  ([docs/setup.md](docs/setup.md#tiled-arena-requirements)).
+  `just build-accel-arena` before anything that loads the robot / `accel` arena.
 - `just lint` is ruff-only; run `ty check` manually.
 
 ## After changing code

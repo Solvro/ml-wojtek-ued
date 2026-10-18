@@ -78,6 +78,7 @@ def base_box_cells():
             cells.append((f"base_box_r{row}c{col}", (x, y), cell))
     return cells
 
+
 # Onboard forward camera (the future VLM's eyes): just past the base box's
 # front face, optical axis along body +x pitched ~15 deg down, wide FOV.
 # xyaxes follow the MJCF convention (camera right, camera up).
@@ -114,6 +115,7 @@ def _xyaxes_to_quat(xyaxes) -> np.ndarray:
     quat = np.zeros(4)
     mujoco.mju_mat2Quat(quat, np.column_stack([x, y, z]).flatten())
     return quat
+
 
 # Leg collision primitives, sized from the link mesh AABBs. Needed for the
 # getup task: without them a fallen robot's legs sink through the floor

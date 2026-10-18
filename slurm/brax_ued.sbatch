@@ -12,17 +12,14 @@
 # task = mode_index * NSEEDS + seed offset over MODES (default "dr accel");
 # seed = SEED0 + offset (NSEEDS 3, SEED0 0: seeds 0-2; NSEEDS 2, SEED0 3:
 # seeds 3-4). Size the array as NSEEDS * number of modes.
-# Assets (robot + the profile's arena: `just build-accel-arena ...` for
-# benchmark, `just build-deploy-arena` for PROFILE=deploy) must already be
-# built; tasks start together and must not rebuild.
+# Assets (robot + accel arena) must already be built; tasks start
+# together and must not rebuild.
 set -euo pipefail
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1
 # fail instead of silently falling back to CPU when CUDA init fails
 # (seen: CUDA_ERROR_MPS_CONNECTION_FAILED on some Lem nodes)
 export JAX_PLATFORMS=cuda
-# warp allocates its collision scratch outside JAX's pool (utils/env.py)
-export XLA_PYTHON_CLIENT_PREALLOCATE=false
 # SRC=<dir>/src, a frozen copy with the built assets/ beside it (wojtek_env
 # resolves assets from src/..), keeps queued jobs on the submitted code
 SRC="${SRC:-$HOME/workspace/ml-wojtek-ued/src}"
@@ -41,9 +38,6 @@ SPACE="${SPACE:-grid}"
 PREFIX="${PREFIX:-v7_brax}"
 # ROBOT=go1 runs Playground's Go1 at its size (robots/go1.py)
 ROBOT="${ROBOT:-wojtek}"
-# PROFILE=deploy trains w01-tek's terrain_blind_v4_4d env + network on the
-# 12x12 m accel_deploy arena, exportable to the robot (docs/deploy.md)
-PROFILE="${PROFILE:-benchmark}"
 if [[ "$SPACE" == param ]]; then
   SPACE_ARGS=(--level_space param --n_edits 2 --edit_scale 0.1)
   GROW=(--mutation grow)
@@ -68,4 +62,4 @@ echo "job ${SLURM_JOB_ID} task ${SLURM_ARRAY_TASK_ID} on ${SLURM_JOB_NODELIST}: 
 uv run --no-sync python "$SRC/scripts/brax_ued.py" --mode "$MODE" --name "$RUN" \
   --seed "$SEED" --entity dominikgalus9-wroc-aw-university-of-science-and-technology \
   --project wojtyla --num_timesteps "${NUM_TIMESTEPS:-300000000}" "${EXTRA[@]}" \
-  --checkpoint_dir "$PDW/artifacts/brax_ued" --robot "$ROBOT" --profile "$PROFILE"
+  --checkpoint_dir "$PDW/artifacts/brax_ued" --robot "$ROBOT"

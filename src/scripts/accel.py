@@ -12,10 +12,8 @@ from omegaconf import OmegaConf
 
 from config.accel_config import AccelConfig
 from config.hfield_config import HFieldConfig
-from hfield.arena import check_arena
 from hfield.manager import HFieldManager
-from hfield.tiles import TileLayout
-from modules.ppo_modules import A2C, Episode
+from modules.ppo_modules import A2C
 from ued.curriculum import decide_replay, generate_branch, replay_branch
 from ued.levels import fill_buffer
 from ued.stopper import PlateauStopper
@@ -44,7 +42,6 @@ from utils.ppo_helpers import (
     make_step,
     warm_start_actor,
 )
-from wojtek_env import paths
 
 ALGO = "accel"
 
@@ -192,21 +189,7 @@ def train(cfg: AccelConfig) -> None:
 
     level_buffer = LevelBuffer(size=cfg.accel_params.buffer_size)
     hfield_config = cast(HFieldConfig, OmegaConf.to_object(cfg.hfield_params))
-    check_arena(paths.terrain_paths("accel")["spec"], hfield_config, "accel")
     hfield_manager = HFieldManager(hfield_config)
-    layout = TileLayout(hfield_config)
-    assemble = jax.jit(layout.assemble)
-    tile_xy = layout.tile_xy(1, cfg.environment_params.envs_num)
-
-    def level_rollout(
-        key: jax.Array, model: A2C, *, hfield_data: jax.Array | None = None
-    ) -> Episode:
-        if hfield_data is None:
-            raise ValueError("accel.py rolls out on one level; pass its hfield_data")
-        # every env on tile 0, the arena's one level
-        arena = assemble(hfield_data[None])
-        return jit_batch_rollout(key, model, hfield_data=arena, tile_xy=tile_xy)
-
     rng = np.random.default_rng(cfg.environment_params.seed)
     fill_buffer(level_buffer, hfield_manager, rng, cfg.accel_params.initial_fill_ratio)
 
@@ -217,7 +200,7 @@ def train(cfg: AccelConfig) -> None:
         replay_prob=cfg.accel_params.replay_prob,
     )
     trainer = PPOTrainer(
-        rollout=level_rollout,
+        rollout=jit_batch_rollout,
         advantage=jit_advantage,
         make_step=jit_make_step,
         epochs=cfg.training_params.epochs,

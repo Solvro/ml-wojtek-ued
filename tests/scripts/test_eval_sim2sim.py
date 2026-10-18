@@ -6,10 +6,9 @@ import mujoco
 import numpy as np
 import pytest
 
-from config.hfield_config import HFieldConfig
 from hfield.level_space import make_level_space
 from scripts import eval_sim2sim as s2s
-from scripts.brax_ued import ROBOT_SCALE, parse_args, run_spec
+from scripts.brax_ued import ROBOT_SCALE, hfield_config
 from scripts.eval_brax import SUITE_STRENGTHS, SUITE_TERRAINS, suite_hfield
 
 ROBOT_XML = """
@@ -205,7 +204,7 @@ def host_inputs(model: mujoco.MjModel, n: int, delay: int) -> list[np.ndarray]:
 
 def test_cpu_physics_step_matches_mj_step(model: mujoco.MjModel) -> None:
     physics = s2s.CpuPhysics(model, threads=2)
-    physics.set_arena(np.full(model.nhfielddata, 0.5, np.float32))
+    physics.set_levels(np.full((3, model.nhfielddata), 0.5, np.float32))
     out = physics.step(5, specs_for(model), *host_inputs(model, 3, delay=2))
     data = mujoco.MjData(model)
     model.hfield_data[:] = 0.5
@@ -227,14 +226,14 @@ def test_cpu_physics_half_dt_runs_two_steps_per_substep(
 ) -> None:
     physics = s2s.CpuPhysics(model, threads=1)
     physics.use(s2s.half_dt(model, None))
-    physics.set_arena(np.full(model.nhfielddata, 0.5, np.float32))
+    physics.set_levels(np.full((1, model.nhfielddata), 0.5, np.float32))
     out = physics.step(5, specs_for(model), *host_inputs(model, 1, delay=0))
     assert out["time"][0] == pytest.approx(5 * 0.004)
 
 
 def test_cpu_physics_drops_diverged_env(model: mujoco.MjModel) -> None:
     physics = s2s.CpuPhysics(model, threads=1)
-    physics.set_arena(np.full(model.nhfielddata, 0.5, np.float32))
+    physics.set_levels(np.full((1, model.nhfielddata), 0.5, np.float32))
     inputs = host_inputs(model, 1, delay=0)
     inputs[1][:] = 1e30
     out = physics.step(5, specs_for(model), *inputs)
@@ -244,35 +243,31 @@ def test_cpu_physics_drops_diverged_env(model: mujoco.MjModel) -> None:
     assert physics.take_diverged() == 0
 
 
-def test_cpu_physics_rejects_arena_of_another_model(model: mujoco.MjModel) -> None:
+def test_cpu_physics_rejects_batch_level_mismatch(model: mujoco.MjModel) -> None:
     physics = s2s.CpuPhysics(model, threads=1)
-    with pytest.raises(ValueError, match="TileLayout.assemble"):
-        physics.set_arena(np.full((2, model.nhfielddata), 0.5, np.float32))
+    physics.set_levels(np.full((2, model.nhfielddata), 0.5, np.float32))
+    with pytest.raises(ValueError, match="set_levels"):
+        physics.step(5, specs_for(model), *host_inputs(model, 3, delay=0))
 
 
-def test_cpu_physics_loads_the_arena_into_every_thread(
-    model: mujoco.MjModel,
-) -> None:
-    physics = s2s.CpuPhysics(model, threads=2)
-    arena = np.linspace(0.0, 1.0, model.nhfielddata, dtype=np.float32)
-    physics.set_arena(arena)
-    physics.step(1, specs_for(model), *host_inputs(model, 2, delay=0))
-    for m in physics.models:
-        np.testing.assert_array_equal(m.hfield_data, arena)
-
-
-def level_case(
-    robot: str = "wojtek",
-) -> tuple[argparse.Namespace, dict, HFieldConfig]:
-    flags = ["--mode", "dr", "--name", "t", "--robot", robot, "--level_space", "param"]
-    spec = run_spec(parse_args(flags))
-    args = argparse.Namespace(num_levels=8, suite_instances=3, seed=1234)
-    return args, spec, HFieldConfig(**spec["hfield"])
+def level_args(robot: str = "wojtek") -> argparse.Namespace:
+    return argparse.Namespace(
+        robot=robot,
+        amplitude=0.3,
+        coarse_n=13,
+        pad_radius=0.55,
+        pad_taper=0.2,
+        level_space="param",
+        num_levels=8,
+        suite_instances=3,
+        seed=1234,
+    )
 
 
 def test_level_sets_names_and_sizes() -> None:
-    args, spec, config = level_case()
-    sets = s2s.level_sets(args, spec, config)
+    args = level_args()
+    config = hfield_config(args)
+    sets = s2s.level_sets(args, config)
     cells = [f"suite/{t}_{k}" for t in SUITE_TERRAINS for k in (1, 2)]
     assert list(sets) == ["flat", "param/uniform", *cells]
     assert sets["param/uniform"].shape == (8, config.grid_size**2)
@@ -281,17 +276,19 @@ def test_level_sets_names_and_sizes() -> None:
 
 
 def test_uniform_levels_are_eval_brax_prefix() -> None:
-    args, spec, config = level_case()
+    args = level_args()
+    config = hfield_config(args)
     space = make_level_space("param", config, n_edits=1, edit_scale=0.0)
     eval_brax = space.uniform(np.random.default_rng(args.seed + 1), 2048)
     np.testing.assert_array_equal(
-        s2s.level_sets(args, spec, config)["param/uniform"], space.render(eval_brax[:8])
+        s2s.level_sets(args, config)["param/uniform"], space.render(eval_brax[:8])
     )
 
 
 @pytest.mark.parametrize("robot", ["wojtek", "go1"])
 def test_suite_cells_match_eval_brax(robot: str) -> None:
-    args, spec, config = level_case(robot)
+    args = level_args(robot)
+    config = hfield_config(args)
     rng = np.random.default_rng(args.seed)
     scale = ROBOT_SCALE[robot]
     eval_brax = {
@@ -301,7 +298,7 @@ def test_suite_cells_match_eval_brax(robot: str) -> None:
         for t in SUITE_TERRAINS
         for k in SUITE_STRENGTHS
     }
-    sets = s2s.level_sets(args, spec, config)
+    sets = s2s.level_sets(args, config)
     for name, hfields in sets.items():
         if name.startswith("suite/"):
             np.testing.assert_array_equal(hfields, eval_brax[name])

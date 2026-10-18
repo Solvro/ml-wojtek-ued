@@ -36,12 +36,9 @@ value, entropy, reward, done)`.
 **Rollout** (data collection, no gradient):
 
 - `policy_step` — one env step under `lax.scan`; optional `hfield_data` threads
-  the tiled arena (shared by every env) through.
+  the ACCEL level through.
 - `rollout` — reset + scan for `steps_in_episode`.
-- `batch_rollout` — `vmap` over `envs_num` keys, one model; with an arena,
-  `tile_xy` (envs_num, 2) places each env on its tile (`accel.py`: all on
-  tile 0; `ppo_dr_terrain.py`: `min(envs_num, tiles²)` fresh levels per
-  iteration, env i on level i mod that).
+- `batch_rollout` — `vmap` over `envs_num` keys, one model, one level.
 
 **Advantage:**
 
@@ -100,10 +97,10 @@ and a per-iteration `dr_model` fed into `batch_rollout`.
   `dr_model`/`dr_in_axes` pair, defaulting to `None` — a no-op for
   `scripts/ppo.py`/`scripts/accel.py`/`scripts/accel_top_k.py`. Inside the
   vmapped rollout, `FunctionalEnv._swapped_model` swaps `dr_model` into
-  `_mjx_model` for the call, the same trick it uses for the shared tiled
-  arena's `hfield_data` (see
-  [environment.md](environment.md#hfield-mutability)) — DR and the arena
-  compose since both just `tree_replace` fields onto the same model.
+  `_mjx_model` for the call, the same trick `_swapped_hfield` already used for
+  the ACCEL heightfield (see
+  [environment.md](environment.md#hfield-mutability)) — DR and hfield
+  swapping compose since both just `tree_replace` fields onto the same model.
 - Eval (`eval`/`eval_rollout`/`eval_step`) does not take a `dr_model`, so
   `mean_return` is always measured on the nominal (non-randomized) physics.
 
@@ -175,19 +172,21 @@ training script's Hydra config.
 
 ## Eval script — `scripts/eval.py`
 
-A Hydra app over a dataclass (`EvalConfig`, config `eval_config` — it needs no
-training config, only the run's `meta.json`): `just eval
-algo={ppo,ppo_dr,accel,accel_top_k} [run=NAME] [step=N] [artifacts_dir=DIR]
-[envs_num=N] [steps=N] [seed=N]`. `algo` is `utils/checkpoint.Algo`, a
-`str` `Enum` — invalid values fail fast with a clear error.
+A `pyrallis` CLI over a dataclass (`EvalConfig`, not Hydra — it needs no
+training config, only the run's `meta.json`): `just eval --algo
+{ppo,ppo_dr,accel,accel_top_k} [--run NAME] [--step N] [--artifacts_dir DIR]
+[--envs_num N] [--steps N] [--seed N]`. `algo` is `utils/checkpoint.Algo`, a
+`str` `Enum` — invalid values fail fast with a clear error instead of
+`argparse`'s `choices=`. `pyrallis` also accepts `--config_path
+some.yaml` to load flags from a file instead of/in addition to the CLI.
 
-1. Resolve the run directory (`run=`, else `latest_run_dir`) and load its
+1. Resolve the run directory (`--run`, else `latest_run_dir`) and load its
    `meta.json`.
 2. Rebuild `FunctionalEnv(task=meta.env_task, env_overrides=meta.env_overrides,
    seed=meta.env_seed)` and a template `A2C` from the meta shape fields.
-3. `restore_checkpoint` (model-only, `step=` or latest) and run the same
+3. `restore_checkpoint` (model-only, `--step` or latest) and run the same
    `eval` used during training (deterministic actions, nominal physics —
-   `dr_model`/`hfield_data` are not part of eval regardless of `algo=`).
+   `dr_model`/`hfield_data` are not part of eval regardless of `--algo`).
 4. Print `mean_return`.
 
 It is a skeleton: one metric, no video/rollout dump, no batch comparison
@@ -195,17 +194,17 @@ across runs — extend it here as evaluation needs grow.
 
 ## Levels-generalization eval — `scripts/eval_levels.py`
 
-Same Hydra `EvalLevelsConfig` shape and run-resolution as
+Same `pyrallis`/`EvalLevelsConfig` CLI shape and run-resolution as
 `scripts/eval.py`, but measures generalization to freshly generated
-heightfield levels instead of one fixed course: `just eval-levels
-algo={ppo,ppo_dr,accel,accel_top_k} [run=NAME] [step=N] [num_levels=N]
-[episodes_per_level=N] [chunk_size=N] [steps=N] [seed=N]`. Rebuilds the env from `meta.env_overrides` (so the observation
+heightfield levels instead of one fixed course: `--algo
+{ppo,ppo_dr,accel,accel_top_k} [--run NAME] [--step N] [--num_levels N]
+[--episodes_per_level N] [--chunk_size N] [--steps N] [--seed N] [--output
+path.npz]`. Rebuilds the env from `meta.env_overrides` (so the observation
 shape matches what the checkpoint was trained with — `ppo`/`ppo_dr` don't
 train with `terrain`/`height_scan` obs terms, `accel`/`accel_top_k` do), then
 force-merges `terrain.enable`/`arena=accel` on top regardless of the
 checkpoint's own training arena — needs `just build-accel-arena` first. Generates
-`num_levels` levels in `chunk_size`-sized batches (at most the arena's
-`tiles²` = 256, default 256; level i of a chunk on tile i; one `jit` compile, reused
+`num_levels` levels in `chunk_size`-sized batches (one `jit` compile, reused
 across chunks since every chunk is the same shape), evaluates
 `episodes_per_level` episodes each via `utils/ppo_helpers.eval_levels`, and
 logs:
@@ -256,10 +255,9 @@ model_dir, target=array_template)` against the `model/` item dir.
 Mirrors `wojtek_env/tools/check_model_mjx.py`'s `mujoco.viewer.launch_passive`
 loop: steps the jitted `FunctionalEnv`/`A2C.deterministic_action` pair, then
 copies `state.data.qpos`/`qvel` into a plain `mujoco.MjData` and `mj_forward`s
-it for rendering. The policy runs on tile 0 of the tiled arena; the viewer
-shows a one-tile copy of the scene (`hfield.arena.single_tile_spec`) with the
-episode's `HFieldManager.generate` level written into its `hfield_data` and
-`qpos` shifted to the origin, so it matches the level the policy steps on.
+it for rendering. Each episode's `HFieldManager.generate` level is also
+written into `mj_model.hfield_data` so the viewer's static terrain visually
+matches the level the policy is actually stepping on.
 
 ## Logging — `utils/logging.py`
 

@@ -13,11 +13,6 @@ class HFieldConfig:
     pad_taper: float = 0.3  # ramp width from flat pad to full terrain
     n_edits: int = 4  # control points touched per mutation
     edit_scale: float = 0.1  # max +/- change to an edited control point
-    tiles: int = 16  # tiles per side of the shared arena, one level each
-    # m from its tile centre a robot can read terrain within one level:
-    # 0.15 jitter + 1.3 m/s max command x 6 s + 1.48 m height scan = 9.43,
-    # rest is margin for overshoot and pushes; sets the gap between tiles
-    reach: float = 10.0
 
     @property
     def grid_size(self) -> int:

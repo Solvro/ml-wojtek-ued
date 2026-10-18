@@ -75,8 +75,6 @@ export HYDRA_FULL_ERROR=1
 
 export PYTHONPATH="$ROOT_DIR/src:${PYTHONPATH:-}"
 export PYTHONUNBUFFERED=1
-# warp allocates its collision scratch outside JAX's pool (src/utils/env.py)
-export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export TOKENIZERS_PARALLELISM=false
 export HF_TOKEN=""
 export WANDB_API_KEY=""
