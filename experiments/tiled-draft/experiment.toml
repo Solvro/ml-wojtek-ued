@@ -52,3 +52,11 @@ ssh_host = "wcss"
 
 [report]
 url = ""
+
+[[cluster.jobs]]
+id = 6123295
+label = "setup (assets into td-d217762)"
+
+[[cluster.jobs]]
+id = 6123296
+label = "sanity: v10 eval jax/warp x wojtek/go1"

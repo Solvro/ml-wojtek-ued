@@ -19,3 +19,5 @@
 
 | job | what | submitted |
 |---|---|---|
+| 6123295 | setup: robot model + v10 tiled arena into `copies/td-d217762` | 2026-10-18 |
+| 6123296 | sanity array 0-3 (afterok 6123295) | 2026-10-18 |
