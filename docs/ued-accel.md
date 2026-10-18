@@ -124,15 +124,8 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   - Mode options `mode=accel_grow` (grow) and `mode=accel_sfl` (grow +
     learnability). `brax_ued.sbatch` adds `level_space.n_edits=16` to both
     on `SPACE=grid`.
-- `mode=paired`: PAIRED (port of `feat/paired-implementation`'s design
-  onto the brax student). A learned adversary (`modules/generator.py`,
-  latent seed -> sigmoid-squashed Gaussian over the genome) proposes
-  `num_lanes` levels; protagonist and antagonist (two brax students) both
-  train on them; regret = antagonist max return - protagonist mean return
-  per level, clipped at 0, is the adversary's reward (single-step PPO, 5
-  epochs, HiEnt `gen_entropy_coef=0.1`, no BC distillation yet).
-  `env_steps`/`num_timesteps` count protagonist steps only; the antagonist
-  doubles the real simulation cost (`sim_steps` counts both).
+- `mode=paired` / `paired_uni` / `paired_bi` / `paired_evo`: PAIRED and
+  its variants, two students; see [PAIRED](#paired).
 - `mode=plr`: robust PLR (PLR⊥) - ACCEL's buffer, rank/staleness replay
   and score refresh, but no mutation; explore iterations score fresh
   uniform (DR) levels.
@@ -165,6 +158,81 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   `pad_radius`, height scale, level grid, tiles, gap); the error names the
   `just build-accel-arena arena...` command for it. Training and the
   builder read the same `arena` group, so the default needs no override.
+
+## PAIRED variants {#paired}
+
+Two brax students (protagonist = the checkpointed deliverable, antagonist),
+each with its own params, optimizer and running obs normalizer. Port of
+`feat/paired-implementation`'s design (PR #10, old own-PPO trainer) and of
+*Stabilizing UED with a Learned Adversary* (Mediratta et al. 2023).
+
+| `mode=` | level source | students | adversary |
+|---|---|---|---|
+| `paired` | learned adversary | both train every iteration | trained on regret |
+| `paired_uni` | as `paired` | + UniBC | as `paired` |
+| `paired_bi` | as `paired` | + BiBC | as `paired` |
+| `paired_evo` | ACCEL's buffer / mutation | train on replay iterations | none |
+
+`mode.bc` is a field, so the presets are just `paired` + `bc`; BC on
+PAIRED+Evo is `mode=paired_evo mode.bc=uni|bi`. `mode.bc` on a one-student
+curriculum (`dr*`, `accel`, `plr`) fails at startup.
+
+- **PAIRED regret** (`modules/paired.py:paired_regret`), per level over its
+  `envs_per_lane` episodes: `max(antag max return - prot mean return, 0)`.
+  Both students run the same levels in separate rollouts (own reset keys
+  and physics DR draws), protagonist first.
+- **Adversary** (`mode=paired*`): `modules/generator.py`, latent seed ->
+  sigmoid-squashed Gaussian over the genome (`param`: the 8 parameters, a
+  random seed appended), `num_lanes` levels per iteration; reward = PAIRED
+  regret; single-step PPO, 5 epochs, clip 0.2, batch-mean baseline,
+  `gen_entropy_coef` (0.1, HiEnt on the teacher), `gen_learning_rate`.
+- **Student HiEnt**: `mode.student_entropy_coef` is brax's `entropy_cost`
+  for every student of every mode; default `0.01` = the mujoco_playground
+  recipe (unchanged runs). The paper's HiEnt raises it on both PAIRED
+  students (PR #10 used `0.05`).
+- **UniBC / BiBC** (paper Sec. 4.3): adds `bc_coef * KL(pi_teacher ||
+  pi_student)` to the student's PPO loss, teacher stop-gradient, on the
+  student's own minibatch observations.
+  - `uni`: protagonist <- antagonist. `bi`: also antagonist <- protagonist,
+    the protagonist as this iteration's updates left it (it trains first).
+  - Teacher = the other student's policy params and its own normalizer
+    (`Student.as_teacher`), fixed during the student's iteration.
+  - KL (`modules/paired.py:policy_kl`): brax's `NormalTanhDistribution`
+    turns the policy logits into `loc`, `softplus(raw) + 0.001`; both
+    students push the Gaussian through the same tanh, and KL is invariant
+    under a shared bijection, so the closed-form diagonal-Gaussian KL of
+    the base distributions is the KL of the squashed policies.
+  - Applied when `it % bc_every == 0` (`bc_coefs`); `bc_coef` reaches the
+    jitted update as a traced scalar (0 on other iterations), so no
+    recompile. A student that never distils (`none`; the antagonist under
+    `uni`) gets no BC term at all, so `mode=paired` trains as before.
+- **PAIRED+Evo** (`mode=paired_evo`): `accel_iteration` unchanged, with
+  `score_levels` -> `run_pair`, so the level score is PAIRED regret over
+  both students instead of positive value loss (`mode.score` must stay
+  `pvl`).
+  - Explore iterations: queued children plus fresh levels from ACCEL's
+    explore generator (`mode.generator`), rolled out by both students
+    without updates, scored, added to the buffer.
+  - Replay iterations (`replay_prob`): rank+staleness-sampled buffer
+    levels, both students train (HiEnt + `mode.bc`), scores refreshed,
+    mutations (`mode.mutation`) queued and scored on the next explore
+    iteration (ACCEL's order, not PR #10's score-right-after-replay).
+- **Logged** (all four): `paired_regret_mean`, `prot_return`,
+  `antag_return`, `antag_forward_vel`, `prot_bc_kl` / `antag_bc_kl`
+  (mean KL(other student || this one) over the iteration's observations,
+  after each update; logged under `none` too, as a policy-distance
+  diagnostic), `bc_coef` (the protagonist's weight this iteration, 0 when
+  off or not training); `gen_loss` on `paired*`; the ACCEL buffer stats
+  on `paired_evo`. Student metrics without a prefix are the protagonist's.
+- **Cost**: every iteration simulates both students, explore iterations of
+  `paired_evo` included: `sim_steps` = 2 x `env_steps`;
+  `env_steps`/`num_timesteps` and `student_train_steps` count protagonist
+  steps. BC adds one teacher policy forward per minibatch and one KL
+  forward per unroll (physics is ~98% of an iteration). Each student jits
+  its own update, so compile time roughly doubles (CPU smoke, 2 x 16 envs:
+  ~2.5 min to the first logged iteration).
+- WCSS: `MODES="paired paired_uni paired_bi paired_evo"` on
+  `brax_ued.sbatch` / `eval_brax.sbatch` (entries are `mode` options).
 
 ## Throughput {#throughput}
 

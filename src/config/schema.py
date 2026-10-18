@@ -30,6 +30,7 @@ class Curriculum(StrEnum):
     accel = "accel"
     plr = "plr"
     paired = "paired"
+    paired_evo = "paired_evo"
 
 
 class Mutation(StrEnum):
@@ -45,6 +46,12 @@ class Score(StrEnum):
 class Generator(StrEnum):
     easy = "easy"
     mixed = "mixed"
+
+
+class BC(StrEnum):
+    none = "none"
+    uni = "uni"
+    bi = "bi"
 
 
 class LevelSpaceKind(StrEnum):
@@ -77,6 +84,10 @@ class ModeConfig:
     latent_dim: int = MISSING
     gen_learning_rate: float = MISSING
     gen_entropy_coef: float = MISSING
+    student_entropy_coef: float = MISSING
+    bc: BC = MISSING
+    bc_coef: float = MISSING
+    bc_every: int = MISSING
 
 
 @dataclass

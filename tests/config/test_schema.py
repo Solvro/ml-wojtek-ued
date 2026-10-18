@@ -8,6 +8,7 @@ from omegaconf.errors import MissingMandatoryValue
 
 from config.hfield_config import HFieldConfig
 from config.schema import (
+    BC,
     CONF_DIR,
     Backend,
     Curriculum,
@@ -52,6 +53,9 @@ OPTIONS = {
         "accel_sfl",
         "plr",
         "paired",
+        "paired_uni",
+        "paired_bi",
+        "paired_evo",
     ),
     "level_space": ("grid", "param"),
     "arena": ("v10",),
@@ -121,6 +125,34 @@ def test_mode_sets_its_curriculum_switches(
     assert cfg.mode.score == score
     assert cfg.mode.generator_scale == 0.1
     assert cfg.mode.buffer_size == 4000
+
+
+@pytest.mark.parametrize(
+    ("mode", "curriculum", "bc"),
+    [
+        ("paired", Curriculum.paired, BC.none),
+        ("paired_uni", Curriculum.paired, BC.uni),
+        ("paired_bi", Curriculum.paired, BC.bi),
+        ("paired_evo", Curriculum.paired_evo, BC.none),
+    ],
+)
+def test_paired_modes_set_their_distillation(
+    compose_cfg: Compose, mode: str, curriculum: Curriculum, bc: BC
+) -> None:
+    cfg = compose_cfg("train", f"mode={mode}", "name=t")
+    assert (cfg.mode.curriculum, cfg.mode.bc) == (curriculum, bc)
+    assert (cfg.mode.bc_coef, cfg.mode.bc_every) == (0.5, 1)
+
+
+def test_bc_is_a_field_on_paired_evo(compose_cfg: Compose) -> None:
+    cfg = compose_cfg("train", "mode=paired_evo", "name=t", "mode.bc=bi")
+    assert (cfg.mode.curriculum, cfg.mode.bc) == (Curriculum.paired_evo, BC.bi)
+
+
+def test_student_entropy_default_is_brax_recipe(compose_cfg: Compose) -> None:
+    for mode in OPTIONS["mode"]:
+        cfg = compose_cfg("train", f"mode={mode}", "name=t")
+        assert cfg.mode.student_entropy_coef == 0.01
 
 
 @pytest.mark.parametrize(
@@ -197,6 +229,7 @@ def test_as_dict_writes_enums_as_strings(compose_cfg: Compose) -> None:
         ("mode=dr", "name=t", "seed=abc"),
         ("mode=dr", "name=t", "backend=cuda"),
         ("mode=dr", "name=t", "mode.score=learnabilty"),
+        ("mode=paired", "name=t", "mode.bc=unibc"),
         ("mode=dr", "name=t", "prefixes.go1=x"),
     ],
 )

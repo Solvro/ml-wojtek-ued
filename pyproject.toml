@@ -35,6 +35,9 @@ dev = ["pytest>=8.0.0", "ruff>=0.14.1"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = ["slow: end-to-end CPU training runs (minutes each)"]
+# `pytest -m slow` runs them
+addopts = ["-m", "not slow"]
 # third-party: brax/distrax import the unmaintained jaxopt at import time;
 # mjx's hfield collision writes float64 max into a float32 distance
 # (collision_convex._convex_convex)
