@@ -12,21 +12,20 @@ it when the code changes.**
 | Anything — get oriented | [docs/overview.md](docs/overview.md) |
 | Install, deps/pins, building assets, running | [docs/setup.md](docs/setup.md) |
 | The env, tasks, terrain, `FunctionalEnv`, the shared tiled arena | [docs/environment.md](docs/environment.md) |
-| PPO model / rollout / loss / checkpoints / logging | [docs/ppo.md](docs/ppo.md) |
-| ACCEL curriculum, heightfield levels, convergence | [docs/ued-accel.md](docs/ued-accel.md) |
-| Config fields, Hydra overrides | [docs/configuration.md](docs/configuration.md) |
+| `brax_ued.py` trainer, curriculum modes, heightfield levels, eval/render/paper scripts | [docs/ued-accel.md](docs/ued-accel.md) |
+| `HFieldConfig` fields, arena-builder Hydra overrides | [docs/configuration.md](docs/configuration.md) |
 | Layout rules, tooling, adding features, gotchas | [docs/development.md](docs/development.md) |
-| Running training/eval on the cluster | [docs/slurm_recommended.md](docs/slurm_recommended.md) |
+| Running training/eval on the cluster | `slurm/*.sbatch`, [docs/ued-accel.md](docs/ued-accel.md#brax-ued) |
 
 ## Where code lives
 
 - `src/wojtek_env/` — extracted env library. **Do not add files here**; it is
   ruff-excluded and hatchling-packaged. The one edit point is
   `envs/registry.py` (register a task).
-- `src/{config,modules,utils,hfield,ued}/`, `src/scripts/` — research code.
+- `src/{config,modules,utils,hfield,robots}/`, `src/scripts/` — research code.
   Add new work here as sibling packages.
-- `src/ued/` — the ACCEL algorithm, split by role (`types`, `regret`, `levels`,
-  `stopper`, `curriculum`). Keep the split; don't recreate a `helpers` grab-bag.
+- `src/scripts/brax_ued.py` — the only trainer (brax PPO pieces + our level
+  loop on the shared tiled arena); the eval/render/paper scripts import from it.
 
 ## Project-specific rules (override / complement the global)
 

@@ -78,44 +78,7 @@ build:
 build-accel-arena *args:
     uv run python -m hfield.arena {{ args }}
 
-# --- training ---
-
-# Run the PPO training script (pass hydra overrides, e.g. `just train training_params.epochs=8`)
-[group('train')]
-train *args:
-    uv run python src/scripts/ppo.py {{ args }}
-
-# Run PPO with baseline domain randomization (pass hydra overrides)
-[group('train')]
-train-dr *args:
-    uv run python src/scripts/ppo_dr.py {{ args }}
-
-# Run the ACCEL training script (pass hydra overrides); needs build-accel-arena first
-[group('train')]
-accel *args:
-    uv run python src/scripts/accel.py {{ args }}
-
-# Run the batched-lanes/top-k ACCEL variant (pass hydra overrides); needs build-accel-arena first
-[group('train')]
-accel-top-k *args:
-    uv run python src/scripts/accel_top_k.py {{ args }}
-
 # --- evaluation ---
-
-# Evaluate a checkpoint (pass hydra overrides, e.g. `just eval algo=ppo run=my_run step=5000`)
-[group('eval')]
-eval *args:
-    uv run python src/scripts/eval.py {{ args }}
-
-# Evaluate a checkpoint's generalization across generated levels; needs build-accel-arena first
-[group('eval')]
-eval-levels *args:
-    uv run python src/scripts/eval_levels.py {{ args }}
-
-# Watch a checkpoint walk random ACCEL levels in the MuJoCo viewer (pass argparse flags, e.g. `just eval-sim --checkpoint artifacts/accel_checkpoint`)
-[group('eval')]
-eval-sim *args:
-    uv run mjpython src/scripts/eval_sim.py {{ args }}
 
 # mp4 clips of a brax_ued.py checkpoint on generated levels (e.g. `just render-video --checkpoint run.pkl --level 0.75:3`); MUJOCO_GL defaults to cgl on macOS, egl elsewhere
 [group('eval')]

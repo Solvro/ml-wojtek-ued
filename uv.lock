@@ -1311,15 +1311,6 @@ wheels = [
 ]
 
 [[package]]
-name = "orbax"
-version = "0.1.9"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "orbax-checkpoint" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/c7/78/0e144f12703c95d4495e9abc390c2f548ee9f24d2e487137108a921b1d81/orbax-0.1.9.tar.gz", hash = "sha256:42dd487ceef9fbf027f4720f3d041686af75120466a528a8a8141226bc197218", size = 1649, upload-time = "2023-09-06T20:43:02.819Z" }
-
-[[package]]
 name = "orbax-checkpoint"
 version = "0.12.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2143,7 +2134,6 @@ dependencies = [
     { name = "mujoco-mjx" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "orbax" },
     { name = "playground" },
     { name = "ruff" },
     { name = "wandb" },
@@ -2170,7 +2160,6 @@ requires-dist = [
     { name = "mujoco", specifier = ">=3.2.0" },
     { name = "mujoco-mjx", specifier = "==3.10.0" },
     { name = "numpy" },
-    { name = "orbax", specifier = ">=0.1.9" },
     { name = "playground", specifier = ">=0.0.4" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "ruff", specifier = ">=0.16.2" },

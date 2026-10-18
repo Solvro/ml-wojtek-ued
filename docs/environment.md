@@ -30,8 +30,7 @@ vector.
 locomotion-quality and sim2real-robustness features that ship
 `enable=False`/`scale=0.0`; the config value itself already documents each
 one inline. `utils/env_overrides.py`'s `movement_overrides()`
-([ppo.md](ppo.md#shared-env-overrides--utilsenv_overridespy)) turns on the
-task-independent ones for `scripts/ppo_dr.py`/`accel.py`/`accel_top_k.py`:
+([below](#env-overrides)) turns on the task-independent ones:
 
 - `latency`, `encoder` — substep control latency and joint-encoder
   miscalibration randomization (sim2real robustness; `action_delay=1` is a
@@ -76,8 +75,7 @@ task-independent ones for `scripts/ppo_dr.py`/`accel.py`/`accel_top_k.py`:
 
 These read zero / never fire on the flat scene (`terrain.enable=False`), so
 they only make sense once terrain is on. `terrain_overrides()` turns them on
-for `scripts/accel.py`/`accel_top_k.py`; `scripts/ppo_dr.py` trains flat and
-skips them:
+for the tiled-arena scripts:
 
 - `height_scan` — body-frame grid of terrain heights ahead of the robot;
   **privileged-only** (`"height_scan_clean"` in `obs.privileged`, i.e. the
@@ -147,9 +145,11 @@ gain/kd actuator scale — the library's baseline domain randomization. Passing
 a `dr_cfg` dict (shape mirrors `randomize._DEFAULT_DR`) turns on extra,
 independently-gated fields: `com_offset`, `joint_gains` (per-actuator instead
 of one shared scale), `dof` (damping/armature/frictionloss), `foot_friction`,
-`motor_strength`. None of this repo's trainer scripts expose `dr_cfg`
-overrides yet — `scripts/ppo_dr.py` (see [ppo.md](ppo.md#domain-randomization-scriptsppo_drpy))
-uses the baseline five-field form via `FunctionalEnv(domain_randomize=True)`.
+`motor_strength`. `brax_ued.py` exposes no `dr_cfg`
+overrides; it uses the baseline five-field form via
+`FunctionalEnv(domain_randomize=True)`, which draws one randomized
+`mjx.Model` per parallel env (`FunctionalEnv.sample_dr`) and keeps the
+`jax.vmap` axis spec for it.
 
 `terrain/terrain_wrapper.py`'s `wrap_for_terrain_brax_training` also accepts a
 `randomization_fn` and applies it through mujoco_playground's
@@ -159,7 +159,7 @@ mechanism instead (below), consistent with the hfield swap it already does.
 
 ## FunctionalEnv — the training bridge
 
-`utils/env.py` `FunctionalEnv` is what the PPO/ACCEL trainers actually use. It
+`utils/env.py` `FunctionalEnv` is what `brax_ued.py` and the eval scripts use. It
 wraps `registry.make_env` + brax `EpisodeWrapper` and exposes pure `reset`/`step`
 usable under `jit`/`vmap`.
 
@@ -197,7 +197,44 @@ usable under `jit`/`vmap`.
   `_swapped_model` installs as `_mjx_model` outright instead of
   `tree_replace`-ing one field. The two compose: passing both swaps
   `dr_model` in first, then `tree_replace`s `hfield_data` on top
-  (`brax_ued.py`, `ppo_dr_terrain.py`).
+  (`brax_ued.py`).
+
+## Shared env overrides — `utils/env_overrides.py` {#env-overrides}
+
+`registry.py`'s task defaults leave most locomotion-quality and sim2real
+robustness features off (`enable=False`/`scale=0.0`) — see
+[task config knobs](#task-config-knobs-off-by-default) for the
+full inventory. `brax_ued.py` (and through it `eval_brax.py`, `eval_sim2sim.py`) and
+`check_hfield_batch.py` turn the same set on rather than repeating one large
+dict:
+
+- `merge_overrides(*dicts)` — deep-merges nested override dicts (a plain
+  `{**a, **b}` would clobber a whole nested key, e.g. `command`, if two
+  sources both touch it).
+- `movement_overrides()` — task-independent: `latency`/`encoder` noise,
+  `symmetry` mirror augmentation, `real_pose_ref`, `action_filter`, the
+  `command.pure_*_prob` clean-command modes, `no_progress`,
+  `gait.air_time_cap`, `fall.max_toggle_deg`, and the `reward` scale/gate
+  fields that were `0.0`/`False` in `registry.py`.
+- `terrain_overrides()` — terrain-only (`height_scan`, `reward.terrain_gate`,
+  `reward.scales.flat_pitch`, `command.terrain_bias`, `fall.on_base_contact`,
+  and the `obs.state`/`obs.privileged` lists extended with
+  `height_scan`/`height_scan_clean`). Only for runs on the tiled arena; on a
+  flat scene `terrain_gate`/`height_scan` read zero anyway (see
+  [terrain-only knobs](#terrain-only-knobs)).
+- Enabling `height_scan` changes `actor_obs_dim`/`critic_obs_dim` (+25 each,
+  `NX*NY`); this needs no wiring because `FunctionalEnv.observation_size` reads the size
+  off a live env probe, not a hardcoded constant. `symmetry` + `height_scan` compose
+  correctly out of the box — `wojtek_env.envs.symmetry.obs_mirror` already
+  has a registered mirror map for the `height_scan`/`height_scan_clean`
+  catalog entries.
+- Most of the `movement_overrides()`/`terrain_overrides()` magnitudes
+  (`action_filter`, `tracking_far_weight`, `orientation_tol_deg`, the new
+  `reward.scales` values, the `command.pure_*_prob` values,
+  `fall.max_toggle_deg`, `gait.air_time_cap`) are **untuned estimates**
+  reasoned by analogy to sibling terms already set in `registry.py` — grep
+  turns up no prior tuning history for these fields in this repo. Treat them
+  as a starting point, not a validated config.
 
 ## Why the arena swap is free {#hfield-mutability}
 
@@ -241,7 +278,7 @@ Two things must follow the swap, or the level only exists on paper:
   ~0.3 GB each at 8192 envs) outside JAX's pool. Upstream measured a
   mid-run OOM with JAX preallocating and calls turning it off mandatory on
   terrain; `FunctionalEnv` refuses warp unless
-  `XLA_PYTHON_CLIENT_PREALLOCATE=false`, and the justfile, `slurm.sh` and
+  `XLA_PYTHON_CLIENT_PREALLOCATE=false`, and the justfile and
   `slurm/*.sbatch` export it. Upstream's presets spell it
   `XLA_PYTHON_CLIENT_PREALLOC=false`, which is not a variable JAX reads.
 - **Warp CUDA graphs** — mjx's warp FFI (`GraphMode.WARP`) captures one
@@ -273,11 +310,10 @@ with it (`hfield/arena.py`).
   1.2 m/s): 0.15 + 6 x 1.2 + 1.48 = 8.83 m. Gap 7 m, 4161² nodes (208 m,
   69 MB); Go1: `reach` x 2.5, gap 17.5 m.
 - `TileLayout.check_reach`: every script that puts several levels on the
-  arena (`brax_ued`, `eval_brax`, `eval_sim2sim`, `eval_levels`,
-  `accel_top_k`, `ppo_dr_terrain`) fails at startup when its steps per
+  arena (`brax_ued`, `eval_brax`, `eval_sim2sim`) fails at startup when its steps per
   level exceed the budget; training counts the critic's scan, eval only the
   deterministic policy's obs and feet. 1000-step levels need ~28 m: not
-  supported (`eval_sim` runs one level, neighbours flat).
+  supported.
 - `TileLayout.leaked(xy, tile_xy, sensing)`: base past `patch_radius + gap
   - sensing` (Chebyshev) from the own centre = reads another tile.
   `brax_ued.py` logs `tile_leak_frac` (envs that got there during the
@@ -291,7 +327,7 @@ with it (`hfield/arena.py`).
 - Float32 positions differ per tile, which perturbs a standing robot
   slightly (chaotic spawn settle): ~0.5 mm in the 2x2-tile test arena
   (`tests/utils/test_env.py`), far below a level's features.
-- CPU rendering (`paper_terrains.py`, `eval_sim.py`)
+- CPU rendering (`paper_terrains.py`, `render_video.py`)
   uses `hfield.arena.single_tile_spec`: the scene cut to one tile with the
   level at the origin; the renderer meshes the whole hfield, which for the
   full arena is millions of cells.
