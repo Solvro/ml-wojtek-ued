@@ -249,7 +249,7 @@ def make_unroll(env: FunctionalEnv, make_policy: Any, dr_in_axes: Any):
         _, state, reward, done, info = env.step(
             jax.random.key(0), state, action, hfield, dr_model
         )
-        return state, reward, done, info["truncation"]
+        return state, reward, done, info["truncation"], info["diverged"]
 
     # the arena's hfield_data is shared by every env (warp needs it unbatched)
     v_step = jax.vmap(step_one, in_axes=(0, 0, None, dr_in_axes))
@@ -263,7 +263,7 @@ def make_unroll(env: FunctionalEnv, make_policy: Any, dr_in_axes: Any):
             key, act_key = jax.random.split(key)
             action, extras = policy(state.obs, act_key)
             cmd_vx = state.info["command"][:, 0]
-            next_state, reward, done, truncation = v_step(
+            next_state, reward, done, truncation, diverged = v_step(
                 state, action, hfield, dr_model
             )
             transition = types.Transition(
@@ -278,6 +278,7 @@ def make_unroll(env: FunctionalEnv, make_policy: Any, dr_in_axes: Any):
                     "state_extras": {"truncation": truncation},
                     "log": {
                         "fell": done * (1.0 - truncation),
+                        "diverged": diverged,
                         "reward": reward,
                         "cmd_vx": cmd_vx,
                         "forward_vel": jax.vmap(body_velocity)(next_state.data)[:, 0],
@@ -406,6 +407,8 @@ def run_levels(
         "train_success": float(success.mean()),
         "learnability_mean": float(learnability.mean()),
         "falls_per_step": log["fell"],
+        # env steps that diverged and were ended (FunctionalEnv._end_diverged)
+        "diverged_per_step": log["diverged"],
         "reward_per_step": log["reward"],
         "cmd_vx": log["cmd_vx"],
         "forward_vel": log["forward_vel"],

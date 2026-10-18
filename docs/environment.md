@@ -173,6 +173,16 @@ usable under `jit`/`vmap`.
 - **Auto-reset semantics.** `step` freezes `data`/`obs` to the episode's first
   values on `done` (via `first_data`/`first_obs` stashed at reset), so a
   vmapped batch stays aligned.
+- **Divergence guard.** A step whose `qpos`, `qvel`, obs or reward is not
+  finite, or with any |`qvel`| above `QVEL_DIVERGED` (200 m/s or rad/s;
+  random actions on full-difficulty levels peak at ~75), ends the episode
+  (`done` 1, reward and per-env metrics 0, then the auto-reset above) and
+  sets `info["diverged"]` (brax_ued logs `diverged_per_step`; in eval a
+  diverged env scores a fall). MJX blows up now and then on one env; its
+  obs would reach brax's running obs normalizer and never wash out (seen:
+  joint-velocity stds 100-640000x, then policy collapse; a nan one turns
+  every env nan). `info` is not reset, so an env whose `info` went nan
+  stays ended until the next `reset`.
 - **Shared tiled arena.** `reset(key, hfield_data, dr_model, tile_xy)` and
   `step(..., hfield_data, dr_model)` take the arena's `hfield_data`
   (`hfield.tiles.TileLayout.assemble`: every level of the iteration on its

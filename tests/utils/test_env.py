@@ -135,3 +135,45 @@ def test_reset_on_an_arena_requires_the_tile(env: FunctionalEnv) -> None:
     arena = LAYOUT.assemble(jnp.asarray(param_levels()))
     with pytest.raises(ValueError, match="tile_xy"):
         env.reset(jax.random.key(0), arena)
+
+
+def test_a_nan_step_ends_the_episode_with_finite_outputs(
+    env: FunctionalEnv,
+) -> None:
+    arena = LAYOUT.assemble(jnp.asarray(param_levels()))
+    key = jax.random.key(0)
+    first_obs, state = env.reset(key, arena, tile_xy=LAYOUT.tile_xy(1, 1)[0])
+    nan_action = jnp.full(env.action_size, jnp.nan)
+    obs, state, reward, done, info = env.step(key, state, nan_action, arena)
+    assert float(done) == 1.0
+    assert float(reward) == 0.0
+    assert float(info["diverged"]) == 1.0
+    np.testing.assert_array_equal(obs.actor, first_obs.actor)
+    np.testing.assert_array_equal(obs.critic, first_obs.critic)
+    assert np.isfinite(np.asarray(state.data.qpos)).all()
+    for name, value in state.metrics.items():
+        assert np.isfinite(np.asarray(value)).all(), name
+
+
+def test_a_finite_step_is_not_flagged(env: FunctionalEnv) -> None:
+    arena = LAYOUT.assemble(jnp.asarray(param_levels()))
+    key = jax.random.key(0)
+    _, state = env.reset(key, arena, tile_xy=LAYOUT.tile_xy(1, 1)[0])
+    _, _, _, done, info = env.step(key, state, jnp.zeros(env.action_size), arena)
+    assert float(info["diverged"]) == 0.0
+    assert float(done) == 0.0
+
+
+def test_a_blown_up_velocity_ends_the_episode(env: FunctionalEnv) -> None:
+    arena = LAYOUT.assemble(jnp.asarray(param_levels()))
+    key = jax.random.key(0)
+    first_obs, state = env.reset(key, arena, tile_xy=LAYOUT.tile_xy(1, 1)[0])
+    qvel = state.data.qvel.at[6:].set(1e5)
+    state = state.replace(data=state.data.replace(qvel=qvel))
+    obs, state, reward, done, info = env.step(
+        key, state, jnp.zeros(env.action_size), arena
+    )
+    assert float(info["diverged"]) == 1.0
+    assert float(done) == 1.0
+    assert float(reward) == 0.0
+    np.testing.assert_array_equal(obs.critic, first_obs.critic)
