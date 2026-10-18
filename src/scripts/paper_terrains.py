@@ -11,19 +11,15 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import mujoco
 import numpy as np
-from mujoco_playground._src.locomotion.go1 import base as go1_base
 
 from config.hfield_config import HFieldConfig
-from hfield.arena import single_tile, single_tile_spec
 from hfield.level_space import PARAMS, ParamSpace
-from hfield.tiles import TileLayout
-from robots.go1 import Go1Terrain, scene_xml
 from scripts.brax_ued import ROBOT_SCALE, hfield_config, make_env
 from scripts.paper_tables import ROBOT_LABEL
+from scripts.render_video import level_on_single_tile, render_model
 
 # mujoco is a C extension that ty cannot introspect
 mj: Any = mujoco
@@ -62,21 +58,6 @@ def _model(robot: str) -> tuple[Any, ParamSpace, HFieldConfig]:
     space = ParamSpace(config, robot_scale=ROBOT_SCALE[robot])
     base: Any = env._env.env
     return render_model(base, config), space, config
-
-
-def render_model(base: Any, config: HFieldConfig) -> Any:
-    """The env's scene with its arena cut to one tile, the level at the
-    origin (`single_tile`): the CPU renderer meshes the whole hfield."""
-    if isinstance(base, Go1Terrain):
-        xml = scene_xml(single_tile(config))
-        return mj.MjModel.from_xml_string(xml, assets=go1_base.get_assets())
-    return single_tile_spec(Path(base._terrain.files["scene"]), config).compile()
-
-
-def level_on_single_tile(config: HFieldConfig, hfield: np.ndarray) -> np.ndarray:
-    """A rendered level as the `render_model` arena's hfield_data."""
-    layout = TileLayout(single_tile(config))
-    return np.asarray(layout.assemble(jnp.asarray(hfield)[None]))
 
 
 def _level(space: ParamSpace, genes: dict[str, float]) -> np.ndarray:

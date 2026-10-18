@@ -55,6 +55,7 @@ exported for every recipe. `just` lists them all.
 | `just eval *args` | evaluate a checkpoint (`--algo` required; `--run`/`--step` default to latest) |
 | `just eval-levels *args` | evaluate a checkpoint's generalization across generated levels; needs `build-accel-arena` first |
 | `just eval-sim *args` | watch a checkpoint walk random ACCEL levels in the MuJoCo viewer; needs `build-accel-arena` first |
+| `just render-video *args` | mp4 clips of a `brax_ued.py` checkpoint walking generated levels (`--level D:SEED`, repeatable) |
 
 ## Env usage
 

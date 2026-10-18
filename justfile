@@ -116,3 +116,8 @@ eval-levels *args:
 [group('eval')]
 eval-sim *args:
     uv run mjpython src/scripts/eval_sim.py {{ args }}
+
+# mp4 clips of a brax_ued.py checkpoint on generated levels (e.g. `just render-video --checkpoint run.pkl --level 0.75:3`); MUJOCO_GL defaults to cgl on macOS, egl elsewhere
+[group('eval')]
+render-video *args:
+    MUJOCO_GL="${MUJOCO_GL:-$([ "$(uname)" = Darwin ] && echo cgl || echo egl)}" uv run python src/scripts/render_video.py {{ args }}
