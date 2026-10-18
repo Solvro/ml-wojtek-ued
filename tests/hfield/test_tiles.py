@@ -9,8 +9,8 @@ from scripts.brax_ued import hfield_config, parse_args
 SMALL = HFieldConfig(patch_radius=1.0, tiles=3, reach=1.5)
 
 
-def profile_layout(profile: str, robot: str = "wojtek") -> TileLayout:
-    flags = ["--mode", "dr", "--name", "t", "--profile", profile, "--robot", robot]
+def benchmark_layout(robot: str = "wojtek") -> TileLayout:
+    flags = ["--mode", "dr", "--name", "t", "--robot", robot]
     return TileLayout(hfield_config(parse_args(flags)))
 
 
@@ -26,19 +26,16 @@ def distinct_levels(layout: TileLayout, k: int) -> np.ndarray:
     return np.stack([np.roll(ramp, 7 * i) for i in range(k)])
 
 
-@pytest.mark.parametrize(
-    ("profile", "gap", "nodes"), [("benchmark", 7.0, 4161), ("deploy", 4.0, 5121)]
-)
-def test_profile_gap_covers_reach(profile: str, gap: float, nodes: int) -> None:
-    layout = profile_layout(profile)
-    assert layout.gap == pytest.approx(gap)
-    assert layout.nodes == nodes
+def test_benchmark_gap_covers_reach() -> None:
+    layout = benchmark_layout()
+    assert layout.gap == pytest.approx(7.0)
+    assert layout.nodes == 4161
     assert layout.leak_radius == pytest.approx(layout.config.reach)
     assert layout.n_tiles == 256
 
 
 def test_go1_gap_scales_with_the_robot() -> None:
-    layout = profile_layout("benchmark", "go1")
+    layout = benchmark_layout("go1")
     assert layout.config.reach == pytest.approx(25.0)
     assert layout.gap == pytest.approx(17.5)
 

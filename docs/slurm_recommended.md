@@ -95,3 +95,7 @@ just eval algo=accel run=accel_seed_1234_envnum_8192
 just eval algo=accel_top_k run=accel_top_k_seed_1234_envnum_8192
 just eval algo=ppo_dr run=ppo_dr_seed_1234_envnum_8192
 ```
+
+Note: despite `docs/ppo.md`'s description, `scripts/eval.py` and
+`scripts/eval_levels.py` are Hydra scripts (`field=value` overrides), not
+`pyrallis`/argparse (`--field value`).

@@ -8,8 +8,7 @@
 #SBATCH --time=03:00:00
 #SBATCH --output=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued/logs/%x_%A_%a.out
 #SBATCH --error=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued/logs/%x_%A_%a.out
-# Same task layout as brax_ued.sbatch (NSEEDS, SEED0). Robot, level space
-# and arena come from each checkpoint's sidecar <run>.json.
+# Same task layout as brax_ued.sbatch (NSEEDS, SEED0).
 set -euo pipefail
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1
@@ -30,10 +29,15 @@ NSEEDS="${NSEEDS:-3}"
 MODE="${MODES[$((SLURM_ARRAY_TASK_ID / NSEEDS))]}"
 SEED=$((${SEED0:-0} + SLURM_ARRAY_TASK_ID % NSEEDS))
 PREFIX="${PREFIX:-v7_brax}"
+# ROBOT=go1 runs Playground's Go1 at its size (robots/go1.py)
+ROBOT="${ROBOT:-wojtek}"
+# BACKEND: auto (warp on the GPU) | jax | warp; TAGS: extra wandb tags
+read -ra TAG_ARGS <<<"${TAGS:-}"
 RUN="${PREFIX}_${MODE}_seed${SEED}"
 echo "job ${SLURM_JOB_ID} task ${SLURM_ARRAY_TASK_ID}: eval $RUN"
 
 uv run --no-sync python "$SRC/scripts/eval_brax.py" \
   --checkpoint "$PDW/artifacts/brax_ued/$RUN.pkl" --name "${RUN}_final_eval" \
   --entity dominikgalus9-wroc-aw-university-of-science-and-technology \
-  --project wojtyla --out_dir "$PDW/runs/final_eval"
+  --project wojtyla --out_dir "$PDW/runs/final_eval" --level_space "${SPACE:-grid}" \
+  --robot "$ROBOT" --backend "${BACKEND:-auto}" --tags "${TAG_ARGS[@]}"

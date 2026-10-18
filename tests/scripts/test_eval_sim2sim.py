@@ -6,10 +6,9 @@ import mujoco
 import numpy as np
 import pytest
 
-from config.hfield_config import HFieldConfig
 from hfield.level_space import make_level_space
 from scripts import eval_sim2sim as s2s
-from scripts.brax_ued import ROBOT_SCALE, parse_args, run_spec
+from scripts.brax_ued import ROBOT_SCALE, hfield_config
 from scripts.eval_brax import SUITE_STRENGTHS, SUITE_TERRAINS, suite_hfield
 
 ROBOT_XML = """
@@ -261,18 +260,24 @@ def test_cpu_physics_loads_the_arena_into_every_thread(
         np.testing.assert_array_equal(m.hfield_data, arena)
 
 
-def level_case(
-    robot: str = "wojtek",
-) -> tuple[argparse.Namespace, dict, HFieldConfig]:
-    flags = ["--mode", "dr", "--name", "t", "--robot", robot, "--level_space", "param"]
-    spec = run_spec(parse_args(flags))
-    args = argparse.Namespace(num_levels=8, suite_instances=3, seed=1234)
-    return args, spec, HFieldConfig(**spec["hfield"])
+def level_args(robot: str = "wojtek") -> argparse.Namespace:
+    return argparse.Namespace(
+        robot=robot,
+        amplitude=0.3,
+        coarse_n=13,
+        pad_radius=0.55,
+        pad_taper=0.2,
+        level_space="param",
+        num_levels=8,
+        suite_instances=3,
+        seed=1234,
+    )
 
 
 def test_level_sets_names_and_sizes() -> None:
-    args, spec, config = level_case()
-    sets = s2s.level_sets(args, spec, config)
+    args = level_args()
+    config = hfield_config(args)
+    sets = s2s.level_sets(args, config)
     cells = [f"suite/{t}_{k}" for t in SUITE_TERRAINS for k in (1, 2)]
     assert list(sets) == ["flat", "param/uniform", *cells]
     assert sets["param/uniform"].shape == (8, config.grid_size**2)
@@ -281,17 +286,19 @@ def test_level_sets_names_and_sizes() -> None:
 
 
 def test_uniform_levels_are_eval_brax_prefix() -> None:
-    args, spec, config = level_case()
+    args = level_args()
+    config = hfield_config(args)
     space = make_level_space("param", config, n_edits=1, edit_scale=0.0)
     eval_brax = space.uniform(np.random.default_rng(args.seed + 1), 2048)
     np.testing.assert_array_equal(
-        s2s.level_sets(args, spec, config)["param/uniform"], space.render(eval_brax[:8])
+        s2s.level_sets(args, config)["param/uniform"], space.render(eval_brax[:8])
     )
 
 
 @pytest.mark.parametrize("robot", ["wojtek", "go1"])
 def test_suite_cells_match_eval_brax(robot: str) -> None:
-    args, spec, config = level_case(robot)
+    args = level_args(robot)
+    config = hfield_config(args)
     rng = np.random.default_rng(args.seed)
     scale = ROBOT_SCALE[robot]
     eval_brax = {
@@ -301,7 +308,7 @@ def test_suite_cells_match_eval_brax(robot: str) -> None:
         for t in SUITE_TERRAINS
         for k in SUITE_STRENGTHS
     }
-    sets = s2s.level_sets(args, spec, config)
+    sets = s2s.level_sets(args, config)
     for name, hfields in sets.items():
         if name.startswith("suite/"):
             np.testing.assert_array_equal(hfields, eval_brax[name])

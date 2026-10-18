@@ -9,10 +9,6 @@ swapped for a `jax.pure_callback` that steps one CPU `MjData` per env with
 integrated state plus the frames, sensors and actuator forces the envs read.
 Reset stays on MJX (it only places the robot).
 
-Env, network and level space come from the checkpoint's sidecar
-(`<run>.json`, written by `brax_ued.py`); the run must use the `param`
-level space.
-
 Physics variants are named transforms of the training `MjModel`
 (`VARIANTS`). Every variant runs the same levels with the same reset keys:
 
@@ -45,6 +41,7 @@ import jax.numpy as jnp
 import mujoco
 import numpy as np
 import wandb
+from brax.io import model as brax_model
 from brax.training.agents.ppo import networks as ppo_networks
 from mujoco import mjx
 from mujoco_playground._src import mjx_env
@@ -56,12 +53,12 @@ from hfield.tiles import TileLayout
 from robots.go1 import Go1Terrain, scene_xml
 from scripts.brax_ued import (
     ROBOT_SCALE,
-    check_spec_arena,
-    load_run,
+    check_wojtek_arena,
+    hfield_config,
     make_env,
+    make_network,
     make_unroll,
     min_travel,
-    spec_network,
 )
 from scripts.eval_brax import (
     SUITE_STRENGTHS,
@@ -474,20 +471,17 @@ def cpu_physics(physics: CpuPhysics) -> Iterator[None]:
         modules[0].step, modules[1]._step_with_latency, modules[2].step = saved
 
 
-def level_sets(
-    args: argparse.Namespace, spec: dict[str, Any], config: HFieldConfig
-) -> dict[str, Any]:
+def level_sets(args: argparse.Namespace, config: HFieldConfig) -> dict[str, Any]:
     """Rendered hfields per set, the levels eval_brax builds for them."""
-    scale = ROBOT_SCALE[spec["robot"]]
-    level_space = spec["level_space"]
+    scale = ROBOT_SCALE[args.robot]
     space = make_level_space(
-        level_space, config, n_edits=1, edit_scale=0.0, robot_scale=scale
+        args.level_space, config, n_edits=1, edit_scale=0.0, robot_scale=scale
     )
     flat = space.scaled(np.random.default_rng(args.seed), args.suite_instances, 0.0)
     uniform = space.uniform(np.random.default_rng(args.seed + 1), EVAL_BRAX_UNIFORM)
     sets = {
         "flat": space.render(flat),
-        f"{level_space}/uniform": space.render(uniform[: args.num_levels]),
+        f"{args.level_space}/uniform": space.render(uniform[: args.num_levels]),
     }
     # eval_brax's suite stream: only blocks draws, k = 1..4 in order
     rng = np.random.default_rng(args.seed)
@@ -580,36 +574,29 @@ def evaluate(
         for i, (name, hfields) in enumerate(sets.items()):
             # same reset keys for every variant: paired comparisons
             key = jax.random.fold_in(jax.random.key(args.seed), i)
-            episodes = rollout(ctx, hfields, key)
-            fell, travel = episodes["fell"], episodes["travel"]
+            fell, travel = rollout(ctx, hfields, key)
             results[variant][name] = (fell, travel, physics.take_diverged())
             tag = f"{variant}_{name.replace('/', '_')}"
             raw[f"{tag}_fell"], raw[f"{tag}_travel"] = fell, travel
         elapsed[variant] = time.time() - start
         print(f"{variant}: {elapsed[variant]:.0f} s", flush=True)
-    metrics = summarize(results, min_travel(ctx["spec"]["robot"], args.min_travel))
+    metrics = summarize(results, min_travel(args))
     for variant, seconds in elapsed.items():
         metrics[f"{variant}/elapsed_s"] = seconds
     return metrics, raw
 
 
 def build(args: argparse.Namespace) -> dict[str, Any]:
-    spec, params = load_run(Path(args.checkpoint))
-    if spec["level_space"] != "param":
-        raise ValueError(
-            f"{args.checkpoint} trained on the {spec['level_space']!r} level "
-            "space; sim2sim reuses eval_brax's param-space levels only"
-        )
-    check_spec_arena(spec)
-    config = HFieldConfig(**spec["hfield"])
+    config = hfield_config(args)
+    check_wojtek_arena(args, config)
     layout = TileLayout(config)
-    env = make_env(spec, levels_per_chunk(args, layout) * args.episodes, train=False)
+    env = make_env(args, config, levels_per_chunk(args, layout) * args.episodes, False)
     # scored on the deterministic policy: its own obs and feet, not the critic
     reach = env.travel.reach(args.level_steps, env.travel.actor_sensing)
     layout.check_reach(reach, f"--level_steps {args.level_steps}")
     base = cast(Any, env)._env.unwrapped
     physics = CpuPhysics(base.mj_model, worker_count())
-    make_policy = ppo_networks.make_inference_fn(spec_network(spec))
+    make_policy = ppo_networks.make_inference_fn(make_network(env))
     unroll = make_unroll(env, make_policy, None)
 
     def cpu_unroll(
@@ -635,26 +622,22 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
 
     return {
         "args": args,
-        "spec": spec,
         "config": config,
         "layout": layout,
         "assemble": jax.jit(layout.assemble),
         "base": base,
         "physics": physics,
-        "params": params,
+        "params": brax_model.load_params(args.checkpoint),
         "reset": jax.jit(
             jax.vmap(lambda k, h, t: env.reset(k, h, tile_xy=t), in_axes=(0, None, 0))
         ),
         "unroll": cpu_unroll,
-        "dt": base.dt,
     }
 
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument(
-        "--checkpoint", required=True, help="brax_ued.py .pkl, sidecar .json beside it"
-    )
+    p.add_argument("--checkpoint", required=True, help="brax_ued.py .pkl params")
     p.add_argument("--name", required=True, help="wandb run name")
     p.add_argument("--entity", default="")
     p.add_argument("--project", default="wojtyla")
@@ -665,24 +648,26 @@ def main() -> None:
     p.add_argument("--chunk_envs", type=int, default=1024)
     p.add_argument("--level_steps", type=int, default=300)
     p.add_argument("--min_travel", type=float, default=1.0)
+    p.add_argument("--amplitude", type=float, default=0.3)
+    p.add_argument("--level_space", default="param", choices=["param"])
+    p.add_argument("--robot", default="wojtek", choices=list(ROBOT_SCALE))
+    # CpuPhysics steps the jax env's data layout on CPU MuJoCo
+    p.set_defaults(backend="jax")
+    p.add_argument("--coarse_n", type=int, default=13)
+    p.add_argument("--pad_radius", type=float, default=0.55)
+    p.add_argument("--pad_taper", type=float, default=0.2)
     p.add_argument("--seed", type=int, default=1234)
     args = p.parse_args()
 
-    ctx = build(args)
-    spec = ctx["spec"]
     run = wandb.init(
         entity=args.entity or None,
         project=args.project,
         name=args.name,
-        tags=["sim2sim", spec["robot"]],
-        config={
-            **vars(args),
-            "robot": spec["robot"],
-            "level_space": spec["level_space"],
-            "run": spec,
-        },
+        tags=["sim2sim", args.robot],
+        config=vars(args),
     )
-    metrics, raw = evaluate(ctx, level_sets(args, spec, ctx["config"]))
+    ctx = build(args)
+    metrics, raw = evaluate(ctx, level_sets(args, ctx["config"]))
     run.summary.update(metrics)
     run.finish()
     out = Path(args.out_dir)

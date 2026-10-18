@@ -11,7 +11,6 @@ from brax.envs.wrappers import training as brax_training
 from mujoco import mjx
 from mujoco_playground._src.locomotion.go1 import randomize as go1_randomize
 
-from config.hfield_config import HFieldConfig
 from modules.ppo_modules import Obs
 from robots.go1 import GO1_SCALE, SCAN_X, SCAN_Y, Go1Terrain
 from wojtek_env.envs import randomize, registry
@@ -162,16 +161,15 @@ class FunctionalEnv:
         episode_length: int | None = None,
         seed: int = 0,
         domain_randomize: bool = False,
-        go1_hfield: HFieldConfig | None = None,
-        dr_config: dict | None = None,
+        go1: Go1Terrain | None = None,
     ):
-        # go1_hfield set: Playground's Go1 on that arena instead of Wojtek
+        # go1 set: Playground's Go1 on its arena instead of Wojtek
         base: Any
-        if go1_hfield is None:
+        if go1 is None:
             base = registry.make_env(task, env_overrides)
-            dr_fn = randomize.make_domain_randomize(base.mj_model, dr_config)
+            dr_fn = randomize.make_domain_randomize(base.mj_model)
         else:
-            base = cast(Any, Go1Terrain(go1_hfield))
+            base = cast(Any, go1)
             dr_fn = go1_randomize.domain_randomize
         length = episode_length or base._config.episode_length
         if getattr(base, "_backend", "jax") == "warp":
@@ -179,7 +177,7 @@ class FunctionalEnv:
 
         self._env = brax_training.EpisodeWrapper(base, length, action_repeat=1)
         # Go1 reads heights straight from hfield_data; Wojtek keeps a lookup
-        self._has_lookup = go1_hfield is None
+        self._has_lookup = go1 is None
         self._hfield_geometry = hfield_geometry(base) if self._has_lookup else None
         self.action_size = base.action_size
         self.travel = travel_bounds(base)
@@ -312,11 +310,10 @@ class FunctionalEnv:
     @staticmethod
     def _end_diverged(state: Any) -> Any:
         # MJX diverges now and then on one env (velocities blow up, then nan).
-        # Those obs reach brax's running obs normalizer, whose 1.5e9-step
-        # count never washes them out: one env's blow-up multiplied the
-        # joint-velocity stds 100-640000x and the policy collapsed
-        # (deploy-accel-ft); a nan one turned every env nan
-        # (deploy_ws_accel_seed2). Such a step ends the episode instead.
+        # Those obs reach brax's running obs normalizer and are never washed
+        # out: one env's blow-up multiplied the joint-velocity stds
+        # 100-640000x and the policy collapsed; a nan one turned every env
+        # nan. Such a step ends the episode instead.
         done = state.done
 
         def per_env(ok: jax.Array) -> jax.Array:

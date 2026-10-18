@@ -29,6 +29,7 @@ from mujoco_playground._src.locomotion.go1 import joystick
 from config.hfield_config import HFieldConfig
 from hfield.tiles import TileLayout
 from wojtek_env.envs import height_scan
+from wojtek_env.envs.base import resolve_backend
 
 # Go1 standing trunk height (0.258 m, measured) over Wojtek's design 0.10 m
 GO1_SCALE = 2.5
@@ -63,12 +64,20 @@ def scene_xml(config: HFieldConfig) -> str:
 
 
 class Go1Terrain(joystick.Joystick):
-    def __init__(self, hfield: HFieldConfig, episode_length: int = 1000):
+    def __init__(
+        self,
+        hfield: HFieldConfig,
+        backend: str = "jax",
+        num_envs: int = 8192,
+        episode_length: int = 1000,
+    ):
         config = joystick.default_config()
-        # the shared arena allows warp; Go1 runs have not been validated on it
-        config.impl = "jax"
+        # every env shares the tiled arena's hfield_data, so warp is valid
+        self._backend = resolve_backend(backend)
+        config.impl = self._backend
         config.episode_length = episode_length
-        config.naconmax = 8 * 8192
+        # Playground's rough-terrain Go1 budget: 8 contacts per env, pooled
+        config.naconmax = 8 * num_envs
         config.njmax = 12 + 48
         # Go1Env reads the scene from a path; its includes resolve via assets
         scene = Path(tempfile.mkdtemp()) / "go1_accel_scene.xml"

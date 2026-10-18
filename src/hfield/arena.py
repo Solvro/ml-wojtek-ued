@@ -200,7 +200,7 @@ def tile_layout(config: HFieldConfig) -> dict[str, float]:
 
 def check_arena(spec_path: Path, config: HFieldConfig, kind: str) -> None:
     rebuild = (
-        f"build it with `just build-accel-arena arena={kind} "
+        f"build it with `just build-accel-arena "
         f"hfield_params.patch_radius={config.patch_radius} "
         f"hfield_params.cell_size={config.cell_size} "
         f"hfield_params.amplitude={config.amplitude} "
@@ -238,7 +238,7 @@ def check_arena(spec_path: Path, config: HFieldConfig, kind: str) -> None:
 @hydra.main(version_base=None, config_name="arena_config")
 def main(cfg: ArenaConfig) -> None:
     hfield_config = cast(HFieldConfig, OmegaConf.to_object(cfg.hfield_params))
-    write_accel_arena(hfield_config, seed=cfg.seed, kind=cfg.arena)
+    write_accel_arena(hfield_config, seed=cfg.seed)
 
 
 if __name__ == "__main__":

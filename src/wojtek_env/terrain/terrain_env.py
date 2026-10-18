@@ -69,8 +69,13 @@ class Arena:
     def height(self, xy):
         """Terrain surface height under world ``xy`` (``(..., 2)``)."""
         return bilinear_sample(
-            self.lookup, self.x_min, self.cell_x, self.y_min, self.cell_y,
-            xy[..., 0], xy[..., 1],
+            self.lookup,
+            self.x_min,
+            self.cell_x,
+            self.y_min,
+            self.cell_y,
+            xy[..., 0],
+            xy[..., 1],
         )
 
 
@@ -104,7 +109,8 @@ def require_current_geometry(spec: dict, kind: str) -> None:
         "n_steps": terrain.N_STEPS,
         "stair_platform_half": (
             terrain.summit_platform_half(float(spec["pad_radius"]))
-            if "stair_tread" in spec else terrain.STAIR_PLATFORM_HALF
+            if "stair_tread" in spec
+            else terrain.STAIR_PLATFORM_HALF
         ),
     }
     stale = {
@@ -114,9 +120,14 @@ def require_current_geometry(spec: dict, kind: str) -> None:
     }
     if stale:
         detail = "; ".join(
-            f"{k}: arena has {f!r}, this code builds {w!r}" for k, (f, w) in stale.items()
+            f"{k}: arena has {f!r}, this code builds {w!r}"
+            for k, (f, w) in stale.items()
         )
-        extra = " [--rows N --seed N]` with this run's own parameters" if kind == "train" else "`"
+        extra = (
+            " [--rows N --seed N]` with this run's own parameters"
+            if kind == "train"
+            else "`"
+        )
         raise ValueError(
             f"the {kind} terrain arena was built by a different generator "
             f"({detail}). Rebuild it: `./training/run.sh build-terrain "
@@ -146,7 +157,9 @@ def require_stair_geometry(spec: dict, kind: str, terrain_cfg) -> None:
     problems = []
     want_tread_l = list(want_tread) if want_tread is not None else None
     if want_tread_l != (list(has_tread) if isinstance(has_tread, list) else has_tread):
-        problems.append(f"stair_tread: arena has {has_tread!r}, run wants {want_tread_l!r}")
+        problems.append(
+            f"stair_tread: arena has {has_tread!r}, run wants {want_tread_l!r}"
+        )
     want_caps_d = dict(want_caps) if want_caps is not None else None
     if want_caps_d != has_caps:
         problems.append(f"type_caps: arena has {has_caps!r}, run wants {want_caps_d!r}")
@@ -307,7 +320,9 @@ def tables_from_spec(spec: dict, types) -> tuple[np.ndarray, np.ndarray, np.ndar
 SPAWN_EDGE_MARGIN = 0.35
 
 
-def sample_tile_spawn(rng, terrain_type, level, origin_xy, pad_h, pad_jitter, yaw_enable):
+def sample_tile_spawn(
+    rng, terrain_type, level, origin_xy, pad_h, pad_jitter, yaw_enable
+):
     """Pick a spawn pose on one tile.
 
     Returns the pad centre plus a small xy jitter, the pad's height, and a
@@ -327,8 +342,15 @@ def sample_tile_spawn(rng, terrain_type, level, origin_xy, pad_h, pad_jitter, ya
 
 
 def sample_feature_spawn(
-    rng, terrain_type, level, on_flat, origin_xy, pad_h, pad_jitter,
-    tile_size, yaw_enable,
+    rng,
+    terrain_type,
+    level,
+    on_flat,
+    origin_xy,
+    pad_h,
+    pad_jitter,
+    tile_size,
+    yaw_enable,
 ):
     """Pick a spawn pose anywhere on one tile's interior.
 
@@ -359,9 +381,20 @@ def sample_feature_spawn(
 
 
 def curriculum_step(
-    level, walked, commanded_dist, steps_lived, episode_length,
-    rng, n_rows, tile_size, demote_fraction,
-    strikes=0, demote_strikes=1, crossed=None, grace_steps=0, pinned=False,
+    level,
+    walked,
+    commanded_dist,
+    steps_lived,
+    episode_length,
+    rng,
+    n_rows,
+    tile_size,
+    demote_fraction,
+    strikes=0,
+    demote_strikes=1,
+    crossed=None,
+    grace_steps=0,
+    pinned=False,
 ):
     """Move one env's level after an episode, legged_gym style with three
     v4.2 amendments: band promotion, strike demotion, and spawn grace.

@@ -1,14 +1,11 @@
 """Final evaluation of a `brax_ued.py` checkpoint, built around CVaR.
 
-Env, network, arena and level space come from the checkpoint's sidecar
-(`<run>.json`, written by `brax_ued.py`).
-
 Three level sets, deterministic policy, no physics DR, no `no_progress` cut;
 an episode succeeds when it never falls and ends at least `min_travel` m
 from spawn after `level_steps`:
 
-- `random/d<d>`: `num_levels` fresh levels per difficulty from the
-  run's level space (the training distribution of DR, shrunk toward flat by
+- `random/d<d>`: `num_levels` fresh levels per difficulty from
+  `--level_space` (the training distribution of DR, shrunk toward flat by
   d; the same base levels at every d).
 - `flat`: `suite_instances` flat levels (`scaled(0)`) - the no-terrain
   reference.
@@ -23,18 +20,7 @@ episodes would bias it low by selection noise. 95% CIs bootstrap over
 levels. `level_success_corr` (pass A vs pass B per-level success) checks
 that levels genuinely differ in difficulty.
 
-Every set also reports `cmd_success_rate`: no fall and the sampled command
-tracked, judged like the deploy tracking reward (`tracking_relative`):
-mean body-frame |v_xy - cmd_xy| / max(|cmd_xy|, `TRACK_FLOOR_LIN`) and
-|wz - cmd_wz| / max(|cmd_wz|, `TRACK_FLOOR_YAW`) both below `TRACK_REL_TOL`,
-skipping `TRACK_SKIP_S` after the reset and after every command resample
-(6 s levels with the 5 s resample score 1-5 s). Stand, spin and slow
-commands count; a robot that stands still passes 12.4% of deploy command
-draws, nearly all of them zero commands. `track_lin_err` / `track_yaw_err` average the
-absolute errors over episodes without a fall. `suite/cmd_success_rate`
-averages the suite sets.
-
-With the `param` level space two more sets:
+With `--level_space param` two more sets:
 
 - `param/uniform`: `num_levels` levels drawn uniformly from the 8-parameter
   space (DR's training distribution) - heterogeneous, so CVaR reads a real
@@ -46,7 +32,6 @@ With the `param` level space two more sets:
 """
 
 import argparse
-import copy
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -56,28 +41,21 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import wandb
+from brax.io import model as brax_model
 from brax.training.agents.ppo import networks as ppo_networks
 
 from config.hfield_config import HFieldConfig
 from hfield.level_space import PARAMS, ParamSpace, make_level_space
 from hfield.tiles import TileLayout
 from scripts.brax_ued import (
-    ARENAS,
     ROBOT_SCALE,
-    check_spec_arena,
-    load_run,
+    add_backend_arg,
+    check_wojtek_arena,
+    hfield_config,
     make_env,
+    make_network,
     make_unroll,
     min_travel,
-    spec_network,
-)
-from utils.env_overrides import merge_overrides
-from utils.tracking import (
-    TRACK_FLOOR_LIN,
-    TRACK_SKIP_S,
-    Episodes,
-    tracked,
-    tracking_errors,
 )
 
 DIFFICULTIES = (0.25, 0.5, 0.75, 1.0)
@@ -144,21 +122,14 @@ def suite_hfield(
     return np.clip(data, 0.0, 1.0).astype(np.float32).reshape(-1)
 
 
-def rollout(ctx: dict[str, Any], hfields: np.ndarray, key: jax.Array) -> Episodes:
-    """Per (level, episode): fell, final travel and the `tracking_errors`.
-    hfields: (levels, N)."""
+def rollout(
+    ctx: dict[str, Any], hfields: np.ndarray, key: jax.Array
+) -> tuple[np.ndarray, np.ndarray]:
+    """Per (level, episode): fell and final travel. hfields: (levels, N)."""
     args = ctx["args"]
-    skip = round(TRACK_SKIP_S / ctx["dt"])
-    if args.level_steps <= skip:
-        raise ValueError(
-            f"--level_steps {args.level_steps} leaves no step past the "
-            f"{TRACK_SKIP_S} s tracking transient ({skip} steps); "
-            f"use more than {skip}"
-        )
-    lin_floor = TRACK_FLOOR_LIN * ROBOT_SCALE[ctx["spec"]["robot"]]
     layout = ctx["layout"]
     per_chunk = levels_per_chunk(args, layout)
-    out: dict[str, list[np.ndarray]] = {}
+    fell, travel = [], []
     for start in range(0, len(hfields), per_chunk):
         levels = jnp.asarray(hfields[start : start + per_chunk])
         arena = ctx["assemble"](levels)
@@ -177,18 +148,10 @@ def rollout(ctx: dict[str, Any], hfields: np.ndarray, key: jax.Array) -> Episode
             length=args.level_steps,
         )
         log = data.extras["log"]
-        travel = jnp.linalg.norm(log["xy"][:, -1] - start_xy, axis=-1)
-        chunk_out = {
-            "fell": np.asarray(log["fell"].max(axis=1)),
-            "travel": np.asarray(travel),
-            **tracking_errors(
-                np.asarray(log["cmd"]), np.asarray(log["vel"]), skip, lin_floor
-            ),
-        }
-        for k, v in chunk_out.items():
-            out.setdefault(k, []).append(v)
+        fell.append(np.asarray(log["fell"].max(axis=1)))
+        travel.append(np.asarray(jnp.linalg.norm(log["xy"][:, -1] - start_xy, axis=-1)))
     shape = (len(hfields), args.episodes)
-    return {k: np.concatenate(v).reshape(shape) for k, v in out.items()}
+    return np.concatenate(fell).reshape(shape), np.concatenate(travel).reshape(shape)
 
 
 def levels_per_chunk(args: argparse.Namespace, layout: TileLayout) -> int:
@@ -209,34 +172,19 @@ def bootstrap_ci(
     return float(np.percentile(samples, 2.5)), float(np.percentile(samples, 97.5))
 
 
-def tracking_summary(prefix: str, passes: list[Episodes]) -> dict[str, float]:
-    both = {k: np.stack([p[k] for p in passes]) for k in passes[0]}
-    standing = both["fell"] == 0
-    out = {f"{prefix}/cmd_success_rate": float(tracked(both).mean())}
-    # errors over episodes without a fall: a fallen robot's velocity says
-    # nothing about tracking
-    if standing.any():
-        out[f"{prefix}/track_lin_err"] = float(both["lin_err"][standing].mean())
-        out[f"{prefix}/track_yaw_err"] = float(both["yaw_err"][standing].mean())
-    return out
-
-
 def summarize(
-    prefix: str, passes: list[Episodes], ctx: dict[str, Any]
+    prefix: str, passes: list[tuple[np.ndarray, np.ndarray]], args: argparse.Namespace
 ) -> dict[str, float]:
-    args = ctx["args"]
-    threshold = min_travel(ctx["spec"]["robot"], args.min_travel)
-    a, b = passes
-    success_a = ((a["fell"] == 0) & (a["travel"] >= threshold)).mean(axis=1)
-    success_b = ((b["fell"] == 0) & (b["travel"] >= threshold)).mean(axis=1)
+    (fell_a, travel_a), (fell_b, travel_b) = passes
+    success_a = ((fell_a == 0) & (travel_a >= min_travel(args))).mean(axis=1)
+    success_b = ((fell_b == 0) & (travel_b >= min_travel(args))).mean(axis=1)
     rng = np.random.default_rng(0)
     n = len(success_a)
     mean = 0.5 * (success_a + success_b)
     out = {
         f"{prefix}/success_rate": float(mean.mean()),
-        f"{prefix}/fall_rate": float(0.5 * (a["fell"].mean() + b["fell"].mean())),
-        f"{prefix}/mean_travel": float(0.5 * (a["travel"].mean() + b["travel"].mean())),
-        **tracking_summary(prefix, passes),
+        f"{prefix}/fall_rate": float(0.5 * (fell_a.mean() + fell_b.mean())),
+        f"{prefix}/mean_travel": float(0.5 * (travel_a.mean() + travel_b.mean())),
     }
     lo, hi = bootstrap_ci(lambda i: float(mean[i].mean()), n, rng)
     out[f"{prefix}/success_rate_ci_low"], out[f"{prefix}/success_rate_ci_high"] = lo, hi
@@ -258,7 +206,7 @@ def summarize(
 
 def two_passes(
     ctx: dict[str, Any], hfields: np.ndarray, key: jax.Array
-) -> list[Episodes]:
+) -> list[tuple[np.ndarray, np.ndarray]]:
     key_a, key_b = jax.random.split(key)
     return [rollout(ctx, hfields, key_a), rollout(ctx, hfields, key_b)]
 
@@ -288,11 +236,6 @@ def envelope(values: np.ndarray, success: np.ndarray, threshold: float = 0.5) ->
     return float(values[-1])
 
 
-def stack_passes(prefix: str, passes: list[Episodes]) -> dict[str, np.ndarray]:
-    """npz arrays `<prefix>_<key>`, pass x level x episode."""
-    return {f"{prefix}_{k}": np.stack([p[k] for p in passes]) for k in passes[0]}
-
-
 def param_space_sets(
     ctx: dict[str, Any], space: ParamSpace, key: jax.Array
 ) -> tuple[dict[str, float], dict[str, Any]]:
@@ -301,9 +244,10 @@ def param_space_sets(
     key, sub = jax.random.split(key)
     uniform = space.uniform(rng, args.num_levels)
     passes = two_passes(ctx, space.render(uniform), sub)
-    metrics = summarize("param/uniform", passes, ctx)
+    metrics = summarize("param/uniform", passes, args)
     raw = {
-        **stack_passes("param_uniform", passes),
+        "param_uniform_fell": np.stack([p[0] for p in passes]),
+        "param_uniform_travel": np.stack([p[1] for p in passes]),
         "param_uniform_levels": uniform,
     }
     for name, index, end in AXES:
@@ -316,7 +260,7 @@ def param_space_sets(
             levels = space.from_generated(genome, rng)
             key, sub = jax.random.split(key)
             summary = summarize(
-                f"axis/{name}", two_passes(ctx, space.render(levels), sub), ctx
+                f"axis/{name}", two_passes(ctx, space.render(levels), sub), args
             )
             physical.append(
                 abs(param.low + genome[0, index] * (param.high - param.low))
@@ -333,16 +277,17 @@ def param_space_sets(
 
 
 def evaluate(ctx: dict[str, Any]) -> tuple[dict[str, float], dict[str, Any]]:
-    args, config, spec = ctx["args"], ctx["config"], ctx["spec"]
+    args, config = ctx["args"], ctx["config"]
     rng = np.random.default_rng(args.seed)
     key = jax.random.key(args.seed)
     metrics, raw = {}, {}
-    scale = ROBOT_SCALE[spec["robot"]]
     space = make_level_space(
-        spec["level_space"], config, n_edits=1, edit_scale=0.0, robot_scale=scale
+        args.level_space,
+        config,
+        n_edits=1,
+        edit_scale=0.0,
+        robot_scale=ROBOT_SCALE[args.robot],
     )
-    if args.flat_only:
-        return flat_set(ctx, space, jax.random.fold_in(key, 1))
     raw["random_levels"] = space.scaled(
         np.random.default_rng(args.seed), args.num_levels, 1.0
     )
@@ -354,131 +299,73 @@ def evaluate(ctx: dict[str, Any]) -> tuple[dict[str, float], dict[str, Any]]:
         hfields = space.render(levels)
         key, sub = jax.random.split(key)
         passes = two_passes(ctx, hfields, sub)
-        metrics.update(summarize(f"random/d{difficulty}", passes, ctx))
-        raw.update(stack_passes(f"random_d{difficulty}", passes))
+        metrics.update(summarize(f"random/d{difficulty}", passes, args))
+        raw[f"random_d{difficulty}_fell"] = np.stack([p[0] for p in passes])
+        raw[f"random_d{difficulty}_travel"] = np.stack([p[1] for p in passes])
         print(
             {k: round(v, 3) for k, v in metrics.items() if f"d{difficulty}/" in k},
             flush=True,
         )
-    suite_success, suite_cmd_success = [], []
+    suite_success = []
     for terrain in SUITE_TERRAINS:
         for k in SUITE_STRENGTHS:
             hfields = np.stack(
                 [
-                    suite_hfield(config, terrain, k, rng, scale)
+                    suite_hfield(config, terrain, k, rng, ROBOT_SCALE[args.robot])
                     for _ in range(args.suite_instances)
                 ]
             )
             key, sub = jax.random.split(key)
             passes = two_passes(ctx, hfields, sub)
-            tag = f"suite/{terrain}_{k}"
-            summary = summarize(tag, passes, ctx)
-            for name in ("success_rate", "cmd_success_rate"):
-                metrics[f"{tag}/{name}"] = summary[f"{tag}/{name}"]
-            suite_success.append(summary[f"{tag}/success_rate"])
-            suite_cmd_success.append(summary[f"{tag}/cmd_success_rate"])
+            summary = summarize(f"suite/{terrain}_{k}", passes, args)
+            metrics[f"suite/{terrain}_{k}/success_rate"] = summary[
+                f"suite/{terrain}_{k}/success_rate"
+            ]
+            suite_success.append(summary[f"suite/{terrain}_{k}/success_rate"])
     suite_success = np.asarray(suite_success)
     metrics["suite/success_rate"] = float(suite_success.mean())
     for alpha in args.alphas:
         k = max(1, int(np.ceil(alpha * len(suite_success))))
         metrics[f"suite/cvar{alpha}_success"] = float(np.sort(suite_success)[:k].mean())
     raw["suite_success"] = suite_success
-    metrics["suite/cmd_success_rate"] = float(np.mean(suite_cmd_success))
-    raw["suite_cmd_success"] = np.asarray(suite_cmd_success)
     if isinstance(space, ParamSpace):
         param_metrics, param_raw = param_space_sets(ctx, space, key)
         metrics.update(param_metrics)
         raw.update(param_raw)
     # own streams, so the sets above keep the levels and keys they had in v8
-    flat_metrics, flat_raw = flat_set(ctx, space, jax.random.fold_in(key, 1))
-    return {**metrics, **flat_metrics}, {**raw, **flat_raw}
-
-
-def flat_set(
-    ctx: dict[str, Any], space: Any, key: jax.Array
-) -> tuple[dict[str, float], dict[str, Any]]:
-    args = ctx["args"]
-    n = args.flat_levels or args.suite_instances
-    flat = space.scaled(np.random.default_rng(args.seed), n, 0.0)
-    passes = two_passes(ctx, space.render(flat), key)
-    return summarize("flat", passes, ctx), stack_passes("flat", passes)
-
-
-# --command_box: one uniform draw inside the box, every special draw off
-NO_SPECIAL_DRAWS = {
-    "zero_prob": 0.0,
-    "pure_wz_prob": 0.0,
-    "pure_vy_prob": 0.0,
-    "arc_prob": 0.0,
-    "pure_slow_prob": 0.0,
-    "pure_fast_prob": 0.0,
-    "pure_back_prob": 0.0,
-    "terrain_bias": {"enable": False},
-}
-
-
-def eval_spec(
-    spec: dict[str, Any], arena: str | None, command_box: list[float] | None
-) -> dict[str, Any]:
-    """The checkpoint's spec with an eval-only arena and command box: both
-    are training-only to the policy (the command is an input), so the
-    network evaluated is the trained one."""
-    if (arena or command_box) and spec["robot"] != "wojtek":
-        raise ValueError("--arena / --command_box edit Wojtek's env config only")
-    spec = copy.deepcopy(spec)
-    if arena:
-        geometry = ARENAS[arena]
-        scale = ROBOT_SCALE[spec["robot"]]
-        spec["arena"] = geometry["arena"]
-        spec["hfield"]["patch_radius"] = geometry["patch_radius"] * scale
-        spec["hfield"]["coarse_n"] = geometry["coarse_n"]
-        spec["env_overrides"]["terrain"]["arena"] = geometry["arena"]
-    if command_box:
-        vx_lo, vx_hi, vy_lo, vy_hi, wz_lo, wz_hi, height = command_box
-        box = {
-            "vx": [vx_lo, vx_hi],
-            "vy": [vy_lo, vy_hi],
-            "wz": [wz_lo, wz_hi],
-            "height": [height, height],
-            **NO_SPECIAL_DRAWS,
-        }
-        spec["env_overrides"] = merge_overrides(spec["env_overrides"], {"command": box})
-    return spec
+    flat = space.scaled(np.random.default_rng(args.seed), args.suite_instances, 0.0)
+    passes = two_passes(ctx, space.render(flat), jax.random.fold_in(key, 1))
+    metrics.update(summarize("flat", passes, args))
+    return metrics, raw
 
 
 def build(args: argparse.Namespace) -> dict[str, Any]:
-    spec, params = load_run(Path(args.checkpoint))
-    spec = eval_spec(spec, args.arena, args.command_box)
-    check_spec_arena(spec)
-    config = HFieldConfig(**spec["hfield"])
+    config = hfield_config(args)
+    check_wojtek_arena(args, config)
     layout = TileLayout(config)
     num_envs = levels_per_chunk(args, layout) * args.episodes
-    env = make_env(spec, num_envs, train=False)
+    env = make_env(args, config, num_envs, train=False)
     # scored on the deterministic policy: its own obs and feet, not the critic
     reach = env.travel.reach(args.level_steps, env.travel.actor_sensing)
     layout.check_reach(reach, f"--level_steps {args.level_steps}")
-    make_policy = ppo_networks.make_inference_fn(spec_network(spec))
-    base: Any = env._env.unwrapped
+    network = make_network(env)
+    make_policy = ppo_networks.make_inference_fn(network)
     return {
         "args": args,
-        "spec": spec,
         "config": config,
         "layout": layout,
         "assemble": jax.jit(layout.assemble),
-        "params": params,
+        "params": brax_model.load_params(args.checkpoint),
         "reset": jax.jit(
             jax.vmap(lambda k, h, t: env.reset(k, h, tile_xy=t), in_axes=(0, None, 0))
         ),
         "unroll": make_unroll(env, make_policy, None),
-        "dt": base.dt,
     }
 
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument(
-        "--checkpoint", required=True, help="brax_ued.py .pkl, sidecar .json beside it"
-    )
+    p.add_argument("--checkpoint", required=True, help="brax_ued.py .pkl params")
     p.add_argument("--name", required=True, help="wandb run name")
     p.add_argument("--entity", default="")
     p.add_argument("--project", default="wojtyla")
@@ -490,49 +377,25 @@ def main() -> None:
     p.add_argument("--level_steps", type=int, default=300)
     p.add_argument("--min_travel", type=float, default=1.0)
     p.add_argument("--alphas", type=float, nargs="+", default=[0.1, 0.25])
+    p.add_argument("--amplitude", type=float, default=0.3)
+    p.add_argument("--level_space", default="grid", choices=["grid", "param"])
+    p.add_argument("--robot", default="wojtek", choices=list(ROBOT_SCALE))
+    add_backend_arg(p)
+    p.add_argument("--tags", nargs="*", default=[], help="extra wandb tags")
+    p.add_argument("--coarse_n", type=int, default=13)
+    p.add_argument("--pad_radius", type=float, default=0.55)
+    p.add_argument("--pad_taper", type=float, default=0.2)
     p.add_argument("--seed", type=int, default=1234)
-    p.add_argument(
-        "--flat_levels",
-        type=int,
-        default=None,
-        help="flat levels (default: --suite_instances)",
-    )
-    p.add_argument(
-        "--flat_only",
-        action="store_true",
-        help="evaluate flat levels only (own reset keys, not the full eval's)",
-    )
-    p.add_argument(
-        "--arena",
-        choices=list(ARENAS),
-        default=None,
-        help="evaluate on this profile's arena instead of the checkpoint's",
-    )
-    p.add_argument(
-        "--command_box",
-        type=float,
-        nargs=7,
-        default=None,
-        metavar=("VX_LO", "VX_HI", "VY_LO", "VY_HI", "WZ_LO", "WZ_HI", "HEIGHT"),
-        help="eval-only uniform command box, special draws off",
-    )
     args = p.parse_args()
 
-    ctx = build(args)
-    spec = ctx["spec"]
     run = wandb.init(
         entity=args.entity or None,
         project=args.project,
         name=args.name,
-        tags=["brax-ued", "final-eval", spec["robot"]],
-        config={
-            **vars(args),
-            "robot": spec["robot"],
-            "level_space": spec["level_space"],
-            "run": spec,
-        },
+        tags=["brax-ued", "final-eval", args.robot, *args.tags],
+        config=vars(args),
     )
-    metrics, raw = evaluate(ctx)
+    metrics, raw = evaluate(build(args))
     run.summary.update(metrics)
     run.finish()
     out = Path(args.out_dir)

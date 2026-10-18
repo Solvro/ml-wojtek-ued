@@ -11,9 +11,7 @@ estimate from those pieces; `run_levels_steps_per_s` times a real
 
 import argparse
 import json
-import tempfile
 import time
-from pathlib import Path
 from typing import Any
 
 import jax
@@ -102,31 +100,28 @@ def iteration_parts(ctx: dict[str, Any], levels: np.ndarray) -> dict[str, float]
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--backend", required=True, choices=["jax", "warp"])
-    p.add_argument("--profile", default="benchmark", choices=list(brax_ued.ARENAS))
+    p.add_argument("--robot", default="wojtek", choices=list(brax_ued.ROBOT_SCALE))
     p.add_argument("--num_lanes", type=int, default=256)
     p.add_argument("--envs_per_lane", type=int, default=32)
     p.add_argument("--level_steps", type=int, default=300)
     p.add_argument("--eval_levels", type=int, default=512)
     a = p.parse_args()
-    with tempfile.TemporaryDirectory() as tmp:
-        backend = Path(tmp) / "backend.json"
-        backend.write_text(json.dumps({"sim": {"backend": a.backend}}))
-        args = brax_ued.parse_args(
-            [
-                *("--mode", "dr", "--name", "profile", "--profile", a.profile),
-                *("--level_space", "param", "--n_edits", "2", "--edit_scale", "0.1"),
-                *("--num_lanes", str(a.num_lanes)),
-                *("--envs_per_lane", str(a.envs_per_lane)),
-                *("--level_steps", str(a.level_steps)),
-                *("--eval_levels", str(a.eval_levels)),
-                *("--env_override", str(backend)),
-            ]
-        )
-        start = time.perf_counter()
-        ctx = brax_ued.build(args)
+    args = brax_ued.parse_args(
+        [
+            *("--mode", "dr", "--name", "profile", "--robot", a.robot),
+            *("--level_space", "param", "--n_edits", "2", "--edit_scale", "0.1"),
+            *("--num_lanes", str(a.num_lanes)),
+            *("--envs_per_lane", str(a.envs_per_lane)),
+            *("--level_steps", str(a.level_steps)),
+            *("--eval_levels", str(a.eval_levels)),
+            *("--backend", a.backend),
+        ]
+    )
+    start = time.perf_counter()
+    ctx = brax_ued.build(args)
     rec: dict[str, Any] = {
         "backend": a.backend,
-        "profile": a.profile,
+        "robot": a.robot,
         "num_envs": a.num_lanes * a.envs_per_lane,
         "build_s": time.perf_counter() - start,
     }

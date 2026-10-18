@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from hfield.tiles import TileLayout
-from scripts.brax_ued import hfield_config, parse_args, run_spec
+from scripts.brax_ued import hfield_config, parse_args, wojtek_overrides
 from utils.env import TravelBounds, max_command_speed, travel_bounds
 from wojtek_env.envs import registry
 from wojtek_env.terrain.terrain_env import SPAWN_EDGE_MARGIN
@@ -16,48 +16,41 @@ from wojtek_env.terrain.terrain_env import SPAWN_EDGE_MARGIN
 SCAN = math.hypot(1.45, 0.3)
 
 
-def profile(name: str) -> tuple[TravelBounds, TileLayout]:
-    args = parse_args(["--mode", "accel", "--name", "t", "--profile", name])
+def benchmark() -> tuple[TravelBounds, TileLayout]:
+    args = parse_args(["--mode", "accel", "--name", "t"])
     config = registry.TASKS["joystick"][1]()
-    registry._apply_overrides(config, run_spec(args)["env_overrides"])
+    registry._apply_overrides(config, wojtek_overrides(args, 1, train=True))
     base = SimpleNamespace(_config=config, dt=config.ctrl_dt)
     return travel_bounds(base), TileLayout(hfield_config(args))
 
 
-def test_deploy_speed_is_the_command_box_corner() -> None:
-    travel, _ = profile("deploy")
-    assert travel.speed == pytest.approx(math.hypot(1.2, 0.5))
-
-
 def test_benchmark_speed_is_the_fast_walk() -> None:
-    travel, _ = profile("benchmark")
+    travel, _ = benchmark()
     assert travel.speed == pytest.approx(1.2)
 
 
-@pytest.mark.parametrize("name", ["benchmark", "deploy"])
-def test_critic_reads_the_scan_actor_only_its_feet(name: str) -> None:
-    travel, _ = profile(name)
+def test_critic_reads_the_scan_actor_only_its_feet() -> None:
+    travel, _ = benchmark()
     assert travel.sensing == pytest.approx(SCAN)
     assert travel.actor_sensing == pytest.approx(SPAWN_EDGE_MARGIN)
 
 
-@pytest.mark.parametrize("name", ["benchmark", "deploy"])
-def test_a_300_step_level_stays_on_its_tile(name: str) -> None:
-    travel, layout = profile(name)
+def test_a_300_step_level_stays_on_its_tile() -> None:
+    travel, layout = benchmark()
     layout.check_reach(travel.reach(300, travel.sensing), "300 steps")
 
 
-def test_deploy_scan_reaches_past_an_8_m_arena() -> None:
-    travel, layout = profile("deploy")
+def test_scan_reaches_past_an_8_m_arena() -> None:
+    travel, layout = benchmark()
     eight = TileLayout(dataclasses.replace(layout.config, reach=8.0))
     reach = travel.reach(300, travel.sensing)
-    assert reach == pytest.approx(0.15 + 6 * math.hypot(1.2, 0.5) + SCAN)
-    with pytest.raises(ValueError, match=r"HFieldConfig.reach >= 10"):
+    assert reach == pytest.approx(0.15 + 6 * 1.2 + SCAN)
+    with pytest.raises(ValueError, match=r"HFieldConfig.reach >= 9"):
         eight.check_reach(reach, "300 steps")
 
 
 def test_1000_step_levels_are_refused() -> None:
-    travel, layout = profile("deploy")
+    travel, layout = benchmark()
     with pytest.raises(ValueError, match="1000 steps"):
         layout.check_reach(travel.reach(1000, travel.sensing), "1000 steps")
 

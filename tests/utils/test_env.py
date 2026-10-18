@@ -47,11 +47,11 @@ pytestmark = pytest.mark.skipif(
 def env() -> Iterator[FunctionalEnv]:
     write_accel_arena(CONFIG, kind="test")
     overrides = merge_overrides(
-        accel_arena_overrides(CONFIG.pad_radius, "test"),
+        accel_arena_overrides(CONFIG.pad_radius, "jax", "test"),
         movement_overrides(),
         terrain_overrides(),
         {
-            "sim": {"num_envs": LAYOUT.n_tiles, "backend": "jax"},
+            "sim": {"num_envs": LAYOUT.n_tiles},
             "no_progress": {"enable": False},
             "push": {"enable": False},
             "command": {"zero_prob": 1.0, "height": (0.14, 0.14)},

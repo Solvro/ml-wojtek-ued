@@ -1,7 +1,7 @@
 """Video of a `brax_ued.py` checkpoint walking generated levels.
 
-Env, network and level space are rebuilt from the checkpoint's sidecar
-(`<run>.json`, written by `brax_ued.py`). The deterministic policy runs on
+Env, network and level space are rebuilt from the same robot / arena /
+level-space flags the run trained with. The deterministic policy runs on
 MJX (tile 0 of the arena) under a held velocity command; the recorded
 states are replayed through an offscreen MuJoCo renderer, on a one-tile copy
 of the arena, with a camera tracking the base. One clip per `--level D:SEED` (a `scaled` level of
@@ -19,6 +19,7 @@ import jax.numpy as jnp
 import mediapy
 import mujoco
 import numpy as np
+from brax.io import model as brax_model
 from brax.training.agents.ppo import networks as ppo_networks
 from mujoco_playground._src.locomotion.go1 import base as go1_base
 
@@ -28,14 +29,13 @@ from hfield.level_space import make_level_space
 from hfield.tiles import TileLayout
 from robots.go1 import Go1Terrain, scene_xml
 from scripts.brax_ued import (
-    ARENAS,
     ROBOT_SCALE,
-    check_spec_arena,
-    load_run,
+    add_backend_arg,
+    check_wojtek_arena,
+    hfield_config,
     make_env,
-    spec_network,
+    make_network,
 )
-from scripts.eval_brax import eval_spec
 from utils.env import FunctionalEnv
 
 # mujoco is a C extension that ty cannot introspect
@@ -79,14 +79,13 @@ def hold_command(info: dict[str, Any], command: jax.Array) -> dict[str, Any]:
 
 def make_rollout(
     env: FunctionalEnv,
-    spec: dict[str, Any],
     params: Any,
     command: jax.Array,
     n_steps: int,
 ) -> Rollout:
     """(key, arena hfield_data, tile_xy) -> per-step qpos before the step,
     and fell flags."""
-    make_policy = ppo_networks.make_inference_fn(spec_network(spec))
+    make_policy = ppo_networks.make_inference_fn(make_network(env))
     policy = make_policy(params, deterministic=True)
 
     def step(state: Any, hfield: jax.Array) -> tuple[Any, tuple[jax.Array, ...]]:
@@ -158,9 +157,7 @@ def render_frames(
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument(
-        "--checkpoint", required=True, help="brax_ued.py .pkl, sidecar .json beside it"
-    )
+    p.add_argument("--checkpoint", required=True, help="brax_ued.py .pkl params")
     p.add_argument("--out_dir", default="artifacts/videos")
     p.add_argument(
         "--level",
@@ -182,23 +179,24 @@ def parse_args() -> argparse.Namespace:
         help="held command (m/s, m/s, rad/s); the default arc stays on the arena",
     )
     p.add_argument("--seed", type=int, default=0, help="reset key")
-    p.add_argument(
-        "--arena",
-        choices=list(ARENAS),
-        default=None,
-        help="render on this profile's arena instead of the checkpoint's",
-    )
+    # the run's own arena and level space (brax_ued.py flags, same defaults)
+    p.add_argument("--robot", default="wojtek", choices=list(ROBOT_SCALE))
+    p.add_argument("--level_space", default="param", choices=["grid", "param"])
+    p.add_argument("--amplitude", type=float, default=0.3)
+    p.add_argument("--coarse_n", type=int, default=13)
+    p.add_argument("--pad_radius", type=float, default=0.55)
+    p.add_argument("--pad_taper", type=float, default=0.2)
+    add_backend_arg(p)
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    spec, params = load_run(Path(args.checkpoint))
-    spec = eval_spec(spec, args.arena, None)
-    config = HFieldConfig(**spec["hfield"])
-    check_spec_arena(spec)
-    env = make_env(spec, num_envs=1, train=False)
-    scale = ROBOT_SCALE[spec["robot"]]
+    params = brax_model.load_params(args.checkpoint)
+    config = hfield_config(args)
+    check_wojtek_arena(args, config)
+    env = make_env(args, config, num_envs=1, train=False)
+    scale = ROBOT_SCALE[args.robot]
     base: Any = env._env.unwrapped
     n_steps = round(args.seconds / base.dt)
     if n_steps > env._env.episode_length:
@@ -207,9 +205,9 @@ def main() -> None:
             f"episode length {env._env.episode_length}; the env would reset"
         )
     space = make_level_space(
-        spec["level_space"], config, n_edits=1, edit_scale=0.0, robot_scale=scale
+        args.level_space, config, n_edits=1, edit_scale=0.0, robot_scale=scale
     )
-    rollout = make_rollout(env, spec, params, jnp.asarray(args.command), n_steps)
+    rollout = make_rollout(env, params, jnp.asarray(args.command), n_steps)
     layout = TileLayout(config)
     tile_xy = layout.tile_xy(1, 1)[0]
     model = render_model(base, config)

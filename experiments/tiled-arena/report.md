@@ -1,5 +1,9 @@
 # Tiled arena: closing the throughput gap to upstream
 
+Measured at commit 8a52ca2 (main before the return to the draft state);
+its job scripts and the deploy-profile rows are in that commit's tree. The
+tiled arena itself was then ported onto the draft code unchanged.
+
 Question: where does brax_ued's ~9x throughput gap to w01-tek's trainer
 (~9.7k vs 90-117k env steps/s on one H100) come from, and does a shared
 tiled arena on the warp backend close it without changing what a lane sees?

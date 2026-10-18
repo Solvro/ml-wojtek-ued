@@ -63,8 +63,7 @@ their gaps (`TileLayout`), box "apron" strips around it, plus the
 spec/lookup sidecars — via `terrain.py`'s writers. The spec records the
 layout (`tile_layout`: tiles per side, level grid, gap); `check_arena`
 refuses an arena built for another layout, or a single-level arena from
-before the tiles, with the rebuild command
-([setup.md](setup.md#tiled-arena-requirements)).
+before the tiles, with the rebuild command.
 Two far corner nodes are pinned to `0`/`1`: MuJoCo rescales a loaded hfield
 to span `[0, 1]`, so an all-`0.5` file compiles to `0` and sinks the static
 ground to `-amplitude`. That broke `real_pose_ref` (its standing-height settle
@@ -294,8 +293,9 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   every unroll. Lane regret = mean positive GAE advantage over the
   iteration. `tile_leak_frac`: envs that reached a neighbouring tile
   ([tiled arena](environment.md#tiled-arena)).
-- Physics backend: warp on a GPU (`sim.backend` auto), jax on CPU; v10 and
-  earlier runs trained on jax (their sidecars pin it). Throughput, measured
+- Physics backend: `--backend` (default `auto`: warp on a GPU, jax on
+  CPU), Wojtek and Go1 alike; v10 and earlier runs (the paper draft)
+  trained on jax, so rerun them with `--backend jax` to compare. Throughput, measured
   on an H100: [Throughput](#throughput).
 - `--mode dr`: fresh uniform levels at full difficulty, train every
   iteration.
@@ -338,79 +338,37 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   uniform (DR) levels.
 - `--robot go1`: Playground's Go1 instead of Wojtek, see
   [Go1](#go1).
-- `--profile {benchmark,deploy}` (default `benchmark` = everything above,
-  the v10 setup). `deploy`: w01-tek `terrain_blind_v4_4d`'s env, DR and SiLU
-  network on the 12x12 m `accel_deploy` arena, exportable to the robot —
-  [deploy.md](deploy.md#profile).
-- Sidecar: with `--checkpoint_dir`, `<name>.json` is written beside
-  `<name>.pkl` at launch (profile, robot, arena, `HFieldConfig`, level
-  space, resolved env overrides, DR, network, flags, obs sizes, git commit);
-  every consumer rebuilds env and network from it
-  ([deploy.md](deploy.md#sidecar)). `brax_ued.py` also checks the built
-  arena's geometry against the run before training.
-- Non-finite guard, every iteration: NaN/Inf in the student's normalizer,
-  policy or value stops the run (`FloatingPointError` naming iteration and
-  `env_steps`); with `--checkpoint_dir` the previous iteration's params go to
-  `<name>_last_finite.pkl` (+ sidecar); `<name>.pkl` keeps the last
-  evaluated policy.
-  `load_run` refuses a checkpoint with non-finite params (eval, export,
-  render, `--init_from`).
 - Eval every `eval_every` iterations: deterministic policy on `eval_levels`
   fresh uniform levels (2 episodes each, in chunks of at most `tiles²`
   levels) at difficulties 0.25/0.5/0.75/1.0 — `eval/d<d>/success_rate` (no
-  fall and >= `min_travel` m from spawn), `eval/d<d>/cmd_success_rate`
-  (eval_brax's command tracking, `utils/tracking.py`), fall rate, travel,
-  forward vs commanded speed. With `--checkpoint_dir`, `<name>.pkl` is
-  rewritten after every eval, so a crashed run keeps its last evaluated
-  policy.
-- Divergence guard: diverged env steps are ended in the env
-  ([environment.md](environment.md#functionalenv--the-training-bridge)) and
-  logged as `diverged_per_step`. With `--init_from`, every obs std must
-  stay within 10x of the warm start's
-  (`normalizer/std_ratio_{max,min}/{state,privileged_state}`, logged every
-  iteration), else the run stops with `FloatingPointError` naming the last
-  evaluated checkpoint.
-- PPO, every training iteration: `ppo/<metric>` = mean of brax's loss
-  metrics over the iteration's updates (`total_loss`, `policy_loss`,
-  `v_loss`, `entropy_loss`, `kl_mean`, `policy_dist_*`), `ppo/grad_norm`
-  (global norm before clipping, mean) and `ppo/grad_norm_max`.
+  fall and >= `min_travel` m from spawn), fall rate, travel, forward vs
+  commanded speed.
 - Curriculum composition (`--level_space param` only), every iteration over
   the levels the student ran on (replayed, explored or PAIRED-generated):
   `level/<param>` = mean physical value (`ParamSpace.physical`, robot
   units), `level/slope_deg_abs` / `level/step_height_m_abs` = mean |value|
   of the signed parameters, `level/genome_dist` = mean |genome - `flat`|.
-- `--init_from <run>.pkl`: warm start from a brax_ued or imported
-  upstream checkpoint ([deploy.md](deploy.md#warm-start)).
-- `--env_override <file.json>` (TRAINING_ONLY env keys merged onto the
-  profile's, [deploy.md](deploy.md#profile)), `--clipping_epsilon` (PPO
-  clip, default 0.2), `--learning_rate` (Adam, default 3e-4).
-- Reward terms, every iteration: `reward_term/<name>` = mean of the env's
-  `reward/<name>` metric over the iteration's training steps, raw (before
-  `reward.scales` and the x `ctrl_dt`).
 - Compute accounting, every iteration: `sim_steps` (every training env step
   simulated: PAIRED's antagonist and ACCEL/PLR explore iterations included,
   eval rollouts not), `student_train_steps` (env steps whose data fed a
   student PPO update), `elapsed_s` (wall clock since launch, compile
   included). The run summary ends with `final/elapsed_h`, `final/sim_steps`,
   `final/student_train_steps` (`paper_tables.py` compute table).
-- WCSS: `brax_ued.sbatch` array (tasks 0-2 dr, 3-5 accel, seeds 0-2),
-  `PROFILE=deploy` for the deploy profile; assets must be built beforehand
-  since tasks start together.
+- WCSS: `brax_ued.sbatch` array (tasks 0-2 dr, 3-5 accel, seeds 0-2); assets
+  must be built beforehand since tasks start together.
 - The arena must match the run's geometry (`hfield.arena.check_arena`:
   `pad_radius`, height scale, level grid, tiles, gap); the error names the
-  `just build-accel-arena arena=<kind> hfield_params...` command for it
-  ([setup.md](setup.md#tiled-arena-requirements)).
+  `just build-accel-arena hfield_params...` command for it.
 
 ## Throughput {#throughput}
 
 H100, 8192 envs (256 lanes x 32), `scripts/profile_brax_ued.py`; full
 numbers and the old loop's profile in `experiments/tiled-arena/report.md`.
 
-- v10 loop (jax, the old per-level arena, one `hfield_data` per env):
-  12.9k env steps/s, ~9.7k end to end. Physics is 98% of an iteration;
-  the per-env level itself costs nothing (a shared level on jax is the
-  same 12.9k).
-- Tiled arena on warp: 263k (benchmark) / 257k (deploy) env steps/s; a
+- v10 loop (jax, per-env hfield swap): 12.9k env steps/s, ~9.7k end to
+  end. Physics is 98% of an iteration; the per-env swap itself costs
+  nothing (a shared level on jax is the same 12.9k).
+- Tiled arena on warp: 263k env steps/s; a
   training iteration (2.46M steps, 15 unroll + PPO update pairs) ~10.8 s
   = ~227k steps/s; `evaluate` 17-23 s (jax: 106 s).
 - 32M steps of `--mode accel` in ~5 min wall clock, ~2 min of it
@@ -419,14 +377,13 @@ numbers and the old loop's profile in `experiments/tiled-arena/report.md`.
   terrain under warp and stands 7-11 mm higher; compare runs within one
   backend. On jax the tiled arena reproduces v10's final eval inside its
   95% CIs.
-- Whole-device GPU memory: ~16 GB on warp (JAX preallocation off,
-  [setup.md](setup.md#tiled-arena-requirements)), so
+- Whole-device GPU memory: ~16 GB on warp (JAX preallocation off), so
   larger batches fit.
 
 ## Level spaces — `hfield/level_space.py` {#level-spaces}
 
-`brax_ued.py` takes `--level_space {grid,param}` (eval scripts read it from
-the sidecar); every mode samples, mutates and renders levels through it.
+`brax_ued.py` and `eval_brax.py` take `--level_space {grid,param}`; every
+mode samples, mutates and renders levels through it.
 
 - `grid` (default, v7 runs): the original `coarse_n x coarse_n` control-point
   genome. i.i.d. noise, so levels at one scale are statistically alike: the
@@ -458,8 +415,7 @@ the sidecar); every mode samples, mutates and renders levels through it.
   NSEEDS + seed offset; default seeds 0-2, extra seeds e.g. `NSEEDS=2
   SEED0=3`) and `SRC` (`<dir>/src` of a frozen copy with the
   built `assets/` beside it - `wojtek_env.paths` resolves assets from
-  `src/..` - so queued jobs keep the submitted code; put
-  `git rev-parse HEAD > <dir>/GIT_COMMIT` there for the sidecar).
+  `src/..` - so queued jobs keep the submitted code).
 - `robot_scale` (`ParamSpace`, eval suite): every length range (amplitude,
   wavelength, stairs, gaps, blocks, gap depth/period) times the robot's size
   relative to Wojtek; slopes unchanged. Envelopes stay in Wojtek units.
@@ -467,11 +423,13 @@ the sidecar); every mode samples, mutates and renders levels through it.
 ## Go1 — `robots/go1.py` {#go1}
 
 Second robot for the benchmark: open serial chain (Go1) vs Wojtek's closed
-chain. `--robot go1` in `brax_ued.py` (evals read it from the sidecar), `ROBOT=go1` on WCSS
+chain. `--robot go1` in `brax_ued.py` / `eval_brax.py`, `ROBOT=go1` on WCSS
 (run prefix `v9_go1`).
 
 - Playground `Go1JoystickRoughTerrain` (feet-only collisions, its reward,
-  blind actor), on the jax backend (not validated on warp), with:
+  blind actor), on `--backend` like Wojtek (warp: Playground's own
+  rough-terrain Go1 trains on warp; on this arena not yet compared with
+  jax), with:
   - the tiled ACCEL arena, written by `scene_xml` (no asset files): one
     `hfield` geom `floor` (geom 0, so Playground's friction DR hits it),
     sized by `HFieldConfig`; `reset` spawns on `spawn_xy`, the tile centre
@@ -483,20 +441,19 @@ chain. `--robot go1` in `brax_ued.py` (evals read it from the sidecar), `ROBOT=g
   - critic gets a clean 5x5 height scan (Wojtek's grid x `GO1_SCALE`).
 - `GO1_SCALE = 2.5` (standing trunk 0.258 m vs Wojtek 0.10 m) scales the
   arena (`hfield_config`, `reach` included), level lengths, commands and
-  `min_travel`. Sidecars from before the tiled arena lack `reach` and get
-  Wojtek's 10 m (a 2.5 m gap for Go1, which `check_reach` refuses).
+  `min_travel`.
 - Physics DR: Playground's `go1/randomize.py`.
 - Needs `mujoco_menagerie` under Playground's `external_deps` (meshes);
   `ensure_menagerie_exists()` clones it, by hand on WCSS (no AVX on login).
 
 ## Final eval — `scripts/eval_brax.py` {#eval-brax}
 
-Loads a `brax_ued.py` checkpoint (`--checkpoint <run>.pkl`; robot, level
-space, arena and network from its sidecar `<run>.json`), deterministic
+Loads a `brax_ued.py` checkpoint (`--checkpoint <run>.pkl`), deterministic
 policy, no physics DR, no `no_progress` cut. Success = no fall and >=
 `min_travel` m from spawn after `level_steps`. Levels run in chunks of
 `min(chunk_envs / episodes, tiles²)` levels, level i of a chunk on tile i;
-the backend is the sidecar's (v10 and earlier: jax).
+`--backend` as in training (score a checkpoint on the backend it trained
+on).
 
 - `random/d<d>`: `num_levels` (2048) genome levels, the same genomes at
   each difficulty 0.25/0.5/0.75/1.0.
@@ -511,37 +468,6 @@ the backend is the sidecar's (v10 and earlier: jax).
   on the same episodes is biased low by selection noise: with 2000 levels
   of true success 0.5 and 4 episodes each, same-pass CVaR25 reads 0.19,
   cross-fitted 0.49.
-- **Command-conditioned success** (`<set>/cmd_success_rate`, secondary):
-  no fall and the env's sampled command tracked, judged like the deploy
-  tracking reward (`tracking_relative`). Per step, body frame:
-  `lin_rel = |v_xy - cmd_xy| / max(|cmd_xy|, 0.3 m/s x ROBOT_SCALE)`,
-  `yaw_rel = |wz - cmd_wz| / max(|cmd_wz|, 0.7 rad/s)` (the deploy reward's
-  `tracking_rel_floor_lin` / `_ang`). Tracked = episode means of both
-  < 0.5, i.e. within 50% of the command (`TRACK_*` in `utils/tracking.py`).
-  Steps within 1 s of the reset or of a command change are a start-up
-  transient and not scored: the env resamples every 250 steps (5 s), so a
-  6 s level scores 1-5 s and the second command's last second is all
-  transient. Deploy commands include stand, spin and slow draws
-  whose |v_xy| x 6 s is below `min_travel` (~19% of draws on
-  accel_deploy), which caps `success_rate` below 1. Travel is distance
-  from spawn, so backward walks can reach it.
-  - Stand-still floor: a robot that never moves passes 12.4% of deploy
-    command draws (accel_deploy rows; 100k draws of the env's
-    `_sample_command`), nearly all of them the 10.4% zero commands. An
-    absolute 0.25 m/s / 0.5 rad/s tolerance gave it 26.9%.
-  - `track_lin_err` / `track_yaw_err` = mean absolute errors (m/s, rad/s)
-    over episodes without a fall; npz adds `<set>_lin_err`, `_yaw_err`,
-    `_lin_rel`, `_yaw_rel` per random/param set.
-  - Suite sets report it too: `suite/<terrain>_<k>/cmd_success_rate`, and
-    `suite/cmd_success_rate` = mean over them (npz `suite_cmd_success`).
-- Eval-only overrides (the trained network is unchanged; both are
-  training-only to the policy): `--arena {benchmark,deploy}` evaluates on
-  that profile's arena geometry instead of the checkpoint's;
-  `--command_box VX_LO VX_HI VY_LO VY_HI WZ_LO WZ_HI HEIGHT` samples one
-  uniform command in that box with every special draw (stand, spin,
-  strafe, backward, arc, terrain bias) off. v10-comparable eval of a
-  deploy policy: `--arena benchmark --command_box 0.2 0.6 -0.2 0.2 -0.4 0.4
-  0.14`. `render_video.py --arena` renders on another arena the same way.
 - `--level_space param` adds `param/uniform` (2048 levels drawn from the
   full 8-parameter space: heterogeneous, so CVaR reads a real tail) and
   capability envelopes `axis/<feature>`: one feature (rough, slope up/down,
@@ -549,13 +475,9 @@ the backend is the sidecar's (v10 and earlier: jax).
   off; `envelope` = largest |feature| passed at 50% success, `auc` = mean
   success over the ramp. Difficulty 0.25 is too easy to separate methods
   (~89% for anything trained near flat) and is not a headline number.
-- `flat/...`: `--flat_levels` (default `suite_instances`) flat levels
-  (`scaled(0)`), the no-terrain reference (success, fall rate, travel,
-  CVaR). Runs last on its own rng/key, so every other set keeps its v8
-  levels and keys. `--flat_only` evaluates only flat levels, with reset
-  keys of its own (not the full eval's flat keys): compare `--flat_only`
-  runs with each other, not with a full eval's `flat/...` (64 levels
-  resolve only ±4 points; deploy-accel-ft guards use 1024).
+- `flat/...`: `suite_instances` flat levels (`scaled(0)`), the no-terrain
+  reference (success, fall rate, travel, CVaR). Runs last on its own
+  rng/key, so every other set keeps its v8 levels and keys.
 - 95% bootstrap CIs over levels for mean and CVaR; `level_success_corr`
   between passes; suite CVaR is over the 28 terrain×strength cells.
 - Writes `<name>.json` (metrics) and `<name>.npz` to `--out_dir`, and the
@@ -564,7 +486,6 @@ the backend is the sidecar's (v10 and earlier: jax).
   - `random_d<d>_fell`, `random_d<d>_travel`; `random_levels` (levels x
     genome): the d=1 base genomes of the `random/d*` sets.
   - `suite_success` (28 terrain x strength cells).
-  - `flat_fell`, `flat_travel`, `flat_{lin,yaw}_{err,rel}`.
   - `param` only: `param_uniform_fell`, `param_uniform_travel`,
     `param_uniform_levels` (levels x genome). `_travel` and the genomes are
     new in v10; v8 npz files lack them. WCSS: `eval_brax.sbatch` (same `MODES` task layout
@@ -656,9 +577,8 @@ network and deterministic policy as eval_brax; no physics DR.
   slowest), Go1 ~7 min / 0.4 CPU-h.
 - Writes `<name>.json` and `<name>.npz` (`<variant>_<set>_fell/_travel`,
   levels x episodes) to `--out_dir`; wandb tags `sim2sim`, robot.
-- Needs a `param`-space checkpoint (read from the sidecar).
 - WCSS: `slurm/eval_sim2sim.sbatch`, same `MODES`/seed array layout, `SRC`,
-  `PREFIX` as `eval_brax.sbatch`; `lem-cpu-short`, 16 cores (CPU
+  `ROBOT`, `PREFIX` as `eval_brax.sbatch`; `lem-cpu-short`, 16 cores (CPU
   only; Lem CPU nodes share the GPU nodes' AlmaLinux 9, so the venv runs).
 
 ## Demo videos — `scripts/render_video.py` {#render-video}
@@ -671,14 +591,13 @@ just render-video --checkpoint artifacts/checkpoints/<run>.pkl \
   --level 0.5:<seed> --level 0.75:<seed> --level 1.0:<seed>
 ```
 
-- Env, network, robot, level space and arena come from the checkpoint's
-  sidecar `<run>.json` ([deploy.md](deploy.md#sidecar)); pre-sidecar
-  checkpoints need `just write-sidecar` first. A sidecar whose obs sizes
-  differ from the checkpoint fails before rollout.
+- Env, network and level space are rebuilt from `brax_ued.py`'s flags
+  (`--robot`, `--level_space`, `--amplitude`, `--coarse_n`, `--pad_radius`,
+  `--pad_taper`, `--backend`; defaults = v10: param levels): pass the
+  ones the run trained with.
 - Needs the run's arena built with its geometry (v10: `just
   build-accel-arena hfield_params.amplitude=0.3 hfield_params.coarse_n=13
-  hfield_params.pad_radius=0.55 hfield_params.pad_taper=0.2`; deploy
-  profile: `just build-deploy-arena`). For Wojtek the script checks the
+  hfield_params.pad_radius=0.55 hfield_params.pad_taper=0.2`). For Wojtek the script checks the
   arena's spec (`pad_radius`, height scale, tile layout) first and fails with
   the command filled in; an amplitude mismatch would otherwise run
   silently.

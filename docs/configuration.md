@@ -104,7 +104,7 @@ Plain dataclass (`config/hfield_config.py`); the level genome envelope. See
 
 `patch_radius`, `cell_size`, `amplitude`, `base_z`, `tiles`, `reach` set the
 compile-time arena (static `hfield_size`, node count); changing them needs a
-fresh arena ([setup.md](setup.md#tiled-arena-requirements)). `coarse_n`/`n_edits`/`edit_scale` shape the genome
+fresh arena (`just build-accel-arena`). `coarse_n`/`n_edits`/`edit_scale` shape the genome
 and mutations and can vary freely between runs.
 
 `patch_radius=3.0` (was `6.0`): at `ctrl_dt=0.02`/`steps_in_episode=200` a

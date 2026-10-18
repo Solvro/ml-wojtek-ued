@@ -9,8 +9,7 @@
 #SBATCH --error=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued/logs/%x_%A_%a.out
 # Same task layout as brax_ued.sbatch: task = mode_index * 3 + seed over MODES.
 # CPU-only (physics on CPU MuJoCo); Lem CPU nodes run the same AlmaLinux 9
-# as the GPU nodes the venv was built for. Robot and level space come from
-# each checkpoint's sidecar <run>.json.
+# as the GPU nodes the venv was built for.
 set -euo pipefail
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1 JAX_PLATFORMS=cpu
@@ -25,10 +24,13 @@ read -ra MODES <<<"${MODES:?set MODES, e.g. 'dr accel'}"
 MODE="${MODES[$((SLURM_ARRAY_TASK_ID / 3))]}"
 SEED=$((SLURM_ARRAY_TASK_ID % 3))
 PREFIX="${PREFIX:-v10_wojtek}"
+# ROBOT=go1 runs Playground's Go1 at its size (robots/go1.py)
+ROBOT="${ROBOT:-wojtek}"
 RUN="${PREFIX}_${MODE}_seed${SEED}"
 echo "job ${SLURM_JOB_ID} task ${SLURM_ARRAY_TASK_ID}: sim2sim $RUN"
 
 uv run --no-sync python "$SRC/scripts/eval_sim2sim.py" \
   --checkpoint "$PDW/artifacts/brax_ued/$RUN.pkl" --name "${RUN}_sim2sim" \
   --entity dominikgalus9-wroc-aw-university-of-science-and-technology \
-  --project wojtyla --out_dir "$PDW/runs/sim2sim"
+  --project wojtyla --out_dir "$PDW/runs/sim2sim" --level_space param \
+  --robot "$ROBOT"
