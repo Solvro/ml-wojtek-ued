@@ -19,7 +19,7 @@ carry the reasons:
   1.14 removed `warp._src.jax_experimental` and breaks `put_model(impl="warp")`.
 
 Everything else (`brax`, `equinox`, `distrax`, `flax`, `hydra-core`, `wandb`,
-`orbax`, `gymnasium`, `playground`, `ml-collections`) floats on `>=`.
+`gymnasium`, `playground`, `ml-collections`) floats on `>=`.
 
 ## Install
 
@@ -38,13 +38,13 @@ just build               # wojtek.xml -> wojtek_mjx.xml + scene_mjx.xml
 just build-accel-arena   # write the "accel" arena (scene/hfield/spec/lookup)
 ```
 
-`build-accel-arena` is required before `just accel` — the ACCEL env loads the
+`build-accel-arena` is required before `brax_ued.py` and the eval scripts — they load the
 `accel` terrain arena. See [environment.md](environment.md#assets) for what each
 file is and why they must sit next to the robot XML.
 
 ## mjpython on macOS
 
-`mujoco.viewer.launch_passive` (used by `just eval-sim` and
+`mujoco.viewer.launch_passive` (used by
 `wojtek_env/tools/check_model_mjx.py`) requires running under `mjpython` on
 macOS, not plain `python` — its launcher dlopens `.venv/bin/python` to hop
 the interpreter onto the main thread for Cocoa. `uv`'s relocatable CPython
@@ -59,40 +59,24 @@ sync`/`install`.
 ## Run
 
 ```bash
-just train [hydra-overrides]      # plain PPO           (scripts/ppo.py, config "config")
-just train-dr [hydra-overrides]   # PPO + domain rand.   (scripts/ppo_dr.py, config "config")
-just accel [hydra-overrides]      # ACCEL                (scripts/accel.py, config "accel_config")
-just accel-top-k [hydra-overrides] # ACCEL, batched-lanes/top-k (scripts/accel_top_k.py, config "accel_config")
-just eval --algo <algo> [args]    # evaluate a checkpoint (scripts/eval.py, pyrallis CLI)
+export PYTHONPATH=src XLA_PYTHON_CLIENT_PREALLOCATE=false
+uv run python src/scripts/brax_ued.py --mode accel --name my_run \
+  --checkpoint_dir artifacts/checkpoints                                  # train (dr | accel | plr | paired)
+uv run python src/scripts/eval_brax.py --checkpoint artifacts/checkpoints/my_run.pkl --name my_eval
+just render-video --checkpoint artifacts/checkpoints/my_run.pkl --level 0.75:3
 ```
 
-`scripts/eval_levels.py` (no `just` recipe yet) evaluates a checkpoint's
-generalization across freshly generated heightfield levels instead of one
-fixed course; same `--algo`/`--run`/`--step` CLI.
-
-Examples:
-
-```bash
-just train training_params.epochs=8 environment_params.name=jump
-just train-dr environment_params.envs_num=32
-just accel accel_params.replay_prob=0.7 wandb_params.enable=true
-just eval --algo accel                    # latest run, latest checkpoint
-just eval --algo ppo --run my_run --step 5000
-uv run python src/scripts/eval_levels.py --algo accel --num_levels 512
-```
-
-Overrides are Hydra dotted paths into the config dataclasses —
-see [configuration.md](configuration.md).
+All scripts take argparse flags (`--help`); the full set, with the cluster
+launchers (`slurm/*.sbatch`), is in [ued-accel.md](ued-accel.md#brax-ued).
 
 ## Import root
 
 `PYTHONPATH=src` is exported by the `justfile`, so research code imports are
-top-level (`from ued.curriculum import ...`, `from utils.env import ...`). Run
+top-level (`from hfield.tiles import ...`, `from utils.env import ...`). Run
 scripts through `just` (or export `PYTHONPATH=src` yourself) so these resolve.
 
 ## What lands where
 
-Gitignored outputs (`.gitignore`): `artifacts/` (orbax checkpoints, laid out as
-`artifacts/<algo>/<run>/`, see [ppo.md](ppo.md#checkpoints--utilscheckpointpy)),
-`wandb/`, `logs/` (jsonl fallback), `runs/`, `outputs/` + `multirun/` (Hydra),
-and the generated `*_mjx.xml` / `terrain*` / `hfield_playground_*` assets.
+Gitignored outputs (`.gitignore`): `artifacts/` (`brax_ued.py` checkpoints), `wandb/`, `runs/`, `outputs/` +
+`multirun/` (Hydra),
+and the generated `*_mjx.xml` / `terrain*` assets.

@@ -1,7 +1,7 @@
 # Wojtek UED Research
 
 Unsupervised Environment Design (PAIRED/ACCEL) on the Wojtek quadruped: a PPO
-student trained against an adversarial curriculum of procedurally generated
+student (brax PPO in `scripts/brax_ued.py`) trained against an adversarial curriculum of procedurally generated
 heightfield levels. Built on `wojtek_env`, an extracted MJX simulation env +
 procedural terrain generator + Gymnasium interface (env only — no ROS, no
 deployment).
@@ -15,11 +15,9 @@ Full docs live in [`docs/`](docs/):
 | [overview.md](docs/overview.md) | architecture, repo map, end-to-end data flow, glossary |
 | [setup.md](docs/setup.md) | install, dependency pins, building assets, running |
 | [environment.md](docs/environment.md) | `wojtek_env` tasks/terrain/gym, `FunctionalEnv`, the shared tiled arena |
-| [ppo.md](docs/ppo.md) | A2C model, rollout, GAE, PPO loss/step, checkpoints, logging |
-| [ued-accel.md](docs/ued-accel.md) | heightfield levels + the ACCEL curriculum + convergence |
-| [configuration.md](docs/configuration.md) | every Hydra config field + override examples |
+| [ued-accel.md](docs/ued-accel.md) | heightfield levels, the `brax_ued.py` trainer + curriculum modes, eval/render/paper scripts |
+| [configuration.md](docs/configuration.md) | `HFieldConfig` fields + arena-builder Hydra overrides |
 | [development.md](docs/development.md) | layout rules, tooling, conventions, gotchas |
-| [slurm_recommended.md](docs/slurm_recommended.md) | recommended `sbatch` commands for training + eval |
 
 Start with [overview.md](docs/overview.md).
 
@@ -28,12 +26,13 @@ Start with [overview.md](docs/overview.md).
 ```bash
 just sync                # uv sync --extra dev
 just build               # wojtek.xml -> wojtek_mjx.xml + scene_mjx.xml
-just build-accel-arena   # write the "accel" terrain arena (needed for ACCEL)
-just train               # plain PPO
-just train-dr            # plain PPO + baseline domain randomization
-just accel               # ACCEL curriculum
-just eval --algo ppo     # evaluate the latest checkpoint of an algo
+just build-accel-arena   # write the tiled "accel" terrain arena (needed by brax_ued.py)
+export PYTHONPATH=src XLA_PYTHON_CLIENT_PREALLOCATE=false
+uv run python src/scripts/brax_ued.py --mode accel --name my_run --checkpoint_dir artifacts/checkpoints
+just render-video --checkpoint artifacts/checkpoints/my_run.pkl --level 0.75:3
 ```
+
+Cluster launchers: `slurm/*.sbatch` (see [ued-accel.md](docs/ued-accel.md#brax-ued)).
 
 ## Justfile recipes
 
@@ -48,13 +47,6 @@ exported for every recipe. `just` lists them all.
 | `just lint` | `ruff check` + `ruff format --check` on `src` |
 | `just build` | build the MJX model (`wojtek_mjx.xml` + `scene_mjx.xml`) |
 | `just build-accel-arena *args` | write the tiled `accel` arena (scene/hfield/spec/lookup); args are `hfield_params.*` Hydra overrides |
-| `just train *args` | PPO training; args are Hydra overrides (e.g. `just train training_params.epochs=8`) |
-| `just train-dr *args` | PPO training with baseline domain randomization (`scripts/ppo_dr.py`) |
-| `just accel *args` | ACCEL training, single-level-per-iteration variant; needs `build-accel-arena` first |
-| `just accel-top-k *args` | ACCEL training, batched-lanes/top-k variant; needs `build-accel-arena` first |
-| `just eval *args` | evaluate a checkpoint (`--algo` required; `--run`/`--step` default to latest) |
-| `just eval-levels *args` | evaluate a checkpoint's generalization across generated levels; needs `build-accel-arena` first |
-| `just eval-sim *args` | watch a checkpoint walk random ACCEL levels in the MuJoCo viewer; needs `build-accel-arena` first |
 | `just render-video *args` | mp4 clips of a `brax_ued.py` checkpoint walking generated levels (`--level D:SEED`, repeatable) |
 
 ## Env usage

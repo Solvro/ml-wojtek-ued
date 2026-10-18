@@ -11,8 +11,8 @@ class LevelGenerator(eqx.Module):
     """The PAIRED learned adversary.
 
     The policy is a diagonal Gaussian over the level genome (`shape`),
-    squashed through a Sigmoid bijector into [0, 1], the same
-    Transformed-distribution pattern A2C uses for its Tanh-squashed actions.
+    squashed through a Sigmoid bijector into [0, 1] (a distrax
+    Transformed distribution).
     Reward is the PAIRED regret, the generator is trained with single-step PPO
     plus a high entropy bonus.
     """

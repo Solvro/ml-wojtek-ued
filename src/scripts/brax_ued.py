@@ -46,6 +46,7 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 import wandb
+from brax import math as brax_math
 from brax.io import model as brax_model
 from brax.training import types
 from brax.training.acme import running_statistics, specs
@@ -72,7 +73,6 @@ from utils.env_overrides import (
     terrain_overrides,
     terrain_task_overrides,
 )
-from utils.ppo_helpers import body_velocity
 from wojtek_env import paths
 
 PPO: dict[str, Any] = {
@@ -90,6 +90,11 @@ EVAL_DIFFICULTIES = (0.25, 0.5, 0.75, 1.0)
 
 
 ROBOT_SCALE = {"wojtek": 1.0, "go1": GO1_SCALE}
+
+
+def body_velocity(data: Any) -> jax.Array:
+    # free-joint linear qvel is world-frame; commands are body-frame
+    return brax_math.inv_rotate(data.qvel[:3], data.qpos[3:7])
 
 
 def hfield_config(args: argparse.Namespace) -> HFieldConfig:

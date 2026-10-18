@@ -27,7 +27,6 @@ dependencies = [
     "flax>=0.12.6",
     "hydra-core>=1.3.5",
     "wandb>=0.28.2",
-    "orbax>=0.1.9",
 ]
 
 [project.optional-dependencies]

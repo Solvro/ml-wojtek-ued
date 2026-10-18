@@ -11,10 +11,14 @@ from brax.envs.wrappers import training as brax_training
 from mujoco import mjx
 from mujoco_playground._src.locomotion.go1 import randomize as go1_randomize
 
-from modules.ppo_modules import Obs
 from robots.go1 import GO1_SCALE, SCAN_X, SCAN_Y, Go1Terrain
 from wojtek_env.envs import randomize, registry
 from wojtek_env.terrain.terrain_env import SPAWN_EDGE_MARGIN
+
+
+class Obs(NamedTuple):
+    actor: jax.Array
+    critic: jax.Array
 
 
 class ObsSize(NamedTuple):
