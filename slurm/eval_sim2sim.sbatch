@@ -25,7 +25,7 @@ read -ra MODES <<<"${MODES:?set MODES, e.g. 'dr accel'}"
 MODE="${MODES[$((SLURM_ARRAY_TASK_ID / 3))]}"
 SEED=$((SLURM_ARRAY_TASK_ID % 3))
 PREFIX="${PREFIX:-v10_wojtek}"
-# ROBOT=go1 runs Playground's Go1 at its size (robots/go1.py)
+# ROBOT=go1|barkour|spot|go2 runs a Playground robot at its size (robots/)
 ROBOT="${ROBOT:-wojtek}"
 RUN="${PREFIX}_${MODE}_seed${SEED}"
 echo "job ${SLURM_JOB_ID} task ${SLURM_ARRAY_TASK_ID}: sim2sim $RUN"

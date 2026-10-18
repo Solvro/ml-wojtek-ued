@@ -25,8 +25,9 @@ advantage (positive value loss) over the iteration.
   highest-regret `buffer_size` levels.
 - `mode=plr`: robust PLR (PLR-perp) - ACCEL's buffer and replay without
   mutation; explore iterations score fresh uniform (DR) levels.
-- `robot=go1`: Playground's Go1 (`robots/go1.py`) instead of Wojtek. The
-  arena, level lengths, commands and `min_travel` scale by `GO1_SCALE`.
+- `robot=go1|barkour|spot|go2`: a Playground quadruped (`robots/`) instead
+  of Wojtek. The arena, level lengths, commands and `min_travel` scale by the
+  robot's `SCALE`.
 
 All evaluate the deterministic policy every `eval_every` iterations on
 fresh uniform levels at several difficulties: success = no fall and at least
@@ -80,7 +81,7 @@ from hfield.level_space import (
 )
 from hfield.tiles import TileLayout
 from modules.generator import LevelGenerator
-from robots.go1 import GO1_SCALE, Go1Terrain
+from robots.registry import TERRAIN_ROBOTS
 from utils.env import FunctionalEnv
 from utils.env_overrides import (
     accel_arena_overrides,
@@ -105,7 +106,7 @@ PPO: dict[str, Any] = {
 EVAL_DIFFICULTIES = (0.25, 0.5, 0.75, 1.0)
 
 
-ROBOT_SCALE = {"wojtek": 1.0, "go1": GO1_SCALE}
+ROBOT_SCALE = {"wojtek": 1.0, **{n: r.SCALE for n, r in TERRAIN_ROBOTS.items()}}
 
 
 def body_velocity(data: Any) -> jax.Array:
@@ -129,7 +130,8 @@ def hfield_config(robot: Robot, arena: HFieldConfig) -> HFieldConfig:
 
 
 def check_wojtek_arena(robot: Robot, config: HFieldConfig) -> None:
-    # Go1 builds its arena from `config` at construction; Wojtek loads it
+    # Playground robots build their arena from `config` at construction;
+    # Wojtek loads it
     if robot == Robot.wojtek:
         check_arena(paths.terrain_paths("accel")["spec"], config, "accel")
 
@@ -142,9 +144,11 @@ def make_env(
     num_envs: int,
     train: bool,
 ) -> FunctionalEnv:
-    if robot == Robot.go1:
-        go1 = Go1Terrain(config, backend=backend, num_envs=num_envs)
-        return FunctionalEnv(domain_randomize=train, go1=go1)
+    if robot in TERRAIN_ROBOTS:
+        terrain_robot = TERRAIN_ROBOTS[robot](
+            config, backend=backend, num_envs=num_envs
+        )
+        return FunctionalEnv(domain_randomize=train, robot=terrain_robot)
     overrides = wojtek_overrides(config, backend, num_envs, train)
     return FunctionalEnv(
         task="joystick", env_overrides=overrides, domain_randomize=train

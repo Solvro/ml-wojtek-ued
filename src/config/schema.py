@@ -15,6 +15,9 @@ CONF_DIR = str(Path(__file__).resolve().parents[2] / "conf")
 class Robot(StrEnum):
     wojtek = "wojtek"
     go1 = "go1"
+    barkour = "barkour"
+    spot = "spot"
+    go2 = "go2"
 
 
 class Backend(StrEnum):

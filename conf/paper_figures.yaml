@@ -6,6 +6,9 @@ defaults:
 prefixes:
   wojtek: null
   go1: null
+  barkour: null
+  spot: null
+  go2: null
 dump_history: null
 history: null
 terrains: false
