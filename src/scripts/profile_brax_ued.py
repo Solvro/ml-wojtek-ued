@@ -93,6 +93,8 @@ def iteration_parts(ctx: dict[str, Any], levels: np.ndarray) -> dict[str, float]
             student.normalizer,
             data,
             jax.random.key(5),
+            teacher=None,
+            bc_coef=jnp.float32(0.0),
         ),
         3,
     )

@@ -75,20 +75,27 @@ each `mode/<option>.yaml` sets its switches.
 | `accel_sfl` | `accel` | `mutation: grow`, `score: learnability` |
 | `plr` | `plr` | — |
 | `paired` | `paired` | — |
+| `paired_uni` | `paired` | `bc: uni` |
+| `paired_bi` | `paired` | `bc: bi` |
+| `paired_evo` | `paired_evo` | — (`mode.bc=uni\|bi` for BC) |
 
 | field | default | meaning |
 |---|---|---|
-| `curriculum` | — | `dr` / `dr_easy` / `dr_mixed` / `accel` / `plr` / `paired` ([ued-accel.md](ued-accel.md#brax-ued)) |
-| `replay_prob` | `0.8` | ACCEL/PLR: replay probability once the buffer holds `num_lanes` levels |
-| `buffer_size` | `4000` | ACCEL/PLR: levels kept (highest score) |
+| `curriculum` | — | `dr` / `dr_easy` / `dr_mixed` / `accel` / `plr` / `paired` / `paired_evo` ([ued-accel.md](ued-accel.md#brax-ued)) |
+| `replay_prob` | `0.8` | ACCEL/PLR/PAIRED+Evo: replay probability once the buffer holds `num_lanes` levels |
+| `buffer_size` | `4000` | ACCEL/PLR/PAIRED+Evo: levels kept (highest score) |
 | `generator_scale` | `0.1` | easy generator: control points within this of flat (`dr_easy`, ACCEL explore) |
 | `mutation` | `local` | `local` edits, or `grow`: also scale the level away from flat by `U(1, grow_max)` |
 | `grow_max` | `1.3` | upper bound of the `grow` factor |
-| `score` | `pvl` | level score: positive value loss, or `learnability` `p(1-p)` |
+| `score` | `pvl` | level score: positive value loss, or `learnability` `p(1-p)`; `paired_evo` scores PAIRED regret and requires `pvl` |
 | `generator` | `easy` | ACCEL explore levels: `easy` generator or `mixed` (`dr_mixed` draw) |
 | `latent_dim` | `16` | PAIRED adversary latent size |
 | `gen_learning_rate` | `1e-4` | PAIRED adversary Adam step |
 | `gen_entropy_coef` | `0.1` | PAIRED adversary entropy bonus |
+| `student_entropy_coef` | `0.01` | every student's PPO entropy bonus (brax `entropy_cost`); raise for PAIRED HiEnt |
+| `bc` | `none` | PAIRED / PAIRED+Evo distillation: `none`, `uni` (protagonist <- antagonist), `bi` (also antagonist <- protagonist); other curricula fail on non-`none` |
+| `bc_coef` | `0.5` | weight of `KL(pi_teacher \|\| pi_student)` in the student loss |
+| `bc_every` | `1` | distil on iterations with `iteration % bc_every == 0` (>= 1) |
 
 ### `level_space/` — `LevelSpaceConfig`
 

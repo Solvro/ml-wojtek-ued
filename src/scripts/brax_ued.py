@@ -25,6 +25,12 @@ advantage (positive value loss) over the iteration.
   highest-regret `buffer_size` levels.
 - `mode=plr`: robust PLR (PLR-perp) - ACCEL's buffer and replay without
   mutation; explore iterations score fresh uniform (DR) levels.
+- `mode=paired`: PAIRED - a learned adversary proposes the levels, a
+  protagonist and an antagonist student train on them, the adversary's
+  reward is their regret. `mode.bc=uni|bi` distils between the students
+  (UniBC / BiBC, `paired_uni` / `paired_bi`).
+- `mode=paired_evo`: PAIRED+Evo - ACCEL's loop, both students, PAIRED
+  regret as the level score, no adversary.
 - `robot=go1`: Playground's Go1 (`robots/go1.py`) instead of Wojtek. The
   arena, level lengths, commands and `min_travel` scale by `GO1_SCALE`.
 
@@ -54,10 +60,12 @@ from brax.training import types
 from brax.training.acme import running_statistics, specs
 from brax.training.agents.ppo import losses as ppo_losses
 from brax.training.agents.ppo import networks as ppo_networks
+from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
 
 from config.hfield_config import HFieldConfig
 from config.schema import (
+    BC,
     CONF_DIR,
     Backend,
     Curriculum,
@@ -80,6 +88,7 @@ from hfield.level_space import (
 )
 from hfield.tiles import TileLayout
 from modules.generator import LevelGenerator
+from modules.paired import Teacher, paired_regret, policy_kl
 from robots.go1 import GO1_SCALE, Go1Terrain
 from utils.env import FunctionalEnv
 from utils.env_overrides import (
@@ -98,11 +107,14 @@ PPO: dict[str, Any] = {
     "discounting": 0.97,
     "gae_lambda": 0.95,
     "learning_rate": 3e-4,
-    "entropy_cost": 1e-2,
     "clipping_epsilon": 0.2,
     "max_grad_norm": 1.0,
 }
 EVAL_DIFFICULTIES = (0.25, 0.5, 0.75, 1.0)
+# curricula that train a protagonist and an antagonist
+PAIRED = (Curriculum.paired, Curriculum.paired_evo)
+# curricula on ACCEL's level buffer (`accel_iteration`)
+BUFFERED = (Curriculum.accel, Curriculum.plr, Curriculum.paired_evo)
 
 
 ROBOT_SCALE = {"wojtek": 1.0, "go1": GO1_SCALE}
@@ -180,11 +192,15 @@ def make_network(env: FunctionalEnv) -> ppo_networks.PPONetworks:
     )
 
 
+Normalizer = running_statistics.RunningStatisticsState
+
+
 class Student:
     """brax PPO networks, optimizer and jitted unroll / update / regret."""
 
-    def __init__(self, env: FunctionalEnv, key: jax.Array):
+    def __init__(self, env: FunctionalEnv, key: jax.Array, entropy_coef: float) -> None:
         obs_size = env.observation_size
+        self.entropy_coef = entropy_coef
         self.network = make_network(env)
         self.make_policy = ppo_networks.make_inference_fn(self.network)
         policy_key, value_key = jax.random.split(key)
@@ -207,31 +223,72 @@ class Student:
         self.opt_state = self.optimizer.init(self.params)
         self.update = jax.jit(self._update)
         self.regret = jax.jit(self._regret)
+        self.bc_kl = jax.jit(self._bc_kl)
 
     def inference_params(self) -> tuple[Any, Any, Any]:
         return (self.normalizer, self.params.policy, self.params.value)
 
-    def _loss(self, params, normalizer, data, key):
-        return ppo_losses.compute_ppo_loss(
+    def as_teacher(self) -> Teacher:
+        return (self.normalizer, self.params.policy)
+
+    def _bc_kl(
+        self,
+        policy_params: Any,
+        normalizer: Normalizer,
+        teacher: Teacher,
+        observation: Any,
+    ) -> jax.Array:
+        kl = policy_kl(self.network, normalizer, policy_params, teacher, observation)
+        return kl.mean()
+
+    def _loss(
+        self,
+        params: ppo_losses.PPONetworkParams,
+        normalizer: Normalizer,
+        data: types.Transition,
+        key: jax.Array,
+        *,
+        teacher: Teacher | None,
+        bc_coef: jax.Array,
+    ) -> tuple[jax.Array, types.Metrics]:
+        loss, metrics = ppo_losses.compute_ppo_loss(
             params,
             normalizer,
             data,
             key,
             self.network,
-            entropy_cost=PPO["entropy_cost"],
+            entropy_cost=self.entropy_coef,
             discounting=PPO["discounting"],
             gae_lambda=PPO["gae_lambda"],
             clipping_epsilon=PPO["clipping_epsilon"],
         )
+        if teacher is None:
+            return loss, metrics
+        kl = self._bc_kl(params.policy, normalizer, teacher, data.observation)
+        return loss + bc_coef * kl, metrics
 
-    def _update(self, params, opt_state, normalizer, data, key):
+    def _update(
+        self,
+        params: ppo_losses.PPONetworkParams,
+        opt_state: optax.OptState,
+        normalizer: Normalizer,
+        data: types.Transition,
+        key: jax.Array,
+        *,
+        teacher: Teacher | None,
+        bc_coef: jax.Array,
+    ) -> tuple[ppo_losses.PPONetworkParams, optax.OptState, Normalizer, types.Metrics]:
+        """One PPO update; a `teacher` (None unless this student distils)
+        adds `bc_coef * KL(teacher || student)` on the batch observations."""
         normalizer = running_statistics.update(normalizer, data.observation)
         grad_fn = jax.value_and_grad(self._loss, has_aux=True)
 
         def minibatch(carry, batch):
             params, opt_state, key = carry
             key, loss_key = jax.random.split(key)
-            (_, metrics), grads = grad_fn(params, normalizer, batch, loss_key)
+            (_, metrics), grads = grad_fn(
+                params, normalizer, batch, loss_key, teacher=teacher, bc_coef=bc_coef
+            )
             updates, opt_state = self.optimizer.update(grads, opt_state)
             return (optax.apply_updates(params, updates), opt_state, key), metrics
 
@@ -251,7 +308,12 @@ class Student:
         )
         return params, opt_state, normalizer, jax.tree.map(jnp.mean, metrics)
 
-    def _regret(self, params, normalizer, data):
+    def _regret(
+        self,
+        params: ppo_losses.PPONetworkParams,
+        normalizer: Normalizer,
+        data: types.Transition,
+    ) -> jax.Array:
         value_apply = self.network.value_network.apply
         data = jax.tree.map(lambda x: jnp.swapaxes(x, 0, 1), data)
         values = value_apply(normalizer, params.value, data.observation)
@@ -372,11 +434,20 @@ def run_levels(
     ctx: dict[str, Any],
     levels: np.ndarray,
     train: bool,
+    *,
     student: "Student | None" = None,
+    teacher: "Student | None" = None,
+    bc_coef: float | None = None,
 ) -> dict[str, Any]:
-    """One outer iteration on `levels` (one per lane). Returns lane regret."""
+    """One outer iteration on `levels` (one per lane). Returns lane regret.
+    With a `teacher` (PAIRED), `bc_kl` = mean KL(teacher || student) over
+    the iteration's observations; a `bc_coef` (0 on off-iterations) also
+    adds `bc_coef` x that KL to every update."""
     env, cfg = ctx["env"], ctx["cfg"]
     student = student or ctx["student"]
+    ref = teacher.as_teacher() if teacher else None
+    loss_ref = None if bc_coef is None else ref
+    bc_kl = jnp.zeros(())
     key = ctx["next_key"]()
     rendered = ctx["space"].render(levels)
     layout: TileLayout = ctx["layout"]
@@ -409,6 +480,12 @@ def run_levels(
                 student.normalizer,
                 data,
                 ctx["next_key"](),
+                teacher=loss_ref,
+                bc_coef=jnp.float32(bc_coef or 0.0),
+            )
+        if ref is not None:
+            bc_kl = bc_kl + student.bc_kl(
+                student.params.policy, student.normalizer, ref, data.observation
             )
         regret = regret + student.regret(student.params, student.normalizer, data)
         episode_return = episode_return + data.reward.sum(axis=1)
@@ -423,7 +500,8 @@ def run_levels(
     threshold = min_travel(cfg.robot.name, cfg.min_travel)
     success = np.asarray((fell_any == 0) & (travel >= threshold), dtype=float)
     lane_success = success.reshape(cfg.num_lanes, -1).mean(axis=1)
-    lane_regret = lane_regret / (cfg.level_steps // PPO["unroll_length"])
+    unrolls = cfg.level_steps // PPO["unroll_length"]
+    lane_regret = lane_regret / unrolls
     # learnability (SFL): highest where the student sometimes succeeds
     learnability = lane_success * (1.0 - lane_success)
     log = jax.tree.map(lambda *x: float(np.mean(x)), *logs)
@@ -444,6 +522,7 @@ def run_levels(
         "tile_leak_frac": float(leaked.mean()),
         "lane_roughness": mean_abs_height(ctx["space"].config, rendered),
         "levels": levels,
+        **({} if ref is None else {"bc_kl": float(bc_kl) / unrolls}),
     }
 
 
@@ -549,6 +628,14 @@ def buffer_stats(buffer: LevelBuffer) -> dict[str, float]:
     }
 
 
+def score_levels(
+    ctx: dict[str, Any], levels: np.ndarray, train: bool, it: int
+) -> dict[str, Any]:
+    if ctx["cfg"].mode.curriculum == Curriculum.paired_evo:
+        return run_pair(ctx, levels, train, it)
+    return run_levels(ctx, levels, train)
+
+
 def accel_iteration(
     ctx: dict[str, Any], buffer: LevelBuffer, it: int
 ) -> dict[str, Any]:
@@ -556,9 +643,9 @@ def accel_iteration(
     if len(buffer) >= cfg.num_lanes and rng.random() < cfg.mode.replay_prob:
         idx = buffer.sample(rng, cfg.num_lanes, it)
         levels = np.stack([buffer.levels[i] for i in idx])
-        out = run_levels(ctx, levels, train=True)
+        out = score_levels(ctx, levels, True, it)
         buffer.update(idx, out["score"], it)
-        if cfg.mode.curriculum == Curriculum.accel:
+        if cfg.mode.curriculum in (Curriculum.accel, Curriculum.paired_evo):
             ctx["children"] = np.stack([mutate(ctx, level) for level in levels])
         return {**out, "replay": 1, **buffer_stats(buffer)}
     fresh = cfg.num_lanes - len(ctx["children"])
@@ -570,7 +657,7 @@ def accel_iteration(
         new = dr_levels(ctx, Curriculum.dr_mixed)[:fresh]
     levels = np.concatenate([ctx["children"], new]) if len(ctx["children"]) else new
     ctx["children"] = np.zeros((0, *ctx["space"].shape))
-    out = run_levels(ctx, levels, train=False)
+    out = score_levels(ctx, levels, False, it)
     buffer.add(levels, out["score"], it, out["lane_roughness"])
     return {**out, "replay": 0, **buffer_stats(buffer)}
 
@@ -620,29 +707,51 @@ class Adversary:
         return float(loss)
 
 
-def paired_iteration(ctx: dict[str, Any]) -> dict[str, Any]:
+def bc_coefs(mode: ModeConfig, it: int) -> tuple[float | None, float | None]:
+    """(protagonist, antagonist) BC weight this iteration, None for a
+    student that never distils (its loss has no BC term): UniBC distils the
+    protagonist from the antagonist, BiBC also the other way round."""
+    weight = 0.0 if it % mode.bc_every else mode.bc_coef
+    prot = None if mode.bc == BC.none else weight
+    return prot, weight if mode.bc == BC.bi else None
+
+
+def run_pair(
+    ctx: dict[str, Any], levels: np.ndarray, train: bool, it: int
+) -> dict[str, Any]:
+    """Both PAIRED students on `levels`; score = PAIRED regret per level.
+    The antagonist runs second, so BiBC distils it from the protagonist this
+    iteration's updates produced."""
+    prot, antag = ctx["student"], ctx["antagonist"]
+    prot_coef, antag_coef = bc_coefs(ctx["cfg"].mode, it)
+    out = run_levels(ctx, levels, train, teacher=antag, bc_coef=prot_coef)
+    antagonist = run_levels(
+        ctx, levels, train, student=antag, teacher=prot, bc_coef=antag_coef
+    )
+    regret = paired_regret(out["lane_returns"], antagonist["lane_returns"])
+    prot_bc_kl = out.pop("bc_kl")
+    return {
+        **out,
+        "score": regret,
+        "paired_regret_mean": float(regret.mean()),
+        "prot_return": float(out["lane_returns"].mean()),
+        "antag_return": float(antagonist["lane_returns"].mean()),
+        "antag_forward_vel": antagonist["forward_vel"],
+        "prot_bc_kl": prot_bc_kl,
+        "antag_bc_kl": antagonist["bc_kl"],
+        "bc_coef": prot_coef if train and prot_coef is not None else 0.0,
+    }
+
+
+def paired_iteration(ctx: dict[str, Any], it: int) -> dict[str, Any]:
     cfg, adversary = ctx["cfg"], ctx["adversary"]
     z = jax.random.normal(ctx["next_key"](), (cfg.num_lanes, adversary.latent_dim))
     keys = jax.random.split(ctx["next_key"](), cfg.num_lanes)
     theta, log_prob = adversary.sample(adversary.generator, z, keys)
     levels = ctx["space"].from_generated(np.asarray(theta), ctx["rng"])
-    out = run_levels(ctx, levels, train=True)
-    antagonist = run_levels(ctx, levels, train=True, student=ctx["antagonist"])
-    prot_mean = out["lane_returns"].mean(axis=1)
-    antag_max = antagonist["lane_returns"].max(axis=1)
-    # PAIRED regret: what the antagonist shows is possible on the level, minus
-    # what the protagonist averages there
-    paired_regret = np.maximum(antag_max - prot_mean, 0.0)
-    gen_loss = adversary.update(z, theta, log_prob, jnp.asarray(paired_regret))
-    return {
-        **out,
-        "replay": 1,
-        "paired_regret_mean": float(paired_regret.mean()),
-        "prot_return": float(prot_mean.mean()),
-        "antag_return": float(antagonist["lane_returns"].mean()),
-        "antag_forward_vel": antagonist["forward_vel"],
-        "gen_loss": gen_loss,
-    }
+    out = run_pair(ctx, levels, True, it)
+    gen_loss = adversary.update(z, theta, log_prob, jnp.asarray(out["score"]))
+    return {**out, "replay": 1, "gen_loss": gen_loss}
 
 
 def build(cfg: TrainConfig) -> dict[str, Any]:
@@ -675,10 +784,15 @@ def build(cfg: TrainConfig) -> dict[str, Any]:
         key_state["key"], key = jax.random.split(key_state["key"])
         return key
 
-    student = Student(env, next_key())
-    paired = cfg.mode.curriculum == Curriculum.paired
-    antagonist = Student(env, next_key()) if paired else None
-    adversary = Adversary(cfg.mode, space.gen_shape, next_key()) if paired else None
+    entropy = cfg.mode.student_entropy_coef
+    student = Student(env, next_key(), entropy)
+    paired = cfg.mode.curriculum in PAIRED
+    antagonist = Student(env, next_key(), entropy) if paired else None
+    adversary = (
+        Adversary(cfg.mode, space.gen_shape, next_key())
+        if cfg.mode.curriculum == Curriculum.paired
+        else None
+    )
     _, dr_in_axes = env.sample_dr(jax.random.key(0), num_envs)
     reset = jax.jit(jax.vmap(env.reset, in_axes=(0, None, dr_in_axes, 0)))
     eval_reset = jax.jit(
@@ -705,36 +819,55 @@ def build(cfg: TrainConfig) -> dict[str, Any]:
 
 @hydra.main(config_path=CONF_DIR, config_name="train", version_base="1.3")
 def main(dict_cfg: DictConfig) -> None:
-    train(to_dataclass(dict_cfg, TrainConfig))
+    mode_name = HydraConfig.get().runtime.choices["mode"]
+    train(to_dataclass(dict_cfg, TrainConfig), mode_name)
 
 
-def train(cfg: TrainConfig) -> None:
+def check_config(cfg: TrainConfig) -> None:
     if cfg.level_steps % PPO["unroll_length"]:
         raise ValueError(
             f"level_steps={cfg.level_steps} must be a multiple of "
             f"unroll_length={PPO['unroll_length']}"
         )
+    mode = cfg.mode
+    if mode.bc != BC.none and mode.curriculum not in PAIRED:
+        raise ValueError(
+            f"mode.bc={mode.bc} distils between PAIRED's two students; "
+            f"mode.curriculum={mode.curriculum} has one. Use mode=paired_uni, "
+            "mode=paired_bi or mode=paired_evo with mode.bc"
+        )
+    if mode.bc_every < 1:
+        raise ValueError(f"mode.bc_every={mode.bc_every} must be >= 1")
+    if mode.curriculum == Curriculum.paired_evo and mode.score != Score.pvl:
+        raise ValueError(
+            f"mode.score={mode.score} does not apply to paired_evo, whose "
+            "level score is the PAIRED regret; drop the override"
+        )
+
+
+def train(cfg: TrainConfig, mode_name: str) -> None:
+    check_config(cfg)
     launch = time.time()
     run = wandb.init(
         entity=cfg.entity or None,
         project=cfg.project,
         name=cfg.name,
-        tags=["brax-ued", cfg.mode.curriculum, cfg.robot.name, *cfg.tags],
+        tags=["brax-ued", mode_name, cfg.robot.name, *cfg.tags],
         config={**as_dict(cfg), "ppo": PPO},
     )
     ctx = build(cfg)
     buffer = LevelBuffer(cfg.mode.buffer_size)
     steps_per_iteration = cfg.num_lanes * cfg.envs_per_lane * cfg.level_steps
     # the PAIRED antagonist simulates (and trains on) the same levels again
-    sims_per_iteration = 2 if cfg.mode.curriculum == Curriculum.paired else 1
+    sims_per_iteration = 2 if cfg.mode.curriculum in PAIRED else 1
     env_steps, it, start = 0, 0, time.time()
     sim_steps, student_train_steps = 0, 0
     while env_steps < cfg.num_timesteps:
         out: dict[str, Any]
-        if cfg.mode.curriculum in (Curriculum.accel, Curriculum.plr):
+        if cfg.mode.curriculum in BUFFERED:
             out = accel_iteration(ctx, buffer, it)
         elif cfg.mode.curriculum == Curriculum.paired:
-            out = paired_iteration(ctx)
+            out = paired_iteration(ctx, it)
         else:
             levels = dr_levels(ctx, cfg.mode.curriculum)
             out = {**run_levels(ctx, levels, train=True), "replay": 1}
