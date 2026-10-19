@@ -24,8 +24,17 @@ class LaneTotals:
         self.bc_kl = jnp.zeros(())
         self.logs: list[dict[str, jax.Array]] = []
 
-    def add(self, data: types.Transition, leaked: jax.Array) -> None:
+    def add(
+        self,
+        data: types.Transition,
+        leaked: jax.Array,
+        regret: jax.Array,
+        bc_kl: jax.Array | None,
+    ) -> None:
         log = data.extras["log"]
+        self.regret = self.regret + regret
+        if bc_kl is not None:
+            self.bc_kl = self.bc_kl + bc_kl
         self.episode_return = self.episode_return + data.reward.sum(axis=1)
         self.fell_any = jnp.maximum(self.fell_any, log["fell"].max(axis=1))
         self.leaked = self.leaked | leaked.any(axis=1)
@@ -71,19 +80,18 @@ def run_levels(
         )
         if train:
             student.train_step(data, ctx.next_key(), loss_ref, bc_coef)
+        bc_kl = None
         if ref is not None:
-            totals.bc_kl = totals.bc_kl + student.bc_kl(
+            bc_kl = student.bc_kl(
                 student.params.policy,
                 student.normalizer,
                 ref,
                 data.observation,
             )
-        totals.regret = totals.regret + student.regret(
-            student.params, student.normalizer, data
-        )
+        regret = student.regret(student.params, student.normalizer, data)
         xy = data.extras["log"]["xy"]
-        sensing = env.travel.sensing
-        totals.add(data, ctx.layout.leaked(xy, tile_xy[:, None], sensing))
+        leaked = ctx.layout.leaked(xy, tile_xy[:, None], env.travel.sensing)
+        totals.add(data, leaked, regret, bc_kl)
     travel = jnp.linalg.norm(state.data.qpos[:, :2] - start_xy, axis=-1)
     out = summarize_lanes(ctx, totals, travel, unrolls)
     out["lane_roughness"] = mean_abs_height(ctx.space.config, rendered)

@@ -9,6 +9,7 @@ from brax.training.agents.ppo import networks as ppo_networks
 
 from config.hfield_config import HFieldConfig
 from config.schema import Backend, LevelSpaceKind, Sim2SimConfig
+from env.factory import tile_reset
 from evaluation.cpu_physics import CpuPhysics, cpu_physics, worker_count
 from evaluation.physics_variants import VARIANTS
 from evaluation.rollout import (
@@ -17,7 +18,6 @@ from evaluation.rollout import (
     load_params,
     make_eval_env,
     rollout,
-    tile_reset,
 )
 from evaluation.stats import bootstrap_ci
 from evaluation.suite import SUITE_STRENGTHS, suite_levels
@@ -144,6 +144,7 @@ def evaluate(
         physics.use(transform(base.mj_model, base))
         results[variant] = {}
         for i, (name, hfields) in enumerate(sets.items()):
+            # same key per set across variants: paired comparisons
             key = jax.random.fold_in(jax.random.key(cfg.seed), i)
             fell, travel = rollout(ctx, hfields, key)
             results[variant][name] = (fell, travel, physics.take_diverged())

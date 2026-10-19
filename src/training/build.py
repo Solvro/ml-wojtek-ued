@@ -2,7 +2,7 @@ import jax
 import numpy as np
 
 from config.schema import BC, Curriculum, Score, TrainConfig
-from env.factory import check_wojtek_arena, make_env
+from env.factory import check_wojtek_arena, make_env, tile_reset
 from hfield.level_space import make_level_space
 from hfield.tiles import TileLayout
 from robots.scale import ROBOT_SCALE, hfield_config
@@ -70,11 +70,6 @@ def build(cfg: TrainConfig) -> TrainContext:
     _, dr_in_axes = env.sample_dr(jax.random.key(0), num_envs)
     reset = jax.jit(jax.vmap(env.reset, in_axes=(0, None, dr_in_axes, 0)))
 
-    def eval_reset_one(
-        key: jax.Array, hfield: jax.Array, tile_xy: jax.Array
-    ) -> tuple:
-        return eval_env.reset(key, hfield, tile_xy=tile_xy)
-
     return TrainContext(
         cfg=cfg,
         env=env,
@@ -87,7 +82,7 @@ def build(cfg: TrainConfig) -> TrainContext:
         rng=np.random.default_rng(cfg.seed),
         next_key=next_key,
         reset=reset,
-        eval_reset=jax.jit(jax.vmap(eval_reset_one, in_axes=(0, None, 0))),
+        eval_reset=tile_reset(eval_env),
         unroll=make_unroll(env, student.make_policy, dr_in_axes),
         eval_unroll=make_unroll(eval_env, student.make_policy, None),
         children=np.zeros((0, *space.shape)),

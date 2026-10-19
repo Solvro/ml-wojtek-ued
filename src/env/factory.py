@@ -1,4 +1,7 @@
+from collections.abc import Callable
 from typing import Any
+
+import jax
 
 from config.hfield_config import HFieldConfig
 from config.schema import Backend, Robot
@@ -53,3 +56,12 @@ def wojtek_overrides(
         # eval scores falls and travel; the stochastic cut only adds noise
         {} if train else {"no_progress": {"enable": False}},
     )
+
+
+def tile_reset(env: FunctionalEnv) -> Callable[..., Any]:
+    """Jitted batched reset: (keys, arena hfield_data, tile_xy per env)."""
+
+    def reset(key: jax.Array, hfield: jax.Array, tile_xy: jax.Array) -> Any:
+        return env.reset(key, hfield, tile_xy=tile_xy)
+
+    return jax.jit(jax.vmap(reset, in_axes=(0, None, 0)))

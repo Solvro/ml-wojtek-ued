@@ -56,15 +56,6 @@ def make_eval_env(
     return config, layout, env
 
 
-def tile_reset(env: FunctionalEnv) -> Callable[..., Any]:
-    """Jitted batched reset: (keys, arena hfield_data, tile_xy per env)."""
-
-    def reset(key: jax.Array, hfield: jax.Array, tile_xy: jax.Array) -> Any:
-        return env.reset(key, hfield, tile_xy=tile_xy)
-
-    return jax.jit(jax.vmap(reset, in_axes=(0, None, 0)))
-
-
 def load_params(cfg: EvalConfig | Sim2SimConfig) -> Any:
     return brax_model.load_params(cfg.checkpoint)
 

@@ -6,13 +6,13 @@ import numpy as np
 from brax.training.agents.ppo import networks as ppo_networks
 
 from config.schema import EvalConfig
+from env.factory import tile_reset
 from evaluation.rollout import (
     EvalContext,
     Passes,
     level_success,
     load_params,
     make_eval_env,
-    tile_reset,
     two_passes,
 )
 from evaluation.stats import bootstrap_ci, cross_fit_cvar, envelope
