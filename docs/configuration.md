@@ -20,11 +20,14 @@ python src/scripts/brax_ued.py --cfg job mode=dr name=x   # print the composed c
   (`backend=cuda`, `mode.score=learnabilty`) fails at startup, before any
   jax work. `???` in YAML = required on the command line.
 - **Record**: `hydra.job.chdir: false`; `hydra.run.dir` is
-  `artifacts/hydra/${name}` (train / eval / sim2sim) or
+  `artifacts/hydra/${run_name:}` (train / eval / sim2sim; a missing
+  `name=` fails with "name is required ... pass name=<run name>") or
   `artifacts/hydra/<entry point>/<timestamp>`; its `.hydra/config.yaml` is the
   composed config of the run. Checkpoint / eval / video paths are the
   config's own (`checkpoint_dir`, `out_dir`, `out`), relative to the launch
   directory.
+- `HYDRA_FULL_ERROR=1` is exported in `slurm/*.sbatch` and
+  `experiments/tiled-draft/*.sbatch` (full tracebacks in job logs).
 - `conf/` resolves from `src/..` (`config.schema.CONF_DIR`), like the assets:
   a frozen copy (`SRC` on WCSS) needs `conf/` beside `src/`.
 - wandb gets the composed config (`config.schema.as_dict`), nested
@@ -89,14 +92,18 @@ each `mode/<option>.yaml` sets its switches.
 
 ### `level_space/` — `LevelSpaceConfig`
 
-| option | `kind` | `n_edits` | `edit_scale` |
+| option | `kind` | `n_edits` (`local` / `grow`) | `edit_scale` |
 |---|---|---|---|
-| `grid` (train / eval default) | `grid` | `8` | `0.15` |
-| `param` (render default; v10) | `param` | `2` | `0.1` |
+| `grid` (train / eval default) | `grid` | `8` / `16` | `0.15` |
+| `param` (render default; v10) | `param` | `2` / `2` | `0.1` |
 
 `n_edits` / `edit_scale`: ACCEL mutation strength, training only (eval and
-render read `kind`). They replace `arena.n_edits` / `arena.edit_scale` in the
-training `HFieldConfig`. Spaces: [ued-accel.md](ued-accel.md#level-spaces).
+render read `kind`); the only place they exist (`HFieldConfig` is arena
+geometry, so `arena.n_edits=...` fails at startup). `n_edits` picks from
+`n_edits_by_mutation` by `mode.mutation`, so `mode=accel_grow` / `accel_sfl`
+on `level_space=grid` compose to 16 edits locally and on WCSS alike; an
+explicit `level_space.n_edits=N` overrides it. Spaces:
+[ued-accel.md](ued-accel.md#level-spaces).
 
 ### `arena/` — `HFieldConfig` {#hfield}
 
@@ -126,8 +133,6 @@ Plain dataclass (`config/hfield_config.py`); the level genome envelope. See
 | `base_z` | `1.0` | | m, solid base under the hfield (MJCF needs > 0) |
 | `pad_radius` | `0.6` | `0.55` | m, flat spawn disc at the centre |
 | `pad_taper` | `0.3` | `0.2` | m, ramp width pad → full terrain |
-| `n_edits` | `4` | | control points touched per mutation (training: `level_space.n_edits`) |
-| `edit_scale` | `0.1` | | max ± change to an edited control point (training: `level_space.edit_scale`) |
 | `tiles` | `16` | | tiles per side of the shared arena, one level each (256) |
 | `reach` | `10.0` | | m from its tile centre a robot can read terrain within a level; the gap between tiles is `reach - patch_radius` ([tiled arena](environment.md#tiled-arena)) |
 | `grid_size` | *(property)* | | `round(2·patch_radius/cell_size)+1`, fine node count of one level |
@@ -140,7 +145,7 @@ shape the genome and can vary between runs.
 `patch_radius=3.0` (was `6.0`): at `ctrl_dt=0.02`/`steps_in_episode=200` a
 rollout is 4s, so even a fast-command robot covers only a few metres —
 most of a 12m-diameter patch was never reached, let alone scored by regret.
-`edit_scale=0.1` (was `0.5`): `HFieldManager.mutate`'s intent is a *small*
+`level_space.edit_scale` stays small (`0.1`-`0.15`, an old default was `0.5`): `HFieldManager.mutate`'s intent is a *small*
 nudge from an already-curated parent; `0.5` was half the entire `[0,1]`
 genome range per edited point, closer to a fresh `generate()` than an
 incremental edit.

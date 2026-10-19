@@ -13,6 +13,7 @@
 set -euo pipefail
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1 JAX_PLATFORMS=cpu
+export HYDRA_FULL_ERROR=1
 COPY="${COPY:?set COPY=<frozen copy dir>}"
 export PYTHONPATH="$COPY/src"
 PY="$HOME/workspace/ml-wojtek-ued/.venv/bin/python"

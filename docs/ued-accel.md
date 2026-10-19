@@ -24,8 +24,8 @@ node read-only and blocks CLI overrides like `arena.amplitude=...`);
 one place for every knob. `patch_radius`, `cell_size` (fine
 resolution), `coarse_n` (genome size), `amplitude` (peak height off the neutral
 plane), `base_z`, `pad_radius`/`pad_taper` (flat spawn disc + ramp),
-`n_edits`/`edit_scale` (mutation strength). `grid_size` (property) is the fine
-node count. The `arena` config group is one (`conf/arena/v10.yaml`). Full
+`grid_size` (property) is the fine
+node count. Mutation strength is not here: it lives in `level_space`. The `arena` config group is one (`conf/arena/v10.yaml`). Full
 field table: [configuration.md](configuration.md#hfield).
 
 ### `HFieldManager` (`hfield/manager.py`)
@@ -33,7 +33,7 @@ field table: [configuration.md](configuration.md#hfield).
 Pure given an rng; no hidden state beyond the config:
 
 - `generate(rng)` — a fresh `coarse_n × coarse_n` uniform level.
-- `mutate(level, rng)` — nudge `n_edits` random cells by `±edit_scale`, clip to
+- `mutate(level, rng, n_edits, edit_scale)` — nudge `n_edits` random cells by `±edit_scale`, clip to
   `[0,1]` (the ACCEL edit).
 - `to_hfield_data(level)` — bilinear upsample to `grid_size`, apply the pad
   taper (flat centre disc), recentre on `0.5`; returns the `float32`
@@ -122,8 +122,8 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
     (rank correlation of level score vs roughness), `children_roughness`,
     `train_success`, `learnability_mean`.
   - Mode options `mode=accel_grow` (grow) and `mode=accel_sfl` (grow +
-    learnability). `brax_ued.sbatch` adds `level_space.n_edits=16` to both
-    on `SPACE=grid`.
+    learnability). `level_space/grid.yaml` composes 16 edits for both
+    (8 otherwise), locally and via `brax_ued.sbatch` alike.
 - `mode=paired`: PAIRED (port of `feat/paired-implementation`'s design
   onto the brax student). A learned adversary (`modules/generator.py`,
   latent seed -> sigmoid-squashed Gaussian over the genome) proposes

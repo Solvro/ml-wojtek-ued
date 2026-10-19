@@ -25,4 +25,4 @@ hydra:
   job:
     chdir: false
   run:
-    dir: artifacts/hydra/${name}
+    dir: artifacts/hydra/${run_name:}

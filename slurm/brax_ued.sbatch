@@ -17,6 +17,7 @@
 set -euo pipefail
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1
+export HYDRA_FULL_ERROR=1
 # fail instead of silently falling back to CPU when CUDA init fails
 # (seen: CUDA_ERROR_MPS_CONNECTION_FAILED on some Lem nodes)
 export JAX_PLATFORMS=cuda
@@ -36,7 +37,7 @@ VARIANT="${MODES[$((SLURM_ARRAY_TASK_ID / NSEEDS))]}"
 # VARIANT = a conf/mode/ option; a "-s<scale>" suffix overrides the easy
 # generator's mode.generator_scale. SPACE: conf/level_space/ option (param =
 # v10's 8 parameters, 2 edits of +-0.1; grid = control points, 8 of +-0.15,
-# and 16 edits for the grow variants).
+# 16 edits for the grow variants: conf/grow_edits/).
 SPACE="${SPACE:-grid}"
 PREFIX="${PREFIX:-v7_brax}"
 # ROBOT=go1 runs Playground's Go1 at its size (robots/go1.py)
@@ -49,9 +50,6 @@ TAG_LIST_CSV="$(
 )"
 MODE="${VARIANT%-s*}"
 OVERRIDES=("mode=$MODE" "level_space=$SPACE")
-if [[ "$SPACE" == grid && ("$MODE" == accel_grow || "$MODE" == accel_sfl) ]]; then
-  OVERRIDES+=(level_space.n_edits=16)
-fi
 if [[ "$VARIANT" == *-s* ]]; then
   OVERRIDES+=("mode.generator_scale=${VARIANT##*-s}")
 fi
