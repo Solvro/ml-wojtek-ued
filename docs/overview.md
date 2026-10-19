@@ -34,6 +34,7 @@ src/
     schema.py        schema dataclass per entry point, enums, CONF_DIR
   modules/
     generator.py     LevelGenerator (PAIRED adversary)
+    paired.py        PAIRED regret, student BC KL
   robots/
     terrain.py       TerrainRobot: arena scene, spawn, fall, scan, commands
     go1.py           Playground Go1 on the tiled arena
@@ -74,7 +75,9 @@ a fresh physics DR draw, and steps them in 20-step unrolls with brax's PPO
 - `accel` — replay high-regret buffer levels (training), mutate them, and score
   mutations + fresh easy levels on explore iterations (no training).
 - `plr` — ACCEL's buffer and replay without mutation.
-- `paired` — a learned `LevelGenerator` proposes levels.
+- `paired` (`paired_uni` / `paired_bi`: + student BC) — a learned
+  `LevelGenerator` proposes levels; two students, PAIRED regret.
+- `paired_evo` — ACCEL's buffer and mutation scored by PAIRED regret.
 
 Levels are `coarse_n × coarse_n` control-point grids (`grid` space) or 9 terrain
 parameters (`param` space), upsampled to the MJX heightfield. Full walkthrough

@@ -33,6 +33,10 @@ mode:
   latent_dim: 16
   gen_learning_rate: 1.0e-4
   gen_entropy_coef: 0.1
+  student_entropy_coef: 0.01
+  bc: none
+  bc_coef: 0.5
+  bc_every: 1
 
 hydra:
   job:

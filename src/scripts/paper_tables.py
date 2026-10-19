@@ -60,6 +60,9 @@ METHODS = {
     "accel": "ACCEL",
     "accel_sfl": "ACCEL-SFL",
     "paired": "PAIRED",
+    "paired_uni": "PAIRED+UniBC",
+    "paired_bi": "PAIRED+BiBC",
+    "paired_evo": "PAIRED+Evo",
 }
 SOLVABLE = "param/uniform_solvable/success_rate"
 MAIN_COLUMNS = (
