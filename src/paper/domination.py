@@ -39,11 +39,10 @@ def _fractions(pair: PairStats) -> np.ndarray:
 
 
 def shared_norm(pairs: list[PairStats]) -> LogNorm:
-    """One log scale for every robot's heatmap, from the smallest non-empty
-    cell to the largest."""
-    cells = np.concatenate([_fractions(p).ravel() for p in pairs])
-    nonzero = cells[cells > 0]
-    return LogNorm(vmin=float(nonzero.min()), vmax=float(nonzero.max()))
+    """One log scale for every robot's heatmap, from a single level of the
+    largest set to all levels."""
+    levels = max(int(np.sum(p.counts)) for p in pairs)
+    return LogNorm(vmin=1 / levels, vmax=1.0)
 
 
 def stats_text(pair: PairStats) -> str:

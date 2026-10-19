@@ -693,7 +693,8 @@ just domination eval_dir=<evals> prefixes.wojtek=v10_wojtek \
     (`row_better`; the diagonal is 0, `M[a,b] + M[b,a] + ties = 1`).
 - Reading the heatmap: x = A's solve rate, y = B's, `bins` (10) bins of
   10 %, the last one closed at 100 %; cells show the fraction of levels
-  (sum 1) on a log scale shared by every robot, empty cells white. Mass
+  (sum 1) on one log scale for every robot, from a single level of the
+  largest set to all levels, empty cells white. Mass
   below the diagonal = levels A solves more often (A dominates), above = B;
   the bottom-left / top-right corners are levels both fail / both solve.
   Each panel's title has the `a_better` / `b_better` / tie fractions,
