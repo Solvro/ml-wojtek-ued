@@ -124,7 +124,12 @@ def plot_pairs(report: Report, out: Path) -> list[Path]:
 def draw_matrix(ax: Any, robot: str, report: RobotReport) -> Any:
     methods = report.matrix.methods
     values = np.asarray(report.matrix.row_better)
-    image = ax.imshow(values, cmap=CMAP, norm=Normalize(0, 1))
+    self_cells = np.eye(len(methods), dtype=bool)
+    image = ax.imshow(
+        np.ma.masked_where(self_cells, values),
+        cmap=CMAP,
+        norm=Normalize(0, 1),
+    )
     for i, j in np.ndindex(values.shape):
         if i != j:
             ink = "white" if values[i, j] > 0.5 else "black"
