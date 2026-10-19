@@ -240,15 +240,16 @@ Spot) vs Wojtek's closed chain. `robot=<name>` in every entry point with a
 | `go1` | `Go1Terrain` | Playground `go1_mjx_feetonly.xml` | 2.5 | 0.258 | Playground `go1/randomize.py` |
 | `barkour` | `BarkourTerrain` | menagerie `google_barkour_vb/barkour_vb_mjx.xml` | 2.4 | 0.235 | none (Playground has none) |
 | `spot` | `SpotTerrain` | Playground `spot_mjx_feetonly.xml` | 4.3 | 0.433 | none (Playground has none) |
-| `go2` | `Go2Terrain` | menagerie `unitree_go2/go2_mjx.xml`, rewritten feet-only | 2.2 | 0.219 | Go1's `randomize.py` |
+| `go2` | `Go2Terrain` | menagerie `unitree_go2/go2_mjx.xml`, rewritten feet-only | 2.5 | 0.254 | Go1's `randomize.py` |
 
 Shared (`robots/terrain.py` `TerrainRobot`, a mixin over the Playground env;
 a robot file keeps its constants, scene and what differs):
 
-- Playground's own reward, obs and PD gains, feet-only collisions, blind
-  actor; on `backend` like Wojtek (warp: each env gets `contact_budget` -
-  2 contacts per geom colliding with the hfield, `njmax` = `nu` + 6 rows per
-  contact: 8 and 60 for four feet, Go1's Playground rough-terrain budget).
+- Playground's own reward, obs and PD gains (Go2: menagerie's), feet-only
+  collisions, blind actor; on `backend` like Wojtek (warp: each env gets
+  `contact_budget` - 2 contacts per geom colliding with the hfield, `njmax` =
+  `nu` + 6 rows per contact: 8 and 60 for four feet, Go1's Playground
+  rough-terrain budget).
 - The tiled ACCEL arena written by `arena_scene` (no asset files): one
   `hfield` geom `floor` (geom 0, so a friction DR keyed on geom 0 hits it),
   sized by `HFieldConfig`; `reset` spawns on `spawn_xy`, the tile centre
@@ -293,16 +294,16 @@ Per robot:
   0.433 m, scale 4.3: commands reach 2.6 m/s, beyond Playground's own `[-1, 1]` m/s
   Spot command range, and `reach` is 43 m.
 - **Go2**: Playground has no Go2 env: `Go2Terrain` is `Go1Terrain` (Go1's
-  joystick reward/obs/PD, `Kp` 35, `Kd` 0.5) on the menagerie model.
+  joystick reward and obs) on the menagerie model with the model's own PD
+  gains (`kp` 50, `kv` 0.5, joint damping 2); Go1's `Kp` 35 sags the 15 kg
+  Go2 to 0.219 m.
   `go2_mjx.xml` collides every link and lacks the names Go1's env reads, so
   `feet_only_model` rewrites it (each substitution must match exactly once):
   trunk `base` -> `trunk`, foot sites `FL_foot` -> `FL`, only the four foot
   spheres collide (no hfield-sphere `margin` in MJX), the `upvector`,
   `local_linvel`, per-foot `*_global_linvel` and `*_floor_found` sensors are
-  added, the model's own keyframe is dropped. The menagerie actuators carry a
-  velocity term (-0.5); it is zeroed so damping is Go1's 0.5. Go1's
-  randomization fits (hfield = geom 0, trunk = body 1, 12 joints = dofs 6:).
-  At `Kp` 35 the 15 kg Go2 sags to 0.219 m (kinematic height 0.284 m).
+  added, the model's own keyframe is dropped. Go1's randomization fits
+  (hfield = geom 0, trunk = body 1, 12 joints = dofs 6:).
 
 ## Final eval — `scripts/eval_brax.py` {#eval-brax}
 

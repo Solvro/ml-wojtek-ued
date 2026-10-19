@@ -58,7 +58,7 @@ python src/scripts/brax_ued.py --cfg job mode=dr name=x   # print the composed c
 
 The robot's size relative to Wojtek is `ROBOT_SCALE` in
 `scripts/brax_ued.py` (each Playground robot's `SCALE`, `robots/*.py`: go1
-2.5, barkour 2.4, spot 4.3, go2 2.2); it scales
+2.5, barkour 2.4, spot 4.3, go2 2.5); it scales
 the arena, level lengths, commands and `min_travel`.
 
 ### `mode/` — `ModeConfig` (train only, required)

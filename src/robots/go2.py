@@ -1,9 +1,9 @@
 """Unitree Go2 on the UED heightfield arena.
 
 Playground has no Go2 env: this is its Go1 joystick (`Go1Terrain`: reward,
-obs, PD) with the menagerie Go2 model. `unitree_go2/go2_mjx.xml` collides
-every link and lacks the sensors and names the Go1 env reads, so
-`feet_only_model` rewrites it:
+obs) with the menagerie Go2 model and that model's PD gains.
+`unitree_go2/go2_mjx.xml` collides every link and lacks the sensors and names
+the Go1 env reads, so `feet_only_model` rewrites it:
 
 - only the four foot spheres collide, and only with the hfield;
 - the trunk body is `trunk`, the foot sites are named like their geoms;
@@ -74,9 +74,9 @@ def feet_only_model(xml: str) -> str:
 
 
 class Go2Terrain(Go1Terrain):
-    # standing trunk height 0.219 m (measured) over Wojtek's design 0.10 m
-    SCALE = 2.2
-    STANDING_HEIGHT = 0.219
+    # standing trunk height 0.254 m (measured) over Wojtek's design 0.10 m
+    SCALE = 2.5
+    STANDING_HEIGHT = 0.254
     FULL_COLLISION = None
 
     @classmethod
@@ -104,14 +104,10 @@ class Go2Terrain(Go1Terrain):
         self._xml_path = self._write_scene(hfield)
         self._model_assets = self.assets()
         model = compile_scene(self.scene_xml(hfield), self._model_assets)
-        # Go1Env's setup: Playground's PD gains on this model
+        # Go1Env's setup minus its PD gains: Go1's kp 35 sags the heavier Go2
+        # well below its keyframe, so Go2 keeps menagerie's kp 50, kv 0.5
         model.opt.timestep = config.sim_dt
         model.opt.ccd_iterations = 20
-        model.dof_damping[6:] = config.Kd
-        model.actuator_gainprm[:, 0] = config.Kp
-        model.actuator_biasprm[:, 1] = -config.Kp
-        # the menagerie actuators carry a velocity term; Go1's are pure P
-        model.actuator_biasprm[:, 2] = 0.0
         model.vis.global_.offwidth = 3840
         model.vis.global_.offheight = 2160
         self._mj_model = model

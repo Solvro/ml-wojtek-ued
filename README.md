@@ -44,7 +44,7 @@ arena, each at its own size (`SCALE` = standing trunk height / 0.10 m):
 | `go1` | Unitree Go1 | 2.5 | Playground |
 | `barkour` | Google Barkour vB | 2.4 | off |
 | `spot` | Boston Dynamics Spot | 4.3 | off |
-| `go2` | Unitree Go2 (Go1's env) | 2.2 | Go1's |
+| `go2` | Unitree Go2 (Go1's env) | 2.5 | Go1's |
 
 Cluster launchers: `slurm/*.sbatch` (see [ued-accel.md](docs/ued-accel.md#brax-ued)).
 
