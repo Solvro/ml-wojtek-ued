@@ -52,6 +52,11 @@ of those pins.
 global convention. Tests live in `tests/`, mirroring `src/`
 (`tests/scripts/test_eval_sim2sim.py`); `uv run pytest -q` (pyproject sets
 `pythonpath = ["src"]`).
+- `@pytest.mark.slow` = end-to-end CPU training runs (the PAIRED variant
+  smoke runs in `tests/scripts/test_brax_ued.py`, ~3-6 min each, sharing a
+  jax compile cache), deselected by default;
+  `JAX_PLATFORMS=cpu uv run pytest -q -m slow` runs them. Run them after
+  changing `brax_ued.py`'s loop.
 - ty cannot see mujoco's C-extension members; a `[[tool.ty.overrides]]`
   entry treats `mujoco` as `Any` for the files it lists (add new files that
   use the bindings heavily there instead of per-line ignores).
