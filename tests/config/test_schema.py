@@ -52,6 +52,7 @@ OPTIONS = {
         "accel_grow",
         "accel_sfl",
         "plr",
+        "sfl",
         "paired",
         "paired_uni",
         "paired_bi",
@@ -109,6 +110,7 @@ def test_train_defaults(compose_cfg: Compose) -> None:
         ("accel_grow", Curriculum.accel, Mutation.grow, Score.pvl),
         ("accel_sfl", Curriculum.accel, Mutation.grow, Score.learnability),
         ("plr", Curriculum.plr, Mutation.local, Score.pvl),
+        ("sfl", Curriculum.plr, Mutation.local, Score.learnability),
         ("paired", Curriculum.paired, Mutation.local, Score.pvl),
     ],
 )

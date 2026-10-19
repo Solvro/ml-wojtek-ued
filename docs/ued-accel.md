@@ -132,6 +132,11 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
 - `mode=plr`: robust PLR (PLR⊥) - ACCEL's buffer, rank/staleness replay
   and score refresh, but no mutation; explore iterations score fresh
   uniform (DR) levels.
+- `mode=sfl`: PLR⊥ scored by learnability `p(1-p)` instead of positive
+  value loss — an approximation of SFL (Rutherford et al. 2024), not the
+  original: the buffer persists with rank/staleness replay and explore
+  iterations do not train, where SFL periodically rebuilds a top-K buffer
+  from a large random pool and trains on a buffer/random mix.
 - `robot=go1|barkour|spot|go2`: a Playground quadruped instead of Wojtek,
   see [Playground robots](#robots).
 - Eval every `eval_every` iterations: deterministic policy on `eval_levels`

@@ -9,6 +9,7 @@ METHODS = {
     "dr": "DR",
     "dr_easy": "DR-easy",
     "plr": r"PLR$^{\perp}$",
+    "sfl": "SFL",
     "accel": "ACCEL",
     "accel_sfl": "ACCEL-SFL",
     "paired": "PAIRED",
