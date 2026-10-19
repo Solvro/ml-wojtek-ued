@@ -4,7 +4,8 @@ from typing import Any
 import pytest
 
 from config.schema import Robot
-from scripts.paper_tables import run_prefixes, tables
+from paper.runs import run_prefixes
+from paper.tables import tables
 
 
 def test_run_prefixes_keeps_the_robots_set() -> None:

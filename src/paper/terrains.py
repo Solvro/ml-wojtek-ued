@@ -1,11 +1,4 @@
-"""Rendered example levels for the paper (MuJoCo, offscreen).
-
-`terrains.pdf`: W01-TEK at the home pose on one level per feature at full
-strength (every other feature flat) plus uniform samples at d=0.5 and d=1.
-`robots.pdf`: both robots on the same uniform level, each in its own arena
-scale, to show that the space is defined relative to robot size.
-Run through `paper_figures.py terrains=true` (needs MUJOCO_GL=cgl on macOS).
-"""
+"""Rendered example levels (`terrains.pdf`, `robots.pdf`) for the paper."""
 
 from pathlib import Path
 from typing import Any
@@ -18,9 +11,9 @@ from config.hfield_config import HFieldConfig
 from config.schema import Backend, Robot
 from env.factory import make_env
 from hfield.level_space import PARAMS, ParamSpace
+from paper.labels import ROBOT_LABEL
 from rendering.scene import level_on_single_tile, render_model
 from robots.scale import ROBOT_SCALE, hfield_config
-from scripts.paper_tables import ROBOT_LABEL
 
 # mujoco is a C extension that ty cannot introspect
 mj: Any = mujoco
