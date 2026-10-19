@@ -1,9 +1,4 @@
-"""Unitree Go1 on the UED heightfield arena (MuJoCo Playground joystick task).
-
-Playground's `Go1JoystickRoughTerrain` (feet-only collisions, its own reward
-and blind actor) on the tiled ACCEL arena; the arena, command, fall and
-critic-scan changes are `robots.terrain.TerrainRobot`'s.
-"""
+"""Unitree Go1: Playground's Go1JoystickRoughTerrain on the tiled arena."""
 
 import dataclasses
 from typing import Any
@@ -55,7 +50,9 @@ class Go1Terrain(TerrainRobot, joystick.Joystick):
     def _gravity_z(self, data: mjx.Data) -> jax.Array:
         return self.get_gravity(data)[-1]
 
-    def _with_command(self, state: mjx_env.State, rng: jax.Array) -> mjx_env.State:
+    def _with_command(
+        self, state: mjx_env.State, rng: jax.Array
+    ) -> mjx_env.State:
         # Playground's reset draws a command of its own range, not
         # `sample_command`; the obs it built holds that one
         state.info["command"] = self._forward_command(rng)

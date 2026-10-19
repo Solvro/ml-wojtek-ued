@@ -1,15 +1,5 @@
-"""The shared tiled arena: one static heightfield holding every lane's level.
-
-`tiles x tiles` square cells of `pitch` m, row-major from (-half, -half).
-Cell `i` holds level `i` (the `grid_size x grid_size` patch a level renders
-to) at its centre, surrounded by half a `gap` of flat ground (`0.5`, the
-neutral plane). The gap is `reach - patch_radius`: a robot spawned on its
-pad reads terrain (feet, height scan) at most `reach` m from it within one
-level, so lanes do not see each other's levels (`check_reach`).
-
-Every env collides with the same `hfield_data`, so it is shared (unbatched)
-under vmap, which is what the warp backend needs (docs/environment.md).
-"""
+"""The shared tiled arena: level i on tile i of one static heightfield
+(docs/environment.md#tiled-arena)."""
 
 import math
 from dataclasses import dataclass
@@ -89,7 +79,9 @@ class TileLayout:
         flat = jnp.full((self.n_tiles, g, g), 0.5, jnp.float32)
         tiles = flat.at[:k].set(jnp.reshape(levels, (k, g, g)))
         pad = self.gap_cells // 2
-        cells = jnp.pad(tiles, ((0, 0), (pad, pad), (pad, pad)), constant_values=0.5)
+        cells = jnp.pad(
+            tiles, ((0, 0), (pad, pad), (pad, pad)), constant_values=0.5
+        )
         # a cell spans p + 1 nodes; its last row/column is the next cell's first
         cells = cells[:, :p, :p].reshape(n, n, p, p).transpose(0, 2, 1, 3)
         grid = jnp.pad(
@@ -98,7 +90,7 @@ class TileLayout:
         return grid.reshape(-1)
 
     def tile_xy(self, levels: int, envs_per_level: int) -> jax.Array:
-        """(levels * envs_per_level, 2) spawn tile centre per env, level-major."""
+        """(levels * envs_per_level, 2) spawn tile centres, level-major."""
         centres = jnp.asarray(self.centres()[:levels])
         return jnp.repeat(centres, envs_per_level, axis=0)
 
@@ -118,5 +110,6 @@ class TileLayout:
                 f"{what}: a robot can read terrain {reach:.2f} m from its tile "
                 f"centre, past this arena's {self.leak_radius:.2f} m, on a "
                 "neighbouring lane's level. Run fewer steps per level, or set "
-                f"HFieldConfig.reach >= {math.ceil(reach)} and rebuild the arena"
+                f"HFieldConfig.reach >= {math.ceil(reach)} and rebuild the "
+                "arena"
             )

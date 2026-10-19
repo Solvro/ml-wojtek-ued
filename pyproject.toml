@@ -47,13 +47,20 @@ filterwarnings = [
 ]
 
 [[tool.ty.overrides]]
-include = ["src/scripts/eval_sim2sim.py", "tests/**"]
+include = ["src/evaluation/cpu_physics.py", "src/evaluation/physics_variants.py", "tests/**"]
 # mujoco's bindings are a C extension without stubs, so ty resolves none of
 # its members; mujoco.mjx is pure Python and stays checked
 analysis.replace-imports-with-any = ["mujoco"]
 
 [tool.ruff]
 extend-exclude = ["src/wojtek_env"]
+line-length = 80
+
+[tool.ruff.lint]
+extend-select = ["E501", "C901"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 8
 
 [tool.ruff.lint.isort]
 # local wandb/ run dirs would otherwise make ruff sort wandb as first-party

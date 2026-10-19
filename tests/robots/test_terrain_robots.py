@@ -17,13 +17,13 @@ import pytest
 from mujoco import mjx
 
 from config.hfield_config import HFieldConfig
+from env.functional import FunctionalEnv
+from evaluation.physics_variants import full_collision
 from hfield.tiles import TileLayout
 from robots.registry import TERRAIN_ROBOTS
+from robots.scale import hfield_config
 from robots.spot import SpotTerrain
 from robots.terrain import FALL_HEIGHT_RATIO, WOJTEK_HEIGHT, contact_budget
-from scripts.brax_ued import hfield_config
-from scripts.eval_sim2sim import full_collision
-from utils.env import FunctionalEnv
 
 ARENA = HFieldConfig(
     patch_radius=1.5,
@@ -58,7 +58,9 @@ class Setup:
             grid[tile] = value
         return self.layout.assemble(jnp.asarray(grid))
 
-    def rollout(self, arena: jax.Array) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def rollout(
+        self, arena: jax.Array
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Zero action, env i on tile i: (z, xy - tile, done) per step."""
         env, layout = self.env, self.layout
         action = jnp.zeros(env.action_size)
@@ -75,7 +77,9 @@ class Setup:
 
         keys = jnp.stack([jax.random.key(0)] * layout.n_tiles)
         tiles = layout.tile_xy(layout.n_tiles, 1)
-        z, xy, done = jax.jit(jax.vmap(one, in_axes=(None, 0, 0)))(arena, keys, tiles)
+        z, xy, done = jax.jit(jax.vmap(one, in_axes=(None, 0, 0)))(
+            arena, keys, tiles
+        )
         return np.asarray(z), np.asarray(xy), np.asarray(done)
 
 
@@ -95,7 +99,9 @@ def test_scene_compiles_with_one_hfield_floor_first(setup: Setup) -> None:
 
 def test_scene_scales_with_the_robot(setup: Setup) -> None:
     scale = type(setup.base).SCALE
-    assert setup.config.patch_radius == pytest.approx(ARENA.patch_radius * scale)
+    assert setup.config.patch_radius == pytest.approx(
+        ARENA.patch_radius * scale
+    )
     assert setup.config.amplitude == pytest.approx(ARENA.amplitude * scale)
 
 
@@ -103,12 +109,15 @@ def test_reset_spawns_on_the_requested_tile(setup: Setup) -> None:
     arena = setup.flat()
     centres = setup.layout.tile_xy(setup.layout.n_tiles, 1)
     for tile in (0, 3):
-        _, state = setup.env.reset(jax.random.key(1), arena, tile_xy=centres[tile])
+        _, state = setup.env.reset(
+            jax.random.key(1), arena, tile_xy=centres[tile]
+        )
         # Playground's Go1 reset jitters the spawn by up to 0.5 m
         offset = np.abs(np.asarray(state.data.qpos[:2] - centres[tile])).max()
         assert offset <= 0.5
     assert (
-        float(state.data.qpos[2]) > FALL_HEIGHT_RATIO * type(setup.base).STANDING_HEIGHT
+        float(state.data.qpos[2])
+        > FALL_HEIGHT_RATIO * type(setup.base).STANDING_HEIGHT
     )
 
 
@@ -139,7 +148,9 @@ def test_pit_tile_lowers_only_its_own_robot(setup: Setup) -> None:
     # the zero-action stand keeps rocking: the pit robot sits roughly pit_m
     # lower, every other tile's robot is where it was without the pit
     assert pit_m / 2 < drop < 1.5 * pit_m
-    np.testing.assert_allclose(z[[0, 2, 3]], z_flat[[0, 2, 3]], atol=3e-3 * scale)
+    np.testing.assert_allclose(
+        z[[0, 2, 3]], z_flat[[0, 2, 3]], atol=3e-3 * scale
+    )
     assert not done.any()
     assert np.abs(xy).max() < setup.config.pad_radius
 
@@ -211,8 +222,8 @@ def test_fall_rule_measures_height_above_the_terrain_under_the_trunk(
     with setup.env._swapped_model(arena, None, centre):
         on_floor = home.at[2].set(-amp + cls.STANDING_HEIGHT)
         assert not bool(base._get_termination(posed(setup, on_floor)))
-        # the same world height is a fall over flat ground when the pit is deeper
-        # than the trunk's fall margin
+        # the same world height is a fall over flat ground when the pit is
+        # deeper than the trunk's fall margin
         assert amp > (1 - FALL_HEIGHT_RATIO) * cls.STANDING_HEIGHT
     with setup.env._swapped_model(setup.flat(), None, centre):
         assert bool(base._get_termination(posed(setup, on_floor)))
@@ -225,7 +236,9 @@ def test_contact_budget_is_sized_from_the_model(setup: Setup) -> None:
     assert setup.base._config.njmax == njmax
 
 
-def test_domain_randomization_only_where_playground_has_one(setup: Setup) -> None:
+def test_domain_randomization_only_where_playground_has_one(
+    setup: Setup,
+) -> None:
     name = type(setup.base).__name__
     model, _ = setup.env.sample_dr(jax.random.key(0), 3)
     if name in ("Go1Terrain", "Go2Terrain"):

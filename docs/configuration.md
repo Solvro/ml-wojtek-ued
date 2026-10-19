@@ -45,7 +45,7 @@ python src/scripts/brax_ued.py --cfg job mode=dr name=x   # print the composed c
 | `arena.yaml` | `python -m hfield.arena` | `build-accel-arena` | arena |
 | `check_hfield.yaml` | `scripts/check_hfield_batch.py` | — | arena |
 | `paper_tables.yaml` | `scripts/paper_tables.py` | `paper-tables` | — |
-| `paper_figures.yaml` | `scripts/paper_figures.py` (+ `paper_terrains.py`) | `paper-figures` | arena |
+| `paper_figures.yaml` | `scripts/paper_figures.py` (+ `paper/terrains.py`) | `paper-figures` | arena |
 
 ## Groups
 
@@ -60,7 +60,7 @@ python src/scripts/brax_ued.py --cfg job mode=dr name=x   # print the composed c
 | `go2` | `go2` — Unitree Go2 (Go1's env on the Go2 model) |
 
 The robot's size relative to Wojtek is `ROBOT_SCALE` in
-`scripts/brax_ued.py` (each Playground robot's `SCALE`, `robots/*.py`: go1
+`robots/scale.py` (each Playground robot's `SCALE`, `robots/*.py`: go1
 2.5, barkour 2.4, spot 4.3, go2 2.5); it scales
 the arena, level lengths, commands and `min_travel`.
 
@@ -122,7 +122,7 @@ explicit `level_space.n_edits=N` overrides it. Spaces:
 `amplitude: 0.3`, `coarse_n: 13`, `pad_radius: 0.55`, `pad_taper: 0.2`; the
 rest are `HFieldConfig` defaults. Values are in Wojtek units; training,
 eval, sim2sim, render and the paper figures scale every length by the robot
-(`hfield_config` in `scripts/brax_ued.py`). The arena builder writes the
+(`hfield_config` in `robots/scale.py`). The arena builder writes the
 `arena` it is given, and every Wojtek run checks the built arena against its
 own `arena` (`hfield.arena.check_arena`), so an override must go to both:
 

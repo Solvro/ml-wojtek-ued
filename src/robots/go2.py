@@ -1,18 +1,5 @@
-"""Unitree Go2 on the UED heightfield arena.
-
-Playground has no Go2 env: this is its Go1 joystick (`Go1Terrain`: reward,
-obs) with the menagerie Go2 model and that model's PD gains.
-`unitree_go2/go2_mjx.xml` collides every link and lacks the sensors and names
-the Go1 env reads, so `feet_only_model` rewrites it:
-
-- only the four foot spheres collide, and only with the hfield;
-- the trunk body is `trunk`, the foot sites are named like their geoms;
-- the Go1 feet-only model's sensors are added, the model's keyframe dropped
-  for the scene's.
-
-Go1's randomization applies: the hfield is geom 0, the trunk body 1, and the
-12 joints are dofs 6:.
-"""
+"""Unitree Go2: Go1's joystick env on the menagerie Go2 model, rewritten
+feet-only (docs/ued-accel.md#robots)."""
 
 import re
 from typing import Any
@@ -33,7 +20,8 @@ SENSORS = "\n".join(
         '<framezaxis objtype="site" objname="imu" name="upvector"/>',
         '<velocimeter site="imu" name="local_linvel"/>',
         *(
-            f'<framelinvel objtype="site" objname="{f}" name="{f}_global_linvel"/>'
+            f'<framelinvel objtype="site" objname="{f}" '
+            f'name="{f}_global_linvel"/>'
             for f in FEET
         ),
         *(
@@ -59,12 +47,15 @@ def feet_only_model(xml: str) -> str:
     xml = replace_once(
         xml,
         '<default class="collision">\n        <geom group="3"/>',
-        '<default class="collision">\n        <geom group="3" contype="0" conaffinity="0"/>',
+        '<default class="collision">\n        '
+        '<geom group="3" contype="0" conaffinity="0"/>',
     )
     xml = replace_once(
         xml,
         '<geom size="0.0175" pos="-0.002 0 -0.213" priority="1"',
-        '<geom size="0.0175" pos="-0.002 0 -0.213" contype="0" conaffinity="1" margin="0" priority="1"',  # MJX: no hfield-sphere margin
+        # MJX: no hfield-sphere margin
+        '<geom size="0.0175" pos="-0.002 0 -0.213" contype="0" conaffinity="1" '
+        'margin="0" priority="1"',
     )
     xml = replace_once(xml, '<body name="base"', '<body name="trunk"')
     xml = re.sub(r'<site name="(\w+)_foot"', r'<site name="\1"', xml)

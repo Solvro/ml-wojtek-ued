@@ -7,15 +7,21 @@ repeated here.
 ## Layout rules
 
 - **Research code goes in sibling packages under `src/`** — `config/`,
-  `modules/`, `utils/`, `hfield/`, `robots/`, `scripts/`. Never add files inside
-  `src/wojtek_env/`; it is the extracted env library and is ruff-excluded and
-  hatchling-packaged (`packages = ["src/wojtek_env"]`).
+  `env/`, `robots/`, `hfield/`, `training/`, `evaluation/`, `rendering/`,
+  `paper/`, `diagnostics/`, `scripts/` ([overview](overview.md#repo-map)).
+  Never add files inside `src/wojtek_env/`; it is the extracted env library
+  and is ruff-excluded and hatchling-packaged
+  (`packages = ["src/wojtek_env"]`).
 - **Namespace packages** — research code has no `__init__.py`. Imports are
   top-level and absolute (`from hfield.tiles import ...`), resolved via
   `PYTHONPATH=src` (exported by the `justfile`).
 - **Organize by role**, JAX/functional style: small modules grouped by
   function, not one `helpers` grab-bag. Keep the intra-package dependency
-  graph acyclic (leaves → composers).
+  graph acyclic (leaves → composers). Classes only for stateful things
+  (students, buffers, robots, contexts).
+- **Scripts are thin** — `src/scripts/*.py` parse the Hydra config and call
+  one function of a package; logic never lives there. The `just` recipes
+  and `slurm/` call the scripts by path, so their names stay put.
 
 ## Python version
 
@@ -50,21 +56,25 @@ of those pins.
 
 `just lint` covers ruff only; run `ty check` (static types) manually per the
 global convention. Tests live in `tests/`, mirroring `src/`
-(`tests/scripts/test_eval_sim2sim.py`); `uv run pytest -q` (pyproject sets
-`pythonpath = ["src"]`).
+(`tests/evaluation/test_sim2sim.py` for `evaluation/sim2sim.py`);
+`uv run pytest -q` (pyproject sets `pythonpath = ["src"]`).
 - `@pytest.mark.slow` = end-to-end CPU training runs (the PAIRED variant
-  smoke runs in `tests/scripts/test_brax_ued.py`, ~3-6 min each, sharing a
+  smoke runs in `tests/training/test_train.py`, ~3-6 min each, sharing a
   jax compile cache), deselected by default;
   `JAX_PLATFORMS=cpu uv run pytest -q -m slow` runs them. Run them after
-  changing `brax_ued.py`'s loop.
+  changing the training loop (`src/training/`).
+- ruff runs at 80 columns with `E501` and `C901` (complexity <= 8) on top of
+  its defaults.
 - ty cannot see mujoco's C-extension members; a `[[tool.ty.overrides]]`
   entry treats `mujoco` as `Any` for the files it lists (add new files that
   use the bindings heavily there instead of per-line ignores).
 
 ## Adding to the training loop
 
-- New per-iteration metric → add it to the `log` dict in
-  `scripts/brax_ued.py`; it flows straight into `run.log`.
+- New per-iteration metric → return it from `run_levels`
+  (`training/iteration.py`) or a curriculum iteration
+  (`training/curricula.py`), or add it in `training/train.py`; it flows
+  straight into `run.log`.
 - New level operator → extend `HFieldManager` (`hfield/manager.py`) or a
   `LevelSpace` (`hfield/level_space.py`), keeping methods pure-given-an-rng.
 - New env task → register it in `wojtek_env/envs/registry.py` (that is the one
@@ -93,5 +103,5 @@ global convention. Tests live in `tests/`, mirroring `src/`
 - **Overriding a required value** — merging `???` onto a set value keeps the
   set value, so a primary that includes another (`profile.yaml` →
   `train.yaml`) cannot make an inherited field required again.
-- **`FunctionalEnv` obs is split** actor/critic — `utils.env.Obs.actor`
+- **`FunctionalEnv` obs is split** actor/critic — `env.functional.Obs.actor`
   (`state`) and `Obs.critic` (`privileged_state`) are consumed separately.

@@ -71,7 +71,7 @@ Cluster launchers (`slurm/*.sbatch`): [ued-accel.md](ued-accel.md#brax-ued).
 ## Import root
 
 `PYTHONPATH=src` is exported by the `justfile`, so research code imports are
-top-level (`from hfield.tiles import ...`, `from utils.env import ...`). Run
+top-level (`from hfield.tiles import ...`, `from env.functional import ...`). Run
 scripts through `just` (or export `PYTHONPATH=src` yourself) so these resolve.
 
 ## What lands where

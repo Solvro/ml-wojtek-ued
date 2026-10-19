@@ -13,7 +13,7 @@ inside `wojtek_env`.
 | Layer | Location | Role | Tooling |
 |---|---|---|---|
 | **Env library** | `src/wojtek_env/` | MJX sim env, procedural terrain, Gymnasium wrapper, build/check CLIs | packaged (hatchling), **excluded from ruff** |
-| **Research code** | `src/{config,modules,utils,hfield,robots}/`, `src/scripts/` | brax-PPO trainer, ACCEL/PLR curriculum, heightfield levels, eval + paper tooling | ruff + ty enforced |
+| **Research code** | `src/{config,env,robots,hfield,training,evaluation,rendering,paper,diagnostics}/`, `src/scripts/` | brax-PPO trainer, ACCEL/PLR curriculum, heightfield levels, eval + paper tooling | ruff + ty enforced |
 
 `src/wojtek_env/` is extracted from an upstream robot stack (w01-tek) and treated
 as a stable dependency: env only, no trainer, no ROS, no deployment. Details in
@@ -32,9 +32,14 @@ src/
   config/            Hydra structured configs  (see configuration.md)
     hfield_config.py HFieldConfig (level genome envelope, the `arena` group)
     schema.py        schema dataclass per entry point, enums, CONF_DIR
-  modules/
-    generator.py     LevelGenerator (PAIRED adversary)
-    paired.py        PAIRED regret, student BC KL
+  env/               wojtek_env / Playground robots as jit/vmap training envs
+    functional.py    FunctionalEnv: pure reset/step on the shared arena; Obs
+    factory.py       make_env (Wojtek or a Playground robot), check_wojtek_arena
+    overrides.py     shared env override dicts (movement / terrain / arena)
+    travel.py        TravelBounds: how far an env can read terrain per level
+    divergence.py    end_diverged: end episodes whose physics blew up
+    height_lookup.py Wojtek's terrain lookup rebuilt from hfield_data
+    warp.py          warp backend memory checks and graph cache
   robots/
     terrain.py       TerrainRobot: arena scene, spawn, fall, scan, commands
     go1.py           Playground Go1 on the tiled arena
@@ -42,22 +47,56 @@ src/
     spot.py          Spot
     go2.py           Go2 (Go1's env on the menagerie model, feet-only rewrite)
     registry.py      TERRAIN_ROBOTS: robot name -> class
-  utils/
-    env.py           FunctionalEnv: bridges wojtek_env into jit/vmap training; Obs
-    env_overrides.py shared env override dicts (movement / terrain / arena)
+    scale.py         ROBOT_SCALE, hfield_config, min_travel (robot size)
   hfield/            heightfield levels  (see ued-accel.md)
     manager.py       HFieldManager: generate / mutate / upsample a level
     level_space.py   level spaces (uniform grid, 9-parameter `param`)
     arena.py         write the static tiled "accel" MJCF arena assets
     tiles.py         TileLayout: one level per tile of the shared arena
-  scripts/
-    brax_ued.py          the trainer: brax PPO student, DR / ACCEL / PLR / PAIRED
-    eval_brax.py         final eval of a checkpoint on suites + uniform levels
-    eval_sim2sim.py      the same checkpoint on CPU MuJoCo variants
-    render_video.py      mp4 clips of a checkpoint     (`just render-video`)
-    paper_tables.py / paper_figures.py / paper_terrains.py   paper artefacts
-    profile_brax_ued.py  throughput profile of brax_ued
-    check_hfield_batch.py  per-backend shared-arena sanity check
+  training/          the trainer behind scripts/brax_ued.py
+    ppo.py           brax PPO hyperparameters, networks
+    student.py       Student: params, optimizer, jitted update / regret / BC KL
+    unroll.py        jitted policy rollout on the shared arena
+    context.py       TrainContext (everything build makes), KeyStream
+    build.py         build a TrainContext from TrainConfig, check_config
+    iteration.py     run_levels: one outer iteration over the lanes
+    curricula.py     DR / ACCEL / PLR / PAIRED / PAIRED+Evo iterations
+    buffer.py        LevelBuffer (rank + staleness replay)
+    adversary.py     PAIRED adversary (single-step PPO on regret)
+    generator.py     LevelGenerator network (PAIRED adversary policy)
+    paired.py        PAIRED regret, student BC KL, BC weights
+    evaluate.py      in-training eval on uniform levels
+    metrics.py       level composition of the levels trained on
+    train.py         the train loop: wandb, logging, checkpoint
+  evaluation/        checkpoint evaluation behind eval_brax / eval_sim2sim
+    rollout.py       EvalContext, chunked deterministic rollouts
+    suite.py         held-out structured terrain suite
+    stats.py         cross-fitted CVaR, bootstrap CIs, capability envelopes
+    final_eval.py    eval_brax's level sets and metrics
+    physics_variants.py  sim2sim's CPU MuJoCo model transforms
+    cpu_physics.py   CpuPhysics: CPU MuJoCo stepping under the jax env
+    sim2sim.py       sim2sim's level sets, metrics, build
+  rendering/
+    scene.py         one-tile render model, tracking camera
+    video.py         rollout + mp4 clips (render_video)
+  paper/
+    runs.py          eval/run loading, solvable subset, wandb summaries
+    labels.py        robot / method labels
+    latex.py         booktabs cells and tabulars
+    tables.py        main / envelopes / compute tables, CSV
+    figures.py       curves and composition figures
+    terrains.py      rendered example levels
+  diagnostics/
+    arena_check.py   per-backend shared-arena sanity check
+    throughput.py    throughput profile of a training iteration
+  scripts/           thin Hydra entry points (`just` recipes, slurm/)
+    brax_ued.py          train                       (`just train`)
+    eval_brax.py         final eval of a checkpoint  (`just eval`)
+    eval_sim2sim.py      CPU MuJoCo variants         (`just sim2sim`)
+    render_video.py      mp4 clips of a checkpoint   (`just render-video`)
+    paper_tables.py / paper_figures.py               (`just paper-*`)
+    profile_brax_ued.py  throughput profile          (`just profile`)
+    check_hfield_batch.py  shared-arena check
 main.py              random-agent MuJoCo-viewer preview
 conf/                Hydra YAML: one primary per entry point + groups
                      robot/ mode/ level_space/ arena/  (see configuration.md)
@@ -65,7 +104,7 @@ conf/                Hydra YAML: one primary per entry point + groups
 
 ## End-to-end data flow
 
-**Train** (`scripts/brax_ued.py`): `FunctionalEnv` wraps a task env on the
+**Train** (`scripts/brax_ued.py` → `training/`): `FunctionalEnv` wraps a task env on the
 shared tiled arena → each iteration writes `num_lanes` levels into tiles of one
 `hfield_data` (`TileLayout.assemble`), resets `envs_per_lane` envs per tile with
 a fresh physics DR draw, and steps them in 20-step unrolls with brax's PPO
@@ -83,7 +122,7 @@ Levels are `coarse_n × coarse_n` control-point grids (`grid` space) or 9 terrai
 parameters (`param` space), upsampled to the MJX heightfield. Full walkthrough
 in [ued-accel.md](ued-accel.md).
 
-**Eval**: `eval_brax.py` scores a saved `<run>.pkl` on fixed terrain suites and
+**Eval** (`evaluation/`): `eval_brax.py` scores a saved `<run>.pkl` on fixed terrain suites and
 uniform levels; `eval_sim2sim.py` replays it on CPU MuJoCo under model/solver
 variants; `render_video.py` renders clips. Details in [ued-accel.md](ued-accel.md).
 

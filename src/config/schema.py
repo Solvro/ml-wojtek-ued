@@ -244,11 +244,15 @@ def to_dataclass(cfg: DictConfig, schema: type[T]) -> T:
     """The composed config as its schema dataclass; fails on an unset `???`."""
     obj: Any = OmegaConf.to_object(cfg)
     if not isinstance(obj, schema):
-        raise TypeError(f"composed config is {type(obj).__name__}, not {schema}")
+        raise TypeError(
+            f"composed config is {type(obj).__name__}, not {schema}"
+        )
     return obj
 
 
 def as_dict(cfg: Any) -> dict[str, Any]:
     """A schema dataclass as plain values (enums as strings), for wandb."""
-    out: Any = OmegaConf.to_container(OmegaConf.structured(cfg), enum_to_str=True)
+    out: Any = OmegaConf.to_container(
+        OmegaConf.structured(cfg), enum_to_str=True
+    )
     return out

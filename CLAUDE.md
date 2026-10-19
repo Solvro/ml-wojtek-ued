@@ -12,7 +12,7 @@ it when the code changes.**
 | Anything — get oriented | [docs/overview.md](docs/overview.md) |
 | Install, deps/pins, building assets, running | [docs/setup.md](docs/setup.md) |
 | The env, tasks, terrain, `FunctionalEnv`, the shared tiled arena | [docs/environment.md](docs/environment.md) |
-| `brax_ued.py` trainer, curriculum modes, heightfield levels, eval/render/paper scripts | [docs/ued-accel.md](docs/ued-accel.md) |
+| `training/` (trainer, curriculum modes), heightfield levels, `evaluation/`, `rendering/`, `paper/` | [docs/ued-accel.md](docs/ued-accel.md) |
 | Playground robots (`robots/`: Go1, Barkour vB, Spot, Go2), their scale and scene | [docs/ued-accel.md](docs/ued-accel.md#robots) |
 | Hydra configs (`conf/`, `config/schema.py`), any CLI argument | [docs/configuration.md](docs/configuration.md) |
 | Layout rules, tooling, adding features, gotchas | [docs/development.md](docs/development.md) |
@@ -23,15 +23,24 @@ it when the code changes.**
 - `src/wojtek_env/` — extracted env library. **Do not add files here**; it is
   ruff-excluded and hatchling-packaged. The one edit point is
   `envs/registry.py` (register a task).
-- `src/{config,modules,utils,hfield,robots}/`, `src/scripts/` — research code.
-  Add new work here as sibling packages.
+- Research code, one package per role (`docs/overview.md` repo map):
+  - `src/scripts/` — thin Hydra entry points only (parse config, build, run,
+    log); the `just` recipes and `slurm/` call them by path.
+  - `src/training/` — the trainer behind `scripts/brax_ued.py` (brax PPO
+    student, unroll, lane iteration, curricula, PAIRED, buffer, train loop).
+  - `src/evaluation/` — `eval_brax` / `eval_sim2sim` logic (suite, stats,
+    rollouts, CPU MuJoCo physics and its variants).
+  - `src/env/` — `FunctionalEnv` and the env factory/overrides;
+    `src/hfield/` — levels and the tiled arena; `src/config/` — schemas.
+  - `src/rendering/`, `src/paper/`, `src/diagnostics/` — videos, paper
+    artefacts, arena check and throughput profile.
 - `src/robots/` — Playground quadrupeds on the tiled arena: `terrain.py`
   (`TerrainRobot`, the shared scene/spawn/fall/scan/commands) plus one file
-  per robot with its constants and differences; `registry.py` lists them.
+  per robot with its constants and differences; `registry.py` lists them,
+  `scale.py` holds the robot-size scaling.
   A new robot = a file, a `conf/robot/<name>.yaml`, a `Robot` enum value, a
-  `TERRAIN_ROBOTS` entry, `ROBOT_LABEL` and `prefixes` entries.
-- `src/scripts/brax_ued.py` — the only trainer (brax PPO pieces + our level
-  loop on the shared tiled arena); the eval/render/paper scripts import from it.
+  `TERRAIN_ROBOTS` entry, `ROBOT_LABEL` (`paper/labels.py`) and `prefixes`
+  entries.
 - `conf/` — Hydra YAML, one primary per entry point plus the `robot`, `mode`,
   `level_space`, `arena` groups; `src/config/schema.py` types each primary.
 

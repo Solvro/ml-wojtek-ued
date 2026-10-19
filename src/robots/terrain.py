@@ -1,21 +1,5 @@
-"""Shared machinery for Playground quadrupeds on the UED heightfield arena.
-
-A robot file (`go1.py`, ...) keeps its constants and what differs; this base
-gives every Playground robot the same benchmark as Wojtek:
-
-- the scene is the tiled ACCEL arena (`hfield.tiles`): one swappable
-  `hfield` geom (`floor`, geom 0 so a friction DR keyed on geom 0 still hits
-  it) sized by `HFieldConfig`; the robot spawns on `spawn_xy`, its tile
-  centre, which `FunctionalEnv` sets around reset;
-- commands walk forward, `SCALE` times Wojtek's range, so the robot leaves
-  the spawn pad and meets the level within an episode;
-- a fall is Wojtek's rule at the robot's size: trunk below
-  `FALL_HEIGHT_RATIO` of its standing height above the terrain, or tilted
-  past `MAX_TILT_GZ`. With feet-only contacts the trunk would otherwise pass
-  through blocks;
-- the critic also sees a clean height scan (Wojtek's grid, scaled), so
-  value-loss regret can tell levels apart.
-"""
+"""Shared base of the Playground quadrupeds on the tiled UED arena
+(docs/ued-accel.md#robots)."""
 
 import abc
 import dataclasses
@@ -73,7 +57,7 @@ def arena_scene(
     <key name="home" qpos="0 0 {spawn_z} 1 0 0 0 {home_pose}" ctrl="{home_pose}"/>
   </keyframe>
 </mujoco>
-"""
+"""  # noqa: E501 (MJCF template: one element per line)
 
 
 def compile_scene(xml: str, assets: dict[str, bytes]) -> Any:
@@ -98,15 +82,11 @@ def contact_budget(model: Any) -> tuple[int, int]:
 
 
 class TerrainRobot(abc.ABC):
-    """Mixin over a Playground joystick env (put it first in the bases).
-
-    A subclass provides the robot's constants, `scene_xml`, `assets`,
-    `_build_env` (the Playground base `__init__`) and `_gravity_z`.
-    """
+    """Mixin over a Playground joystick env; put it first in the bases."""
 
     SCALE: ClassVar[float]  # standing trunk height / WOJTEK_HEIGHT
     STANDING_HEIGHT: ClassVar[float]  # m, trunk above flat ground, settled
-    # (feet-only, full-collision) robot XML names for eval_sim2sim's
+    # (feet-only, full-collision) robot XML names for sim2sim's
     # full_collision variant; None: the model has no full-collision version
     FULL_COLLISION: ClassVar[tuple[str, str] | None] = None
     # (model, rng) -> (model, in_axes); None: Playground has none for it
@@ -177,7 +157,7 @@ class TerrainRobot(abc.ABC):
         return scene.as_posix()
 
     def terrain_height(self, xy: jax.Array) -> jax.Array:
-        """Bilinear terrain height (m) at world `xy` (..., 2) of the live level."""
+        """Bilinear height (m) of the live arena at world `xy` (..., 2)."""
         c, layout = self._hfield_config, self._layout
         n = layout.nodes
         grid = self.mjx_model.hfield_data.reshape(n, n)
@@ -200,7 +180,9 @@ class TerrainRobot(abc.ABC):
     def sample_command(self, rng: jax.Array, *_: Any) -> jax.Array:
         return self._forward_command(rng)
 
-    def _with_command(self, state: mjx_env.State, rng: jax.Array) -> mjx_env.State:
+    def _with_command(
+        self, state: mjx_env.State, rng: jax.Array
+    ) -> mjx_env.State:
         """Envs whose reset does not draw through `sample_command` override."""
         del rng
         return state
@@ -234,7 +216,9 @@ class TerrainRobot(abc.ABC):
             self.terrain_height(xy), ref_z, SCAN_CLIP * self.SCALE
         )
         obs = self._obs_dict(state.obs)
-        obs["privileged_state"] = jnp.concatenate([obs["privileged_state"], scan])
+        obs["privileged_state"] = jnp.concatenate(
+            [obs["privileged_state"], scan]
+        )
         return dataclasses.replace(state, obs=obs)
 
     def _get_termination(self, data: mjx.Data) -> jax.Array:

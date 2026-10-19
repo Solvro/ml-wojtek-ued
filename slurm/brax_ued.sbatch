@@ -21,7 +21,7 @@ export HYDRA_FULL_ERROR=1
 # fail instead of silently falling back to CPU when CUDA init fails
 # (seen: CUDA_ERROR_MPS_CONNECTION_FAILED on some Lem nodes)
 export JAX_PLATFORMS=cuda
-# warp allocates its collision scratch outside JAX's pool (utils/env.py)
+# warp allocates its collision scratch outside JAX's pool (env/warp.py)
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 # SRC=<dir>/src, a frozen copy with the built assets/ and conf/ beside it
 # (wojtek_env and config.schema resolve them from src/..), keeps queued jobs

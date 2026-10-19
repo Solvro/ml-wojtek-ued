@@ -1,11 +1,4 @@
-"""Google Barkour vB on the UED heightfield arena (MuJoCo Playground).
-
-Playground's `Barkour` joystick env (its own reward, a 15-step obs history as
-the blind actor); the arena, command, fall and critic-scan changes are
-`robots.terrain.TerrainRobot`'s. Barkour has no privileged obs, so the critic
-sees the actor's obs plus the height scan. Its collisions are feet-only
-already; Playground has no Barkour randomization, so DR is off for it.
-"""
+"""Google Barkour vB: Playground's Barkour joystick env on the tiled arena."""
 
 import dataclasses
 from typing import Any
@@ -20,7 +13,12 @@ from config.hfield_config import HFieldConfig
 from robots.terrain import TerrainRobot, arena_scene, compile_scene
 
 HOME_POSE = "0 0.5 1.0 0 0.5 1.0 0 0.5 1.0 0 0.5 1.0"
-FEET = ("foot_front_left", "foot_hind_left", "foot_front_right", "foot_hind_right")
+FEET = (
+    "foot_front_left",
+    "foot_hind_left",
+    "foot_front_right",
+    "foot_hind_right",
+)
 FEET_SENSORS = "\n".join(
     f'    <contact name="{foot}_floor_found" geom1="{foot}" geom2="floor"'
     ' reduce="mindist" num="1" data="found"/>'
@@ -79,18 +77,24 @@ class BarkourTerrain(TerrainRobot, joystick.Joystick):
         """Playground's `step` with its termination swapped for
         `_get_termination` (its `torso_z < 0.18` reads the world frame, which
         a pit tile or a raised level breaks) plus its joint limits."""
-        rng, cmd_rng, noise_rng, pert_rng = jax.random.split(state.info["rng"], 4)
+        rng, cmd_rng, noise_rng, pert_rng = jax.random.split(
+            state.info["rng"], 4
+        )
         state = self._maybe_apply_perturbation(state, pert_rng)
 
         motor_targets = self._default_pose + action * self._config.action_scale
         motor_targets = jnp.clip(motor_targets, self._lowers, self._uppers)
-        data = mjx_env.step(self.mjx_model, state.data, motor_targets, self.n_substeps)
+        data = mjx_env.step(
+            self.mjx_model, state.data, motor_targets, self.n_substeps
+        )
 
         obs = self._get_obs(data, state.info, state.obs["state"], noise_rng)
         joint_angles = data.qpos[7:]
         contact = jnp.array(
             [
-                data.sensordata[self._mj_model.sensor_adr[self._mj_model.sensor(s).id]]
+                data.sensordata[
+                    self._mj_model.sensor_adr[self._mj_model.sensor(s).id]
+                ]
                 > 0
                 for s in self._feet_floor_found_sensor
             ]
