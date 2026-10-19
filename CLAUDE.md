@@ -29,7 +29,8 @@ it when the code changes.**
   - `src/training/` — the trainer behind `scripts/brax_ued.py` (brax PPO
     student, unroll, lane iteration, curricula, PAIRED, buffer, train loop).
   - `src/evaluation/` — `eval_brax` / `eval_sim2sim` logic (suite, stats,
-    rollouts, CPU MuJoCo physics and its variants).
+    rollouts, CPU MuJoCo physics and its variants) and the level-by-level
+    domination comparison of eval dumps (`compare_domination`).
   - `src/env/` — `FunctionalEnv` and the env factory/overrides;
     `src/hfield/` — levels and the tiled arena; `src/config/` — schemas.
   - `src/rendering/`, `src/paper/`, `src/diagnostics/` — videos, paper

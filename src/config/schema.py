@@ -210,6 +210,18 @@ class PaperFiguresConfig:
     out: str = MISSING
 
 
+@dataclass
+class DominationConfig:
+    prefixes: dict[Robot, str | None] = MISSING
+    eval_dir: str = MISSING
+    level_set: str = MISSING
+    method_a: str = MISSING
+    method_b: str = MISSING
+    min_travel: float = MISSING
+    bins: int = MISSING
+    out: str = MISSING
+
+
 SCHEMAS: dict[str, type] = {
     "train": TrainConfig,
     "eval": EvalConfig,
@@ -219,6 +231,7 @@ SCHEMAS: dict[str, type] = {
     "check_hfield": CheckHFieldConfig,
     "paper_tables": PaperTablesConfig,
     "paper_figures": PaperFiguresConfig,
+    "domination": DominationConfig,
 }
 
 for _name, _schema in SCHEMAS.items():

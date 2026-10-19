@@ -643,3 +643,66 @@ JAX_PLATFORMS=cpu just paper-figures terrains=true
 - Overleaf: upload the PDFs into a `figs/` folder; `\resultfig` falls back to a
   placeholder while a file is missing.
 - `results.csv`: one row per run, every value the tables use.
+
+## Domination comparison — `scripts/compare_domination.py` {#domination}
+
+Code: `src/evaluation/domination.py` (loading, pairing check, solve rates,
+histogram, stats, matrix), `src/paper/domination.py` (figures). Port of
+Piotr Wojdas's design (`feat/domination-comparison`: pairing check, binomial
+noise reference, bootstrap CI, single-hue colour ramp).
+
+```sh
+just domination eval_dir=<evals> prefixes.wojtek=v10_wojtek \
+  prefixes.go1=v10_go1 method_a=accel method_b=dr
+```
+
+- Why: success rate and CVaR are marginals; two methods can match on both
+  and still differ per level (one better everywhere, or each winning on
+  disjoint levels). The comparison pairs them level by level.
+- Definition: per level θ of the set, `solve_rate(θ)` = fraction of
+  episodes with no fall and travel >= `min_travel` x robot scale (eval_brax's
+  success rule) over both passes (2 x 4 = 8 episodes), then the mean over
+  the method's seeds (5 seeds: values k/40).
+  H(x, y) = number of levels with A's rate in bin x and B's in bin y.
+- Inputs: `eval_dir` of eval_brax npz dumps
+  `<prefix>_<method>_seed<k>_final_eval.npz`, `prefixes.<robot>` as in
+  `paper_tables`; methods and seeds come from the file names.
+  `level_set` picks the per-level set: `param_uniform` (default, needs
+  `level_space=param` evals) or `random_d<d>`; a dump without it (or pre-v10,
+  no `_travel` / genomes) fails naming the sets it has.
+- Pairing: every dump of a robot must hold the same level genomes
+  (`param_uniform_levels`, `random_levels` for `random_d*`); otherwise it
+  refuses (rerun eval_brax with the same seed / `num_levels` /
+  `level_space`).
+- Gaps are reported, not dropped: a method lacking seeds another method
+  of the robot has, a method other robots have, and a robot without both
+  `method_a` and `method_b` (its heatmap is skipped) warn and go to the
+  JSON (`missing_seeds`, `missing_methods`, `pair: null`). No robot with
+  the pair is an error.
+- Writes to `out` (default `artifacts/paper/domination`):
+  - `domination.json`: per robot `num_levels`, per method seeds,
+    `episodes_per_level` (all seeds), `mean_solve_rate`; the pair's
+    `a_better` / `b_better` / `ties` (fractions of levels, ties = equal
+    rate), `mean_diff` (A - B) with `mean_diff_ci` (95 % bootstrap over
+    levels), `mean_abs_diff`, `noise_abs_diff`, `counts` (bins x bins level
+    counts, row = A's bin, column = B's bin); `matrix`.
+  - `domination_<a>_vs_<b>.pdf`: one heatmap per robot in a row, plus
+    `domination_<a>_vs_<b>_<robot>.{pdf,png}`.
+  - `domination_matrix.pdf`: per robot, methods x methods, cell = fraction
+    of levels where the row method's rate beats the column's
+    (`row_better`; the diagonal is 0, `M[a,b] + M[b,a] + ties = 1`).
+- Reading the heatmap: x = A's solve rate, y = B's, `bins` (10) bins of
+  10 %, the last one closed at 100 %; cells show the fraction of levels
+  (sum 1) on a log scale shared by every robot, empty cells white. Mass
+  below the diagonal = levels A solves more often (A dominates), above = B;
+  the bottom-left / top-right corners are levels both fail / both solve.
+  Each panel's title has the `a_better` / `b_better` / tie fractions,
+  `mean_diff` with its CI and `mean_abs_diff` against the noise reference.
+- Noise reference (`noise_abs_diff`): the mean |A - B| two identical
+  policies would show from episode sampling alone. Per level, both rates
+  are drawn as Binomial(n, p) / n at p = (A + B) / 2 with each method's
+  episode count n (seeds x passes x episodes); the exact expectation,
+  averaged over levels. At p = 0.5 it is 0.20 for 8 episodes, 0.09 for
+  40 (5 seeds). `mean_abs_diff` near it means the per-level
+  spread is sampling noise; it ignores seed-to-seed policy variance, so it
+  is a lower bound on the spread of two equally good methods.

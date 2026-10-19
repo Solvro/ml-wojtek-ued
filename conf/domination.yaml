@@ -1,0 +1,23 @@
+defaults:
+  - domination_schema
+  - _self_
+
+prefixes:
+  wojtek: null
+  go1: null
+  barkour: null
+  spot: null
+  go2: null
+eval_dir: ???
+level_set: param_uniform
+method_a: accel
+method_b: dr
+min_travel: 1.0
+bins: 10
+out: artifacts/paper/domination
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: artifacts/hydra/domination/${now:%Y-%m-%d_%H-%M-%S}
