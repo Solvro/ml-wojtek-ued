@@ -70,6 +70,7 @@ not reach queued jobs:
 ```bash
 PDW=<your PD dir>                     # as in slurm/*.sbatch
 COPY="$PDW/copies/$(git rev-parse --short HEAD)"
+mkdir -p "$PDW/logs"                  # #SBATCH --output dir; SLURM does not create it
 mkdir -p "$COPY" && git archive HEAD src conf assets | tar -x -C "$COPY"
 BUILD=$(SRC="$COPY/src" sbatch --parsable slurm/build_assets.sbatch)
 
