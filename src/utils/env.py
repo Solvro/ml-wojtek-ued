@@ -9,9 +9,8 @@ import jax.numpy as jnp
 import mujoco
 from brax.envs.wrappers import training as brax_training
 from mujoco import mjx
-from mujoco_playground._src.locomotion.go1 import randomize as go1_randomize
 
-from robots.go1 import GO1_SCALE, SCAN_X, SCAN_Y, Go1Terrain
+from robots.terrain import SCAN_X, SCAN_Y, TerrainRobot
 from wojtek_env.envs import randomize, registry
 from wojtek_env.terrain.terrain_env import SPAWN_EDGE_MARGIN
 
@@ -96,15 +95,15 @@ def scan_reach(x_range: Any, y_range: Any) -> float:
 
 
 def travel_bounds(base: Any) -> TravelBounds:
-    if isinstance(base, Go1Terrain):
+    if isinstance(base, TerrainRobot):
         low, high = base._cmd_low, base._cmd_high
         speed = math.hypot(
             float(max(abs(low[0]), abs(high[0]))),
             float(max(abs(low[1]), abs(high[1]))),
         )
-        feet = GO1_SCALE * SPAWN_EDGE_MARGIN
-        # Go1's scan is critic-only
-        sensing = max(feet, GO1_SCALE * scan_reach(SCAN_X, SCAN_Y))
+        feet = base.SCALE * SPAWN_EDGE_MARGIN
+        # the scan is critic-only
+        sensing = max(feet, base.SCALE * scan_reach(SCAN_X, SCAN_Y))
         return TravelBounds(0.0, speed, sensing, feet, base.dt)
     c = base._config
     hs = c.height_scan
@@ -165,23 +164,24 @@ class FunctionalEnv:
         episode_length: int | None = None,
         seed: int = 0,
         domain_randomize: bool = False,
-        go1: Go1Terrain | None = None,
+        robot: TerrainRobot | None = None,
     ):
-        # go1 set: Playground's Go1 on its arena instead of Wojtek
+        # robot set: a Playground robot on its arena instead of Wojtek
         base: Any
-        if go1 is None:
+        if robot is None:
             base = registry.make_env(task, env_overrides)
             dr_fn = randomize.make_domain_randomize(base.mj_model)
         else:
-            base = cast(Any, go1)
-            dr_fn = go1_randomize.domain_randomize
+            base = cast(Any, robot)
+            dr_fn = robot.domain_randomize
         length = episode_length or base._config.episode_length
         if getattr(base, "_backend", "jax") == "warp":
             configure_warp()
 
         self._env = brax_training.EpisodeWrapper(base, length, action_repeat=1)
-        # Go1 reads heights straight from hfield_data; Wojtek keeps a lookup
-        self._has_lookup = go1 is None
+        # Playground robots read heights straight from hfield_data; Wojtek
+        # keeps a lookup
+        self._has_lookup = robot is None
         self._hfield_geometry = hfield_geometry(base) if self._has_lookup else None
         self.action_size = base.action_size
         self.travel = travel_bounds(base)

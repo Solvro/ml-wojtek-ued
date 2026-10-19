@@ -129,8 +129,8 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
 - `mode=plr`: robust PLR (PLR⊥) - ACCEL's buffer, rank/staleness replay
   and score refresh, but no mutation; explore iterations score fresh
   uniform (DR) levels.
-- `robot=go1`: Playground's Go1 instead of Wojtek, see
-  [Go1](#go1).
+- `robot=go1|barkour|spot|go2`: a Playground quadruped instead of Wojtek,
+  see [Playground robots](#robots).
 - Eval every `eval_every` iterations: deterministic policy on `eval_levels`
   fresh uniform levels (2 episodes each, in chunks of at most `tiles²`
   levels) at difficulties 0.25/0.5/0.75/1.0 — `eval/d<d>/success_rate` (no
@@ -297,31 +297,84 @@ mode samples, mutates and renders levels through it.
   wavelength, stairs, gaps, blocks, gap depth/period) times the robot's size
   relative to Wojtek; slopes unchanged. Envelopes stay in Wojtek units.
 
-## Go1 — `robots/go1.py` {#go1}
+## Playground robots — `robots/` {#robots}
 
-Second robot for the benchmark: open serial chain (Go1) vs Wojtek's closed
-chain. `robot=go1` in every entry point with a `robot` group, `ROBOT=go1` on WCSS
-(run prefix `v9_go1`).
+Benchmarks for other morphologies: open serial chains (Go1, Go2, Barkour,
+Spot) vs Wojtek's closed chain. `robot=<name>` in every entry point with a
+`robot` group, `ROBOT=<name>` on WCSS (run prefix `v9_go1` for Go1).
 
-- Playground `Go1JoystickRoughTerrain` (feet-only collisions, its reward,
-  blind actor), on `backend` like Wojtek (warp: Playground's own
-  rough-terrain Go1 trains on warp; on this arena not yet compared with
-  jax), with:
-  - the tiled ACCEL arena, written by `scene_xml` (no asset files): one
-    `hfield` geom `floor` (geom 0, so Playground's friction DR hits it),
-    sized by `HFieldConfig`; `reset` spawns on `spawn_xy`, the tile centre
-    `FunctionalEnv` sets;
-  - forward commands: Wojtek's `vx (0.2, 0.6)`, `vy (-0.2, 0.2)` times
-    `GO1_SCALE`, `wz (-0.4, 0.4)`;
-  - Wojtek's fall rule at Go1's size: trunk below 0.6 x 0.258 m above the
-    terrain under it, or gravity z > -0.4;
-  - critic gets a clean 5x5 height scan (Wojtek's grid x `GO1_SCALE`).
-- `GO1_SCALE = 2.5` (standing trunk 0.258 m vs Wojtek 0.10 m) scales the
-  arena (`hfield_config`, `reach` included), level lengths, commands and
-  `min_travel`.
-- Physics DR: Playground's `go1/randomize.py`.
+| `robot=` | class | model | `SCALE` | standing trunk (m) | DR |
+|---|---|---|---|---|---|
+| `go1` | `Go1Terrain` | Playground `go1_mjx_feetonly.xml` | 2.5 | 0.258 | Playground `go1/randomize.py` |
+| `barkour` | `BarkourTerrain` | menagerie `google_barkour_vb/barkour_vb_mjx.xml` | 2.4 | 0.235 | none (Playground has none) |
+| `spot` | `SpotTerrain` | Playground `spot_mjx_feetonly.xml` | 4.3 | 0.433 | none (Playground has none) |
+| `go2` | `Go2Terrain` | menagerie `unitree_go2/go2_mjx.xml`, rewritten feet-only | 2.5 | 0.254 | Go1's `randomize.py` |
+
+Shared (`robots/terrain.py` `TerrainRobot`, a mixin over the Playground env;
+a robot file keeps its constants, scene and what differs):
+
+- Playground's own reward, obs and PD gains (Go2: menagerie's), feet-only
+  collisions, blind actor; on `backend` like Wojtek (warp: each env gets
+  `contact_budget` - 2 contacts per geom colliding with the hfield, `njmax` =
+  `nu` + 6 rows per contact: 8 and 60 for four feet, Go1's Playground
+  rough-terrain budget).
+- The tiled ACCEL arena written by `arena_scene` (no asset files): one
+  `hfield` geom `floor` (geom 0, so a friction DR keyed on geom 0 hits it),
+  sized by `HFieldConfig`; `reset` spawns on `spawn_xy`, the tile centre
+  `FunctionalEnv` sets.
+- Forward commands: Wojtek's `vx (0.2, 0.6)`, `vy (-0.2, 0.2)` times `SCALE`,
+  `wz (-0.4, 0.4)`; `sample_command` redraws from the same box. Spot's box
+  is capped at Playground's Spot command range.
+- Wojtek's fall rule at the robot's size: trunk below 0.6 x `STANDING_HEIGHT`
+  above the terrain under it (`terrain_height`, read off `hfield_data`), or
+  gravity z > -0.4 in the trunk frame.
+- The critic gets a clean 5x5 height scan (Wojtek's grid x `SCALE`) appended
+  to `privileged_state`.
+- `SCALE` = standing trunk height / Wojtek's 0.10 m, rounded to 0.1. The
+  trunk height is measured: the settled `qpos[2]` over flat ground under zero
+  action (the PD pose), which sags below the kinematic height.
+  `tests/robots/test_terrain_robots.py` re-measures it per robot. `SCALE`
+  scales the arena (`hfield_config`, `reach` included), level lengths,
+  commands and `min_travel`; slopes do not scale.
 - Needs `mujoco_menagerie` under Playground's `external_deps` (meshes);
   `ensure_menagerie_exists()` clones it, by hand on WCSS (no AVX on login).
+- `eval_sim2sim`'s `full_collision` variant exists for Go1 and Spot only
+  (`FULL_COLLISION`); Barkour has no full-collision model and Go2's is not
+  wired, so those two refuse it with an error.
+
+Per robot:
+
+- **Go1**: Playground `Go1JoystickRoughTerrain`, spawning 0.35 m above the
+  tile. Playground's rough-terrain Go1 trains on warp; on this arena not yet
+  compared with jax.
+- **Barkour vB**: Playground `barkour.Joystick` (18 dof, `Kp` 35, 12 joints
+  clipped to its limits, perturbation kicks always on). Its env builds from a
+  fixed menagerie scene and returns one obs vector (a 15-step history, 465
+  values), so `BarkourTerrain` builds the arena scene itself, adds the foot
+  contact sensors in XML (Playground adds them with `MjSpec`), uses the
+  vector as the actor obs and `[obs, height scan]` as the critic obs, and
+  carries a copy of `step` whose termination is the shared fall rule plus
+  Playground's joint-limit check: its own `torso z < 0.18` is a world height,
+  wrong on a pit or raised tile. Commands are redrawn every 500 steps.
+- **Spot**: Playground `spot.Joystick` (`Kp` 300, `Kd` 1, 3-step joint-error
+  history, feet position obs). `get_gravity` there is the up vector, so the
+  fall rule negates it. Playground's `early_termination` flag and `gravity z <
+  0.85` termination are replaced by the shared rule. Spot's standing trunk is
+  0.433 m, scale 4.3, `reach` 43 m. Wojtek's commands x 4.3 would reach
+  vx 2.6 m/s (real Spot tops out near 1.6 m/s), so `SpotTerrain` caps them
+  at Playground's Spot command range: vx `(0.86, 1.0)`, vy `(-0.8, 0.8)`,
+  wz `(-0.4, 0.4)`.
+- **Go2**: Playground has no Go2 env: `Go2Terrain` is `Go1Terrain` (Go1's
+  joystick reward and obs) on the menagerie model with the model's own PD
+  gains (`kp` 50, `kv` 0.5, joint damping 2); Go1's `Kp` 35 sags the 15 kg
+  Go2 to 0.219 m.
+  `go2_mjx.xml` collides every link and lacks the names Go1's env reads, so
+  `feet_only_model` rewrites it (each substitution must match exactly once):
+  trunk `base` -> `trunk`, foot sites `FL_foot` -> `FL`, only the four foot
+  spheres collide (no hfield-sphere `margin` in MJX), the `upvector`,
+  `local_linvel`, per-foot `*_global_linvel` and `*_floor_found` sensors are
+  added, the model's own keyframe is dropped. Go1's randomization fits
+  (hfield = geom 0, trunk = body 1, 12 joints = dofs 6:).
 
 ## Final eval — `scripts/eval_brax.py` {#eval-brax}
 
@@ -402,7 +455,7 @@ network and deterministic policy as eval_brax; no physics DR.
   | `mjx_match` | none | CPU MuJoCo vs MJX implementation; must match eval_brax within noise |
   | `newton_elliptic` | elliptic cones, 100 iterations / 50 line search (training: pyramidal, Wojtek 2 / Go1 1 iterations) | reliance on the unconverged training solver |
   | `half_dt` | timestep 0.004 -> 0.002 s, 2 CPU steps per training substep (policy rate unchanged); solref time constants below the old 2·dt floor pinned at 0.008 s | integration-step sensitivity only |
-  | `full_collision` | Wojtek: the source model's per-link `*_collision` meshes collide with the terrain (`build_model` disables them; spec recompiled for convex hulls). Go1: Playground's `go1_mjx_fullcollisions.xml` | contacts the MJX model drops (shins, thighs, trunk) |
+  | `full_collision` | Wojtek: the source model's per-link `*_collision` meshes collide with the terrain (`build_model` disables them; spec recompiled for convex hulls). Go1 and Spot: Playground's `go1_mjx_fullcollisions.xml` / `spot_mjx.xml`; Barkour, Go2: refused | contacts the MJX model drops (shins, thighs, trunk) |
   | `soft_contact` | geom solref time constant x2 (`SOFT_TIMECONST_SCALE`) of the value training runs at: Wojtek 0.001 s (runs at the 0.008 s floor) -> 0.016 s, Go1 0.02 -> 0.04 s; damping ratio, solimp unchanged | contact stiffness, relative to each robot |
 
 - Levels: `flat` (`suite_instances`), `param/uniform` = first `num_levels`
@@ -487,8 +540,9 @@ just render-video checkpoint=artifacts/checkpoints/<run>.pkl \
   0.3 m/s forward, 0.2 rad/s yaw: an arc; on 24 screened d=1 levels the
   robot got 1.1-3.2 m from spawn in 20 s, so it stays on the 3 m arena).
   The command's height entry keeps the reset draw; the resample counter
-  is pinned every step (Wojtek `steps_since_cmd` = 0, Go1
-  `steps_until_next_cmd` = 2^30) so the env never resamples.
+  is pinned every step (Wojtek `steps_since_cmd` = 0, Go1/Go2
+  `steps_until_next_cmd` = 2^30, Barkour/Spot `step` = 0, which also stops
+  Barkour's kicks) so the env never resamples.
 - `seconds` (default 20) must fit in one episode (1000 steps = 20 s for
   Wojtek): a fall or truncation auto-resets the robot to spawn, which the
   clip would show as a jump. Pick levels whose printed fall list is empty;
@@ -500,7 +554,7 @@ just render-video checkpoint=artifacts/checkpoints/<run>.pkl \
   prefer low-slope levels whose rough/stairs/gaps persist outward.
 - The level runs on tile 0 of the arena (the rest flat). Rendering
   replays the recorded `qpos`, shifted to the origin, on a one-tile copy
-  of the scene (`hfield.arena.single_tile_spec`; Go1: `scene_xml` of
+  of the scene (`hfield.arena.single_tile_spec`; Playground robots: `scene_xml` of
   `single_tile`), through `mujoco.Renderer`
   (`width`/`height`, default 1280x720, `fps` 30, frames at the
   nearest control step), camera tracking the free-joint body; mp4 via

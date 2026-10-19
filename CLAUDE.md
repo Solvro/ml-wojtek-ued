@@ -13,6 +13,7 @@ it when the code changes.**
 | Install, deps/pins, building assets, running | [docs/setup.md](docs/setup.md) |
 | The env, tasks, terrain, `FunctionalEnv`, the shared tiled arena | [docs/environment.md](docs/environment.md) |
 | `brax_ued.py` trainer, curriculum modes, heightfield levels, eval/render/paper scripts | [docs/ued-accel.md](docs/ued-accel.md) |
+| Playground robots (`robots/`: Go1, Barkour vB, Spot, Go2), their scale and scene | [docs/ued-accel.md](docs/ued-accel.md#robots) |
 | Hydra configs (`conf/`, `config/schema.py`), any CLI argument | [docs/configuration.md](docs/configuration.md) |
 | Layout rules, tooling, adding features, gotchas | [docs/development.md](docs/development.md) |
 | Running training/eval on the cluster | `slurm/*.sbatch`, [docs/ued-accel.md](docs/ued-accel.md#brax-ued) |
@@ -24,6 +25,11 @@ it when the code changes.**
   `envs/registry.py` (register a task).
 - `src/{config,modules,utils,hfield,robots}/`, `src/scripts/` — research code.
   Add new work here as sibling packages.
+- `src/robots/` — Playground quadrupeds on the tiled arena: `terrain.py`
+  (`TerrainRobot`, the shared scene/spawn/fall/scan/commands) plus one file
+  per robot with its constants and differences; `registry.py` lists them.
+  A new robot = a file, a `conf/robot/<name>.yaml`, a `Robot` enum value, a
+  `TERRAIN_ROBOTS` entry, `ROBOT_LABEL` and `prefixes` entries.
 - `src/scripts/brax_ued.py` — the only trainer (brax PPO pieces + our level
   loop on the shared tiled arena); the eval/render/paper scripts import from it.
 - `conf/` — Hydra YAML, one primary per entry point plus the `robot`, `mode`,

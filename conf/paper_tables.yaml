@@ -5,6 +5,9 @@ defaults:
 prefixes:
   wojtek: null
   go1: null
+  barkour: null
+  spot: null
+  go2: null
 eval_dir: null
 out: artifacts/paper/tables
 train_summaries: null

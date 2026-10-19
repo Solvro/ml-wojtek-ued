@@ -36,7 +36,12 @@ src/
     generator.py     LevelGenerator (PAIRED adversary)
     paired.py        PAIRED regret, student BC KL
   robots/
+    terrain.py       TerrainRobot: arena scene, spawn, fall, scan, commands
     go1.py           Playground Go1 on the tiled arena
+    barkour.py       Barkour vB
+    spot.py          Spot
+    go2.py           Go2 (Go1's env on the menagerie model, feet-only rewrite)
+    registry.py      TERRAIN_ROBOTS: robot name -> class
   utils/
     env.py           FunctionalEnv: bridges wojtek_env into jit/vmap training; Obs
     env_overrides.py shared env override dicts (movement / terrain / arena)

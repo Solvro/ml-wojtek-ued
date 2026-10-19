@@ -46,6 +46,13 @@ def test_hold_command_blocks_go1_countdown() -> None:
     assert held["steps_until_next_cmd"] > 1000
 
 
+def test_hold_command_blocks_barkour_and_spot_step_counter() -> None:
+    info = {"command": jnp.zeros(3), "step": jnp.int32(499)}
+    held = hold_command(info, jnp.ones(3))
+    np.testing.assert_allclose(held["command"], np.ones(3))
+    assert held["step"] == 0
+
+
 def test_hold_command_without_resample_counter() -> None:
     held = hold_command({"command": jnp.zeros(3)}, jnp.ones(3))
     np.testing.assert_allclose(held["command"], np.ones(3))
