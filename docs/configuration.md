@@ -78,6 +78,7 @@ each `mode/<option>.yaml` sets its switches.
 | `accel_grow` | `accel` | `mutation: grow` |
 | `accel_sfl` | `accel` | `mutation: grow`, `score: learnability` |
 | `plr` | `plr` | — |
+| `sfl` | `plr` | `score: learnability` |
 | `paired` | `paired` | — |
 | `paired_uni` | `paired` | `bc: uni` |
 | `paired_bi` | `paired` | `bc: bi` |
