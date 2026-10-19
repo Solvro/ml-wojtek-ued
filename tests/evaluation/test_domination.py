@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+from config.schema import Robot
 from evaluation.domination import (
     MethodRates,
     compare,
@@ -23,6 +24,10 @@ Compose = Callable[..., Any]
 REPO = Path(__file__).resolve().parents[2]
 PASSES, EPISODES = 2, 4
 GENOMES = np.random.default_rng(0).random((6, 9))
+
+
+def only_prefixes(**chosen: str) -> list[str]:
+    return [f"prefixes.{r}={chosen.get(r, 'null')}" for r in Robot]
 
 
 def write_dump(
@@ -66,8 +71,7 @@ def test_threshold_scales_with_the_robot(
     cfg = compose_cfg(
         "domination",
         f"eval_dir={tmp_path}",
-        "prefixes.wojtek=wojtek",
-        "prefixes.spot=spot",
+        *only_prefixes(wojtek="wojtek", spot="spot"),
     )
     report = compare(cfg)
     assert report.robots["wojtek"].methods["accel"].mean_solve_rate == 1.0
@@ -79,7 +83,9 @@ def test_rates_average_over_seeds(tmp_path: Path, compose_cfg: Compose) -> None:
     write_dump(tmp_path, "w_accel_seed1", [0, 0, 4, 6, 0, 8])
     write_dump(tmp_path, "w_dr_seed0", [0] * 6)
     write_dump(tmp_path, "w_dr_seed1", [0] * 6)
-    cfg = compose_cfg("domination", f"eval_dir={tmp_path}", "prefixes.wojtek=w")
+    cfg = compose_cfg(
+        "domination", f"eval_dir={tmp_path}", *only_prefixes(wojtek="w")
+    )
     accel = compare(cfg).robots["wojtek"].methods["accel"]
     assert accel.seeds == [0, 1]
     assert accel.episodes_per_level == 16
@@ -156,7 +162,9 @@ def test_matrix_diagonal_is_zero_and_rows_complement() -> None:
 def test_mismatched_levels_refuse(tmp_path: Path, compose_cfg: Compose) -> None:
     write_dump(tmp_path, "w_accel_seed0", [8] * 6)
     write_dump(tmp_path, "w_dr_seed0", [8] * 6, GENOMES + 0.01)
-    cfg = compose_cfg("domination", f"eval_dir={tmp_path}", "prefixes.wojtek=w")
+    cfg = compose_cfg(
+        "domination", f"eval_dir={tmp_path}", *only_prefixes(wojtek="w")
+    )
     with pytest.raises(ValueError, match="different levels"):
         compare(cfg)
 
@@ -168,7 +176,7 @@ def test_missing_level_set_names_the_sets_present(
     cfg = compose_cfg(
         "domination",
         f"eval_dir={tmp_path}",
-        "prefixes.wojtek=w",
+        *only_prefixes(wojtek="w"),
         "level_set=random_d1.0",
     )
     with pytest.raises(KeyError, match=r"random_d1\.0_fell.*param_uniform"):
@@ -186,8 +194,7 @@ def test_missing_seeds_and_methods_are_reported(
     cfg = compose_cfg(
         "domination",
         f"eval_dir={tmp_path}",
-        "prefixes.wojtek=w",
-        "prefixes.go1=g",
+        *only_prefixes(wojtek="w", go1="g"),
     )
     with pytest.warns(UserWarning) as caught:
         report = compare(cfg)
@@ -205,13 +212,17 @@ def test_no_robot_with_the_pair_refuses(
     tmp_path: Path, compose_cfg: Compose
 ) -> None:
     write_dump(tmp_path, "w_accel_seed0", [8] * 6)
-    cfg = compose_cfg("domination", f"eval_dir={tmp_path}", "prefixes.wojtek=w")
+    cfg = compose_cfg(
+        "domination", f"eval_dir={tmp_path}", *only_prefixes(wojtek="w")
+    )
     with pytest.warns(UserWarning), pytest.raises(ValueError, match="both"):
         compare(cfg)
 
 
 def test_no_dumps_refuses(tmp_path: Path, compose_cfg: Compose) -> None:
-    cfg = compose_cfg("domination", f"eval_dir={tmp_path}", "prefixes.wojtek=w")
+    cfg = compose_cfg(
+        "domination", f"eval_dir={tmp_path}", *only_prefixes(wojtek="w")
+    )
     with pytest.raises(FileNotFoundError, match="w_<method>_seed<k>"):
         compare(cfg)
 
@@ -230,8 +241,7 @@ def test_cli_writes_json_and_figures(tmp_path: Path) -> None:
             "src/scripts/compare_domination.py",
             f"eval_dir={evals}",
             f"out={out}",
-            "prefixes.wojtek=w",
-            "prefixes.go1=g",
+            *only_prefixes(wojtek="w", go1="g"),
             f"hydra.run.dir={tmp_path / 'hydra'}",
         ],
         cwd=REPO,
@@ -257,7 +267,7 @@ def test_cli_writes_json_and_figures(tmp_path: Path) -> None:
 
 def test_same_method_twice_refuses(compose_cfg: Compose) -> None:
     cfg = compose_cfg(
-        "domination", "eval_dir=e", "prefixes.wojtek=w", "method_b=accel"
+        "domination", "eval_dir=e", *only_prefixes(wojtek="w"), "method_b=accel"
     )
     with pytest.raises(ValueError, match="both accel"):
         compare(cfg)

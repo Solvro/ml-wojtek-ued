@@ -6,6 +6,8 @@
   jax/mjx pins below do not resolve there yet.
 - `uv` for the environment. CUDA extra (`jax[cuda12]`) installs only on Linux;
   macOS gets CPU jax.
+- `uv.lock` pins every version; `uv sync --locked --extra dev` reproduces it
+  exactly (the paper's environment).
 
 ## Pinned dependencies (do not bump blindly)
 
@@ -18,8 +20,11 @@ carry the reasons:
 - `warp-lang == 1.13.0` — mjx 3.10.0 vendors MJWarp and requires exactly this;
   1.14 removed `warp._src.jax_experimental` and breaks `put_model(impl="warp")`.
 
-Everything else (`brax`, `equinox`, `distrax`, `flax`, `hydra-core`, `wandb`,
-`gymnasium`, `playground`, `ml-collections`) floats on `>=`.
+Everything else (`brax`, `playground`, `equinox`, `distrax`, `optax`,
+`hydra-core`, `wandb`, `gymnasium`, `ml-collections`, `matplotlib`,
+`mediapy`) floats on `>=` in `pyproject.toml`; the lockfile fixes the
+versions. Only directly imported packages are declared (`flax` comes with
+brax).
 
 ## Install
 
@@ -41,6 +46,18 @@ just build-accel-arena   # write the "accel" arena (scene/hfield/spec/lookup)
 `build-accel-arena` is required before `brax_ued.py` and the eval scripts — they load the
 `accel` terrain arena. See [environment.md](environment.md#assets) for what each
 file is and why they must sit next to the robot XML.
+
+The Playground robots (`go1`, `barkour`, `spot`, `go2`) also need
+`mujoco_menagerie` (meshes) at Playground's pinned commit, cloned into the
+venv:
+
+```bash
+uv run python -c "from mujoco_playground._src.mjx_env import \
+ensure_menagerie_exists; ensure_menagerie_exists()"
+```
+
+On SLURM, `slurm/build_assets.sbatch` does all three in a frozen copy
+([README](../README.md#3-training-grid-slurm)).
 
 ## mjpython on macOS
 
@@ -66,7 +83,8 @@ just render-video checkpoint=artifacts/checkpoints/my_run.pkl 'levels=[0.75:3]'
 
 Every script is configured by Hydra from `conf/` (`key=value` overrides,
 `--cfg job` prints the composed config): [configuration.md](configuration.md).
-Cluster launchers (`slurm/*.sbatch`): [ued-accel.md](ued-accel.md#brax-ued).
+Cluster launchers (`slurm/*.sbatch`) and the full paper grid:
+[README](../README.md#reproduce-the-paper).
 
 ## Import root
 

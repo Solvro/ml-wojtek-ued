@@ -9,8 +9,8 @@ from paper.tables import tables
 
 
 def test_run_prefixes_keeps_the_robots_set() -> None:
-    prefixes = {Robot.wojtek: "v10_wojtek", Robot.go1: None}
-    assert run_prefixes(prefixes) == {"wojtek": "v10_wojtek"}
+    prefixes = {Robot.wojtek: "ued_wojtek", Robot.go1: None}
+    assert run_prefixes(prefixes) == {"wojtek": "ued_wojtek"}
 
 
 def test_run_prefixes_refuses_none_set() -> None:
@@ -19,6 +19,6 @@ def test_run_prefixes_refuses_none_set() -> None:
 
 
 def test_tables_need_an_eval_dir(compose_cfg: Callable[..., Any]) -> None:
-    cfg = compose_cfg("paper_tables", "prefixes.wojtek=v10_wojtek")
+    cfg = compose_cfg("paper_tables")
     with pytest.raises(ValueError, match="eval_dir"):
         tables(cfg)

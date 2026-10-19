@@ -121,7 +121,7 @@ def compare_backends(
 ) -> bool:
     """Whether jax and warp agree on every tile's terrain; prints the gaps.
     The base-z gap is backend physics, not the arena: warp stands the robot
-    ~7-11 mm higher than jax on every tile (job 6109870)."""
+    ~7-11 mm higher than jax on every tile."""
     depth = {}
     for backend, (z, _) in runs.items():
         tile_z = late_z(z, cfg.envs_per_tile).mean(axis=1)

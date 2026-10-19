@@ -42,18 +42,16 @@ one inline. `env/overrides.py`'s `movement_overrides()`
 - Spawn pose (`WojtekJoystick.reset`, local edit to the extracted env): every
   leg joint, passive four-bar joints included, comes from the settled
   closed-loop pose for the commanded height (`_spawn_joint_qpos`, tabled per
-  `DSECOND_TABLE` rung by `_settle_height_grid`). Previously only the
-  actuated joints were set, leaving the closure loop open by up to ~0.13 m;
-  the solver snapped it shut at 40–70° toggle and the policy hit
-  `fall.max_toggle_deg=150` within ~0.35 s. Rest-pose toggle is now ≤ ~26°.
-- `movement_overrides` no longer sets `fall.max_toggle_deg` (termination
-  off; the `toggle_flat` penalty stays). Even with the fixed spawn and an
-  accurate solver, random actions push a leg past 150° in ~35% of 2 s
-  episodes, and brax PPO (mujoco_playground recipe) still lost 92% of its
-  episodes to the toggle at ~3 s while walking at ~62% of the command.
-  At the default `opt.iterations=2` the four-bar closure also stretches
-  ~14 mm under random actions (2.3 mm at 10 iterations), which doubles the
-  toggle events.
+  `DSECOND_TABLE` rung by `_settle_height_grid`), so the closure loop
+  starts shut; setting only the actuated joints would leave it open by up
+  to ~0.13 m and the solver would snap it at 40–70° toggle. Rest-pose
+  toggle ≤ ~26°.
+- `movement_overrides` leaves the `fall.max_toggle_deg` termination off
+  (the `toggle_flat` penalty stays): random actions push a leg past 150° in
+  ~35% of 2 s episodes, and with the termination on brax PPO loses 92% of
+  its episodes to the toggle at ~3 s. At the default `opt.iterations=2` the
+  four-bar closure stretches ~14 mm under random actions (2.3 mm at 10
+  iterations), which doubles the toggle events.
 - `action_filter` — EMA smoothing on actions before the PD targets.
 - `command.pure_wz_prob`/`pure_vy_prob`/`arc_prob`/`pure_slow_prob`/
   `pure_fast_prob`/`pure_back_prob` — dedicated clean-command training
@@ -127,8 +125,6 @@ from wojtek_env.gymnasium import WojtekGymEnv
 env = WojtekGymEnv(task="joystick")
 obs, info = env.reset(seed=0)
 ```
-
-`main.py` is a random-agent MuJoCo-viewer preview built on this.
 
 ## Domain randomization
 
@@ -215,8 +211,8 @@ dict:
 - `movement_overrides()` — task-independent: `latency`/`encoder` noise,
   `symmetry` mirror augmentation, `real_pose_ref`, `action_filter`, the
   `command.pure_*_prob` clean-command modes, `no_progress`,
-  `gait.air_time_cap`, `fall.max_toggle_deg`, and the `reward` scale/gate
-  fields that were `0.0`/`False` in `registry.py`.
+  `gait.air_time_cap`, and the `reward` scale/gate fields that are
+  `0.0`/`False` in `registry.py`.
 - `terrain_overrides()` — terrain-only (`height_scan`, `reward.terrain_gate`,
   `reward.scales.flat_pitch`, `command.terrain_bias`, `fall.on_base_contact`,
   and the `obs.state`/`obs.privileged` lists extended with
@@ -230,12 +226,10 @@ dict:
   has a registered mirror map for the `height_scan`/`height_scan_clean`
   catalog entries.
 - Most of the `movement_overrides()`/`terrain_overrides()` magnitudes
-  (`action_filter`, `tracking_far_weight`, `orientation_tol_deg`, the new
+  (`action_filter`, `tracking_far_weight`, `orientation_tol_deg`, the
   `reward.scales` values, the `command.pure_*_prob` values,
-  `fall.max_toggle_deg`, `gait.air_time_cap`) are **untuned estimates**
-  reasoned by analogy to sibling terms already set in `registry.py` — grep
-  turns up no prior tuning history for these fields in this repo. Treat them
-  as a starting point, not a validated config.
+  `gait.air_time_cap`) are **untuned estimates** set by analogy to sibling
+  terms in `registry.py`.
 
 ## Why the arena swap is free {#hfield-mutability}
 
@@ -277,21 +271,19 @@ Two things must follow the swap, or the level only exists on paper:
   backend (flat/pit tiles; `compare=true` = jax vs warp; `bench_envs=N`
   times it).
 - **Warp memory** — warp allocates its collision scratch (EPA buffers,
-  ~0.3 GB each at 8192 envs) outside JAX's pool. Upstream measured a
-  mid-run OOM with JAX preallocating and calls turning it off mandatory on
-  terrain; `FunctionalEnv` refuses warp unless
-  `XLA_PYTHON_CLIENT_PREALLOCATE=false`, and the justfile and
-  `slurm/*.sbatch` export it. Upstream's presets spell it
-  `XLA_PYTHON_CLIENT_PREALLOC=false`, which is not a variable JAX reads.
+  ~0.3 GB each at 8192 envs) outside JAX's pool, so JAX's default 75 %
+  preallocation runs it out of memory on terrain. `FunctionalEnv` refuses
+  warp unless `XLA_PYTHON_CLIENT_PREALLOCATE=false`; the justfile and
+  `slurm/*.sbatch` export it (`XLA_PYTHON_CLIENT_PREALLOC` is not a
+  variable JAX reads).
 - **Warp CUDA graphs** — mjx's warp FFI (`GraphMode.WARP`) captures one
   CUDA graph per set of buffer addresses, each owning its own collision
-  scratch, and caches 32 per callable. Upstream's single jitted `ppo.train`
-  step reuses its buffers; brax_ued's separate jitted reset / unroll / eval
-  calls pass new ones every call, and the first two sanity runs died with
-  a CUDA OOM at the third iteration, with JAX preallocating (job 6109872)
-  and without (6110159, 15 of 80 GB in use). `FunctionalEnv` caps the
-  cache at `WARP_GRAPH_CACHE` = 4 (`configure_warp`) when it builds a warp
-  env; with both settings the run completed (job 6110213, ~16 GB).
+  scratch, and caches 32 per callable. brax_ued's separate jitted reset /
+  unroll / eval calls pass new buffers every call, so the default cache
+  runs a CUDA OOM within a few iterations even with preallocation off.
+  `FunctionalEnv` caps the cache at `WARP_GRAPH_CACHE` = 4
+  (`configure_warp`) when it builds a warp env; with both settings a
+  training run uses ~16 GB.
 
 ## Tiled arena {#tiled-arena}
 
@@ -321,10 +313,6 @@ with it (`hfield/arena.py`).
   - sensing` (Chebyshev) from the own centre = reads another tile.
   `brax_ued.py` logs `tile_leak_frac` (envs that got there during the
   iteration, with the critic's sensing).
-- vs the old per-level arena: inside the patch identical; past the patch
-  edge the robot meets the flat gap where it met the flat apron before. The
-  lookup there now reads that flat ground (the old lookup clamped to the
-  patch edge's heights, which the physics did not have).
 - One model update per iteration: `assemble` (jitted, on device) writes the
   iteration's rendered levels into the arena; unused tiles stay flat.
 - Float32 positions differ per tile, which perturbs a standing robot

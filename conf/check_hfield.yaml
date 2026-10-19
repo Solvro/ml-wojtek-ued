@@ -1,7 +1,7 @@
 defaults:
   - check_hfield_schema
   - _self_
-  - arena: v10
+  - arena: benchmark
 
 backend: auto
 pit: 0.05

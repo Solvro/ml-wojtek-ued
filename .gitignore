@@ -4,13 +4,10 @@ __pycache__/
 .pytest_cache/
 .ty_cache/
 *.pyc
-.jax_cache/
 runs/
 wandb/
 artifacts/
 multirun/
-logs/
-hive.yml
 .env
 
 # generated MJX model + terrain arenas (build_model.py / build_terrain.py outputs)
@@ -20,5 +17,4 @@ assets/wojtek_description/mujoco/scene_terrain*.xml
 assets/wojtek_description/mujoco/terrain*_hfield.bin
 assets/wojtek_description/mujoco/terrain*_spec.json
 assets/wojtek_description/mujoco/terrain*_lookup.npz
-train.log
 MUJOCO_LOG.TXT

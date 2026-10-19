@@ -3,8 +3,8 @@ defaults:
   - _self_
   - robot: wojtek
   - mode: ???
-  - level_space: grid
-  - arena: v10
+  - level_space: param
+  - arena: benchmark
 
 name: ???
 entity: ""

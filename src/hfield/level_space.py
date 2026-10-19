@@ -99,8 +99,8 @@ class Param(NamedTuple):
     flat: float  # genome value of "no feature"
 
 
-# v10 ranges for a 0.10 m robot: uphill, step-up, gap and block maxima sit at
-# the best v8 policies' 50%-success envelope (docs/ued-accel.md)
+# ranges for a 0.10 m robot: uphill, step-up, gap and block maxima sit at the
+# 50%-success envelope of policies trained on a wider box (docs/ued-accel.md)
 PARAMS = (
     Param("rough_amp_m", 0.0, 0.10, 0.0),
     Param("rough_wavelength_m", 0.2, 1.0, 0.5),

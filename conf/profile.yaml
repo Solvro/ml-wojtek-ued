@@ -2,6 +2,5 @@ defaults:
   - train
   - _self_
   - override mode: dr
-  - override level_space: param
 
 name: profile

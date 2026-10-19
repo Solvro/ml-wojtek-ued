@@ -1,14 +1,14 @@
 defaults:
   - paper_figures_schema
   - _self_
-  - arena: v10
+  - arena: benchmark
 
 prefixes:
-  wojtek: null
-  go1: null
-  barkour: null
-  spot: null
-  go2: null
+  wojtek: ued_wojtek
+  go1: ued_go1
+  barkour: ued_barkour
+  spot: ued_spot
+  go2: ued_go2
 dump_history: null
 history: null
 terrains: false
