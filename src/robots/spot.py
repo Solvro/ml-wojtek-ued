@@ -2,13 +2,15 @@
 
 Playground's `SpotJoystick` (feet-only collisions, its own reward and blind
 actor); the arena, command, fall and critic-scan changes are
-`robots.terrain.TerrainRobot`'s. Playground has no Spot randomization, so DR
+`robots.terrain.TerrainRobot`'s, with forward commands capped at
+Playground's Spot command range. Playground has no Spot randomization, so DR
 is off for it.
 """
 
 from typing import Any
 
 import jax
+import jax.numpy as jnp
 from mujoco import mjx
 from mujoco_playground._src.locomotion.spot import base as spot_base
 from mujoco_playground._src.locomotion.spot import joystick
@@ -24,6 +26,23 @@ class SpotTerrain(TerrainRobot, joystick.Joystick):
     SCALE = 4.3
     STANDING_HEIGHT = 0.433
     FULL_COLLISION = ("spot_mjx_feetonly.xml", "spot_mjx.xml")
+
+    def __init__(
+        self,
+        hfield: HFieldConfig,
+        backend: str = "jax",
+        num_envs: int = 8192,
+        episode_length: int = 1000,
+    ):
+        super().__init__(hfield, backend, num_envs, episode_length)
+        # Wojtek's range x 4.3 reaches vx 2.6 m/s, beyond what Playground's
+        # Spot was tuned for (real Spot: ~1.6 m/s): cap at its command range
+        c = self._config.command_config
+        keys = ("lin_vel_x", "lin_vel_y", "ang_vel_yaw")
+        low = jnp.array([c[k][0] for k in keys])
+        high = jnp.array([c[k][1] for k in keys])
+        self._cmd_low = jnp.clip(self._cmd_low, low, high)
+        self._cmd_high = jnp.clip(self._cmd_high, low, high)
 
     @classmethod
     def scene_xml(cls, config: HFieldConfig) -> str:

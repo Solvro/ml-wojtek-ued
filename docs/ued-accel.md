@@ -255,7 +255,8 @@ a robot file keeps its constants, scene and what differs):
   sized by `HFieldConfig`; `reset` spawns on `spawn_xy`, the tile centre
   `FunctionalEnv` sets.
 - Forward commands: Wojtek's `vx (0.2, 0.6)`, `vy (-0.2, 0.2)` times `SCALE`,
-  `wz (-0.4, 0.4)`; `sample_command` redraws from the same box.
+  `wz (-0.4, 0.4)`; `sample_command` redraws from the same box. Spot's box
+  is capped at Playground's Spot command range.
 - Wojtek's fall rule at the robot's size: trunk below 0.6 x `STANDING_HEIGHT`
   above the terrain under it (`terrain_height`, read off `hfield_data`), or
   gravity z > -0.4 in the trunk frame.
@@ -291,8 +292,10 @@ Per robot:
   history, feet position obs). `get_gravity` there is the up vector, so the
   fall rule negates it. Playground's `early_termination` flag and `gravity z <
   0.85` termination are replaced by the shared rule. Spot's standing trunk is
-  0.433 m, scale 4.3: commands reach 2.6 m/s, beyond Playground's own `[-1, 1]` m/s
-  Spot command range, and `reach` is 43 m.
+  0.433 m, scale 4.3, `reach` 43 m. Wojtek's commands x 4.3 would reach
+  vx 2.6 m/s (real Spot tops out near 1.6 m/s), so `SpotTerrain` caps them
+  at Playground's Spot command range: vx `(0.86, 1.0)`, vy `(-0.8, 0.8)`,
+  wz `(-0.4, 0.4)`.
 - **Go2**: Playground has no Go2 env: `Go2Terrain` is `Go1Terrain` (Go1's
   joystick reward and obs) on the menagerie model with the model's own PD
   gains (`kp` 50, `kv` 0.5, joint damping 2); Go1's `Kp` 35 sags the 15 kg

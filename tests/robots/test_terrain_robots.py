@@ -19,6 +19,7 @@ from mujoco import mjx
 from config.hfield_config import HFieldConfig
 from hfield.tiles import TileLayout
 from robots.registry import TERRAIN_ROBOTS
+from robots.spot import SpotTerrain
 from robots.terrain import FALL_HEIGHT_RATIO, WOJTEK_HEIGHT, contact_budget
 from scripts.brax_ued import hfield_config
 from scripts.eval_sim2sim import full_collision
@@ -162,6 +163,21 @@ def test_standing_height_is_the_measured_scale(setup: Setup) -> None:
     standing = float(settle(arena)[-SETTLE_STEPS // 4 :].mean())
     assert standing == pytest.approx(cls.STANDING_HEIGHT, rel=0.03)
     assert standing / WOJTEK_HEIGHT == pytest.approx(cls.SCALE, abs=0.1)
+
+
+def test_commands_walk_forward_at_the_robots_size(setup: Setup) -> None:
+    cls = type(setup.base)
+    keys = jax.random.split(jax.random.key(0), 2000)
+    vx, vy, wz = np.asarray(jax.vmap(setup.base.sample_command)(keys)).T
+    if cls is SpotTerrain:
+        top_vx, top_vy = 1.0, 0.8  # Playground's Spot command range
+    else:
+        top_vx, top_vy = 0.6 * cls.SCALE, 0.2 * cls.SCALE
+    assert vx.min() >= 0.2 * cls.SCALE - 1e-6
+    assert vx.max() <= top_vx + 1e-6
+    assert vx.max() > 0.98 * top_vx
+    assert np.abs(vy).max() <= top_vy + 1e-6
+    assert np.abs(wz).max() <= 0.4 + 1e-6
 
 
 def posed(setup: Setup, qpos: jax.Array) -> mjx.Data:
