@@ -57,7 +57,7 @@ def arena_scene(
     <key name="home" qpos="0 0 {spawn_z} 1 0 0 0 {home_pose}" ctrl="{home_pose}"/>
   </keyframe>
 </mujoco>
-"""
+"""  # noqa: E501 (MJCF template: one element per line)
 
 
 def compile_scene(xml: str, assets: dict[str, bytes]) -> Any:
@@ -157,7 +157,7 @@ class TerrainRobot(abc.ABC):
         return scene.as_posix()
 
     def terrain_height(self, xy: jax.Array) -> jax.Array:
-        """Bilinear terrain height (m) at world `xy` (..., 2) of the live level."""
+        """Bilinear height (m) of the live arena at world `xy` (..., 2)."""
         c, layout = self._hfield_config, self._layout
         n = layout.nodes
         grid = self.mjx_model.hfield_data.reshape(n, n)
@@ -180,7 +180,9 @@ class TerrainRobot(abc.ABC):
     def sample_command(self, rng: jax.Array, *_: Any) -> jax.Array:
         return self._forward_command(rng)
 
-    def _with_command(self, state: mjx_env.State, rng: jax.Array) -> mjx_env.State:
+    def _with_command(
+        self, state: mjx_env.State, rng: jax.Array
+    ) -> mjx_env.State:
         """Envs whose reset does not draw through `sample_command` override."""
         del rng
         return state
@@ -214,7 +216,9 @@ class TerrainRobot(abc.ABC):
             self.terrain_height(xy), ref_z, SCAN_CLIP * self.SCALE
         )
         obs = self._obs_dict(state.obs)
-        obs["privileged_state"] = jnp.concatenate([obs["privileged_state"], scan])
+        obs["privileged_state"] = jnp.concatenate(
+            [obs["privileged_state"], scan]
+        )
         return dataclasses.replace(state, obs=obs)
 
     def _get_termination(self, data: mjx.Data) -> jax.Array:

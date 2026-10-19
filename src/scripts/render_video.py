@@ -1,4 +1,5 @@
-"""mp4 clips of a training checkpoint on generated levels (`conf/render.yaml`)."""
+"""mp4 clips of a training checkpoint on generated levels
+(`conf/render.yaml`)."""
 
 import hydra
 from omegaconf import DictConfig

@@ -11,10 +11,14 @@ from config.schema import BC, ModeConfig
 Teacher = tuple[Any, Any]
 
 
-def paired_regret(prot_returns: np.ndarray, antag_returns: np.ndarray) -> np.ndarray:
+def paired_regret(
+    prot_returns: np.ndarray, antag_returns: np.ndarray
+) -> np.ndarray:
     """Per level (rows: levels, columns: episodes): the antagonist's best
     return minus the protagonist's mean return, clipped at 0."""
-    return np.maximum(antag_returns.max(axis=1) - prot_returns.mean(axis=1), 0.0)
+    return np.maximum(
+        antag_returns.max(axis=1) - prot_returns.mean(axis=1), 0.0
+    )
 
 
 def gaussian_kl(
@@ -23,7 +27,9 @@ def gaussian_kl(
     """KL(p || q) of diagonal Gaussians, summed over the last axis."""
     var_ratio = jnp.square(p_scale / q_scale)
     mahalanobis = jnp.square((p_loc - q_loc) / q_scale)
-    return 0.5 * jnp.sum(var_ratio + mahalanobis - 1.0 - jnp.log(var_ratio), axis=-1)
+    return 0.5 * jnp.sum(
+        var_ratio + mahalanobis - 1.0 - jnp.log(var_ratio), axis=-1
+    )
 
 
 def policy_kl(
@@ -40,7 +46,9 @@ def policy_kl(
     dist = network.parametric_action_distribution
     student = dist.create_dist(apply(normalizer, policy_params, observation))
     teacher_normalizer, teacher_policy = jax.lax.stop_gradient(teacher)
-    ref = dist.create_dist(apply(teacher_normalizer, teacher_policy, observation))
+    ref = dist.create_dist(
+        apply(teacher_normalizer, teacher_policy, observation)
+    )
     return gaussian_kl(ref.loc, ref.scale, student.loc, student.scale)
 
 

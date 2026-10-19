@@ -47,7 +47,9 @@ def ci_into(
     n: int,
     rng: np.random.Generator,
 ) -> None:
-    out[f"{tag}_ci_low"], out[f"{tag}_ci_high"] = bootstrap_ci(statistic, n, rng)
+    out[f"{tag}_ci_low"], out[f"{tag}_ci_high"] = bootstrap_ci(
+        statistic, n, rng
+    )
 
 
 def summarize(prefix: str, passes: Passes, cfg: EvalConfig) -> Metrics:
@@ -62,9 +64,13 @@ def summarize(prefix: str, passes: Passes, cfg: EvalConfig) -> Metrics:
     out = {
         f"{prefix}/success_rate": float(mean.mean()),
         f"{prefix}/fall_rate": float(0.5 * (fell_a.mean() + fell_b.mean())),
-        f"{prefix}/mean_travel": float(0.5 * (travel_a.mean() + travel_b.mean())),
+        f"{prefix}/mean_travel": float(
+            0.5 * (travel_a.mean() + travel_b.mean())
+        ),
     }
-    ci_into(out, f"{prefix}/success_rate", lambda i: float(mean[i].mean()), n, rng)
+    ci_into(
+        out, f"{prefix}/success_rate", lambda i: float(mean[i].mean()), n, rng
+    )
     for alpha in cfg.alphas:
         tag = f"{prefix}/cvar{alpha}_success"
         out[tag] = float(cross_fit_cvar(success_a, success_b, alpha))
@@ -163,7 +169,11 @@ def random_sets(
         metrics.update(summarize(f"random/d{difficulty}", passes, cfg))
         raw.update(stacked(passes, f"random_d{difficulty}"))
         print(
-            {k: round(v, 3) for k, v in metrics.items() if f"d{difficulty}/" in k},
+            {
+                k: round(v, 3)
+                for k, v in metrics.items()
+                if f"d{difficulty}/" in k
+            },
             flush=True,
         )
     return metrics, raw, key
@@ -217,7 +227,9 @@ def evaluate(ctx: EvalContext[EvalConfig]) -> tuple[Metrics, Raw]:
         metrics.update(param_metrics)
         raw.update(param_raw)
     # own streams, so the sets above keep the levels and keys they had in v8
-    flat = space.scaled(np.random.default_rng(cfg.seed), cfg.suite_instances, 0.0)
+    flat = space.scaled(
+        np.random.default_rng(cfg.seed), cfg.suite_instances, 0.0
+    )
     passes = two_passes(ctx, space.render(flat), jax.random.fold_in(key, 1))
     metrics.update(summarize("flat", passes, cfg))
     return metrics, raw

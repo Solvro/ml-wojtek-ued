@@ -39,7 +39,8 @@ PIT_M = 0.05
 SCAN = 25  # height_scan_clean, the last critic obs component
 
 pytestmark = pytest.mark.skipif(
-    not paths.ROBOT_XML.exists(), reason="robot model not built; run `just build`"
+    not paths.ROBOT_XML.exists(),
+    reason="robot model not built; run `just build`",
 )
 
 
@@ -74,7 +75,9 @@ def run(env: FunctionalEnv) -> Any:
         def step(carry: Any, _: None) -> tuple[Any, Any]:
             obs, state = carry
             out = (obs.critic, state.data.qpos[2], state.data.qpos[:2] - tile)
-            obs, state, _reward, done, _info = env.step(key, state, action, arena)
+            obs, state, _reward, done, _info = env.step(
+                key, state, action, arena
+            )
             return (obs, state), (*out, done)
 
         _, out = jax.lax.scan(step, (obs, state), None, STEPS)
@@ -91,7 +94,9 @@ def run(env: FunctionalEnv) -> Any:
 
 def param_levels() -> np.ndarray:
     space = ParamSpace(CONFIG)
-    return space.render(space.scaled(np.random.default_rng(0), LAYOUT.n_tiles, 0.6))
+    return space.render(
+        space.scaled(np.random.default_rng(0), LAYOUT.n_tiles, 0.6)
+    )
 
 
 def test_a_level_reads_the_same_on_every_tile(run: Any) -> None:
@@ -159,7 +164,9 @@ def test_a_finite_step_is_not_flagged(env: FunctionalEnv) -> None:
     arena = LAYOUT.assemble(jnp.asarray(param_levels()))
     key = jax.random.key(0)
     _, state = env.reset(key, arena, tile_xy=LAYOUT.tile_xy(1, 1)[0])
-    _, _, _, done, info = env.step(key, state, jnp.zeros(env.action_size), arena)
+    _, _, _, done, info = env.step(
+        key, state, jnp.zeros(env.action_size), arena
+    )
     assert float(info["diverged"]) == 0.0
     assert float(done) == 0.0
 

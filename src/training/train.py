@@ -94,7 +94,8 @@ def train(cfg: TrainConfig, mode_name: str) -> None:
             log.update(evaluate(ctx, np.random.default_rng(EVAL_SEED)))
         run.log(log)
         rounded = {
-            k: round(v, 3) if isinstance(v, float) else v for k, v in log.items()
+            k: round(v, 3) if isinstance(v, float) else v
+            for k, v in log.items()
         }
         print(rounded, flush=True)
         it += 1

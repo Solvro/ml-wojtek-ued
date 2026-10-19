@@ -21,7 +21,9 @@ class FakeEnv:
     action_size: int = 3
 
 
-def make_batch(env: FakeEnv, envs: int = 32, steps: int = 20) -> types.Transition:
+def make_batch(
+    env: FakeEnv, envs: int = 32, steps: int = 20
+) -> types.Transition:
     keys = iter(jax.random.split(jax.random.key(1), 7))
 
     def normal(*shape: int) -> jax.Array:

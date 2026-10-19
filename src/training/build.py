@@ -70,7 +70,9 @@ def build(cfg: TrainConfig) -> TrainContext:
     _, dr_in_axes = env.sample_dr(jax.random.key(0), num_envs)
     reset = jax.jit(jax.vmap(env.reset, in_axes=(0, None, dr_in_axes, 0)))
 
-    def eval_reset_one(key: jax.Array, hfield: jax.Array, tile_xy: jax.Array) -> tuple:
+    def eval_reset_one(
+        key: jax.Array, hfield: jax.Array, tile_xy: jax.Array
+    ) -> tuple:
         return eval_env.reset(key, hfield, tile_xy=tile_xy)
 
     return TrainContext(

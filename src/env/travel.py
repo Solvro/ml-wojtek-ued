@@ -34,7 +34,8 @@ def max_command_speed(command: Any) -> float:
     straight = [
         max(map(abs, command[vx]))
         for prob, vx in modes.items()
-        if command.get(prob, 0.0) > 0 or (bias.enable and bias.get(prob, 0.0) > 0)
+        if command.get(prob, 0.0) > 0
+        or (bias.enable and bias.get(prob, 0.0) > 0)
     ]
     return max([box, *straight])
 

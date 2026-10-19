@@ -31,7 +31,9 @@ def _robot_meshdir():
     return (paths.MUJOCO_DIR / rel).resolve()
 
 
-def _apron_strips(radius: float) -> list[tuple[str, float, float, float, float]]:
+def _apron_strips(
+    radius: float,
+) -> list[tuple[str, float, float, float, float]]:
     """(name, centre x, centre y, half x, half y) of the flat boxes around a
     square of half-width `radius`."""
     outer, mid = radius + _APRON_EXTENT, radius + _APRON_EXTENT / 2
@@ -46,7 +48,8 @@ def _apron_strips(radius: float) -> list[tuple[str, float, float, float, float]]
 
 def _apron_geoms(radius: float) -> list[str]:
     return [
-        f'    <geom name="{name}" type="box" size="{hx:.4f} {hy:.4f} {_APRON_HALF_Z}" '
+        f'    <geom name="{name}" type="box" '
+        f'size="{hx:.4f} {hy:.4f} {_APRON_HALF_Z}" '
         f'pos="{cx:.4f} {cy:.4f} {-_APRON_HALF_Z}" material="groundplane" '
         f'condim="3" conaffinity="15"/>'
         for name, cx, cy, hx, hy in _apron_strips(radius)
@@ -67,7 +70,12 @@ def single_tile_spec(scene: Path, config: HFieldConfig) -> Any:
     hfield = spec.hfields[0]
     hfield.file = ""
     hfield.nrow = hfield.ncol = layout.nodes
-    hfield.size = [layout.half, layout.half, 2 * config.amplitude, config.base_z]
+    hfield.size = [
+        layout.half,
+        layout.half,
+        2 * config.amplitude,
+        config.base_z,
+    ]
     hfield.userdata = np.full(layout.nodes**2, 0.5, np.float32).tolist()
     for name, cx, cy, hx, hy in _apron_strips(layout.half):
         geom = spec.geom(name)
@@ -78,7 +86,9 @@ def single_tile_spec(scene: Path, config: HFieldConfig) -> Any:
 
 def build_accel_scene_xml(config: HFieldConfig, hfield_file: str) -> str:
     half = TileLayout(config).half
-    size = f"{half:.4f} {half:.4f} {2 * config.amplitude:.6f} {config.base_z:.4f}"
+    size = (
+        f"{half:.4f} {half:.4f} {2 * config.amplitude:.6f} {config.base_z:.4f}"
+    )
     apron = "\n".join(_apron_geoms(half))
     return f"""<mujoco model="wojtek_accel_scene">
   <include file="wojtek_mjx.xml"/>
@@ -100,7 +110,7 @@ def build_accel_scene_xml(config: HFieldConfig, hfield_file: str) -> str:
     <camera name="track" mode="trackcom" pos="0.9 -1.3 0.5" xyaxes="0.83 0.55 0 -0.15 0.23 0.96"/>
   </worldbody>
 </mujoco>
-"""
+"""  # noqa: E501 (MJCF template: wrapping would change the written scene)
 
 
 def build_accel_arena(config: HFieldConfig, seed: int = 0) -> terrain.Arena:
@@ -152,15 +162,21 @@ def build_accel_arena(config: HFieldConfig, seed: int = 0) -> terrain.Arena:
         ),
         tiles=tiles,
     )
-    return terrain.Arena(spec=spec, boxes=(), hfield_data=hfield_data, lookup=lookup)
+    return terrain.Arena(
+        spec=spec, boxes=(), hfield_data=hfield_data, lookup=lookup
+    )
 
 
-def write_accel_arena(config: HFieldConfig, seed: int = 0, kind: str = "accel") -> None:
+def write_accel_arena(
+    config: HFieldConfig, seed: int = 0, kind: str = "accel"
+) -> None:
     arena = build_accel_arena(config, seed=seed)
     out = paths.terrain_paths(kind)
     terrain.write_hfield_bin(out["hfield"], arena.hfield_data)
     spec = arena_spec(config, arena)
-    hfield_file = os.path.relpath(out["hfield"], _robot_meshdir()).replace(os.sep, "/")
+    hfield_file = os.path.relpath(out["hfield"], _robot_meshdir()).replace(
+        os.sep, "/"
+    )
     out["scene"].write_text(build_accel_scene_xml(config, hfield_file))
     out["spec"].write_text(json.dumps(spec, indent=2))
     s = arena.spec
@@ -180,7 +196,10 @@ def write_accel_arena(config: HFieldConfig, seed: int = 0, kind: str = "accel") 
 
 
 def arena_spec(config: HFieldConfig, arena: terrain.Arena) -> dict[str, Any]:
-    return {**terrain.spec_to_dict(arena.spec), "tile_layout": tile_layout(config)}
+    return {
+        **terrain.spec_to_dict(arena.spec),
+        "tile_layout": tile_layout(config),
+    }
 
 
 def tile_layout(config: HFieldConfig) -> dict[str, float]:

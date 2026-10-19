@@ -32,7 +32,9 @@ class Run:
 
 def run_prefixes(prefixes: dict[Robot, str | None]) -> dict[str, str]:
     """The robots with a run prefix set, in config order."""
-    chosen = {str(robot): prefix for robot, prefix in prefixes.items() if prefix}
+    chosen = {
+        str(robot): prefix for robot, prefix in prefixes.items() if prefix
+    }
     if not chosen:
         raise ValueError(
             "no run prefix set; pass prefixes.<robot>=<prefix>, e.g. "
@@ -71,7 +73,9 @@ def level_success(run: Run, pass_index: int, min_travel: float) -> np.ndarray:
 
 def check_same_levels(runs: list[Run]) -> None:
     levels = [
-        r.raw["param_uniform_levels"] for r in runs if "param_uniform_levels" in r.raw
+        r.raw["param_uniform_levels"]
+        for r in runs
+        if "param_uniform_levels" in r.raw
     ]
     if any(not np.array_equal(levels[0], other) for other in levels[1:]):
         raise ValueError(
@@ -99,7 +103,9 @@ def add_solvable(runs: list[Run]) -> None:
     )
     solvable = (success > 0).any(axis=0)
     if not solvable.any(axis=1).all():
-        warnings.warn(f"{robot}: no run passes any uniform level; solvable left --")
+        warnings.warn(
+            f"{robot}: no run passes any uniform level; solvable left --"
+        )
         return
     for run, (a, b) in zip(runs, success, strict=True):
         run.metrics[SOLVABLE] = float(

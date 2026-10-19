@@ -65,13 +65,19 @@ def test_paired_variant_cpu_smoke(
 ) -> None:
     run = FakeRun()
     monkeypatch.setattr(train_module.wandb, "init", lambda **_: run)
-    cfg = compose_cfg("train", f"mode={mode_name}", f"mode.bc={bc}", "name=t", *TINY)
+    cfg = compose_cfg(
+        "train", f"mode={mode_name}", f"mode.bc={bc}", "name=t", *TINY
+    )
     train_module.train(cfg, mode_name)
     assert len(run.logs) == 3
     for row in run.logs:
-        assert math.isfinite(row["prot_bc_kl"]) and math.isfinite(row["antag_bc_kl"])
+        assert math.isfinite(row["prot_bc_kl"]) and math.isfinite(
+            row["antag_bc_kl"]
+        )
         assert row["sim_steps"] == 2 * row["env_steps"]
-        assert row["bc_coef"] == (0.0 if bc == "none" or not row["replay"] else 0.5)
+        assert row["bc_coef"] == (
+            0.0 if bc == "none" or not row["replay"] else 0.5
+        )
     if mode_name == "paired_evo":
         assert {row["replay"] for row in run.logs} == {0, 1}
         assert run.logs[-1]["buffer_size"] > 0

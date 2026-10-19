@@ -20,7 +20,8 @@ SENSORS = "\n".join(
         '<framezaxis objtype="site" objname="imu" name="upvector"/>',
         '<velocimeter site="imu" name="local_linvel"/>',
         *(
-            f'<framelinvel objtype="site" objname="{f}" name="{f}_global_linvel"/>'
+            f'<framelinvel objtype="site" objname="{f}" '
+            f'name="{f}_global_linvel"/>'
             for f in FEET
         ),
         *(
@@ -46,12 +47,15 @@ def feet_only_model(xml: str) -> str:
     xml = replace_once(
         xml,
         '<default class="collision">\n        <geom group="3"/>',
-        '<default class="collision">\n        <geom group="3" contype="0" conaffinity="0"/>',
+        '<default class="collision">\n        '
+        '<geom group="3" contype="0" conaffinity="0"/>',
     )
     xml = replace_once(
         xml,
         '<geom size="0.0175" pos="-0.002 0 -0.213" priority="1"',
-        '<geom size="0.0175" pos="-0.002 0 -0.213" contype="0" conaffinity="1" margin="0" priority="1"',  # MJX: no hfield-sphere margin
+        # MJX: no hfield-sphere margin
+        '<geom size="0.0175" pos="-0.002 0 -0.213" contype="0" conaffinity="1" '
+        'margin="0" priority="1"',
     )
     xml = replace_once(xml, '<body name="base"', '<body name="trunk"')
     xml = re.sub(r'<site name="(\w+)_foot"', r'<site name="\1"', xml)

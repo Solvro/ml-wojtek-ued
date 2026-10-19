@@ -170,7 +170,9 @@ def test_level_space_sets_its_edits(
 
 
 def test_generator_scale_suffix_is_an_override(compose_cfg: Compose) -> None:
-    cfg = compose_cfg("train", "mode=accel_grow", "name=t", "mode.generator_scale=0.2")
+    cfg = compose_cfg(
+        "train", "mode=accel_grow", "name=t", "mode.generator_scale=0.2"
+    )
     assert cfg.mode.generator_scale == 0.2
     assert cfg.mode.mutation == Mutation.grow
 
@@ -182,7 +184,10 @@ def test_arena_builder_and_training_read_the_same_arena(
     for name in ("train", "eval", "sim2sim", "render", "check_hfield"):
         assert compose_cfg(name, *REQUIRED[name]).arena == built == V10
     tiles = compose_cfg("arena", "arena.tiles=8").arena
-    assert compose_cfg("train", "mode=dr", "name=t", "arena.tiles=8").arena == tiles
+    assert (
+        compose_cfg("train", "mode=dr", "name=t", "arena.tiles=8").arena
+        == tiles
+    )
 
 
 def test_profile_is_a_param_dr_run(compose_cfg: Compose) -> None:
@@ -197,7 +202,9 @@ def test_profile_is_a_param_dr_run(compose_cfg: Compose) -> None:
 
 def test_per_entry_point_defaults(compose_cfg: Compose) -> None:
     assert compose_cfg("eval", *REQUIRED["eval"]).level_space.kind == "grid"
-    assert compose_cfg("render", *REQUIRED["render"]).level_space.kind == "param"
+    assert (
+        compose_cfg("render", *REQUIRED["render"]).level_space.kind == "param"
+    )
     assert compose_cfg("eval", *REQUIRED["eval"]).alphas == [0.1, 0.25]
     assert compose_cfg("render", *REQUIRED["render"]).command == [0.3, 0.0, 0.2]
 
@@ -239,7 +246,9 @@ def test_as_dict_writes_enums_as_strings(compose_cfg: Compose) -> None:
         ("mode=dr", "name=t", "prefixes.go1=x"),
     ],
 )
-def test_typos_fail_at_startup(compose_cfg: Compose, overrides: tuple[str]) -> None:
+def test_typos_fail_at_startup(
+    compose_cfg: Compose, overrides: tuple[str]
+) -> None:
     with pytest.raises(ConfigCompositionException):
         compose_cfg("train", *overrides)
 
@@ -302,7 +311,9 @@ def test_grow_variants_edit_more_grid_cells(
 def test_n_edits_override_wins_over_the_mutation_default(
     compose_cfg: Compose,
 ) -> None:
-    cfg = compose_cfg("train", "mode=accel_grow", "name=t", "level_space.n_edits=4")
+    cfg = compose_cfg(
+        "train", "mode=accel_grow", "name=t", "level_space.n_edits=4"
+    )
     assert cfg.level_space.n_edits == 4
 
 

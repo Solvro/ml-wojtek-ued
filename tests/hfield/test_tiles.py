@@ -20,7 +20,9 @@ def benchmark_layout(compose_cfg: Compose, robot: str) -> TileLayout:
 
 def node(layout: TileLayout, xy: np.ndarray) -> tuple[int, int]:
     """(row, col) of the arena node at world xy."""
-    col, row = np.round((xy + layout.half) / layout.config.cell_size).astype(int)
+    col, row = np.round((xy + layout.half) / layout.config.cell_size).astype(
+        int
+    )
     return int(row), int(col)
 
 
@@ -124,5 +126,7 @@ def test_leaked_counts_what_the_robot_reads_ahead() -> None:
 def test_check_reach_refuses_past_the_gap() -> None:
     layout = TileLayout(SMALL)
     layout.check_reach(layout.leak_radius, "at the edge")
-    with pytest.raises(ValueError, match=r"past the gap.*HFieldConfig.reach >= 2"):
+    with pytest.raises(
+        ValueError, match=r"past the gap.*HFieldConfig.reach >= 2"
+    ):
         layout.check_reach(layout.leak_radius + 0.1, "past the gap")

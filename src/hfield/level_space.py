@@ -19,9 +19,14 @@ class LevelSpace(Protocol):
     def scaled(
         self, rng: np.random.Generator, n: int, difficulty: float
     ) -> np.ndarray: ...
-    def easy(self, rng: np.random.Generator, n: int, scale: float) -> np.ndarray: ...
+    def easy(
+        self, rng: np.random.Generator, n: int, scale: float
+    ) -> np.ndarray: ...
     def mutate(
-        self, level: np.ndarray, rng: np.random.Generator, grow_max: float | None
+        self,
+        level: np.ndarray,
+        rng: np.random.Generator,
+        grow_max: float | None,
     ) -> np.ndarray: ...
     def from_generated(
         self, theta: np.ndarray, rng: np.random.Generator
@@ -34,7 +39,9 @@ def mean_abs_height(config: HFieldConfig, hfield: np.ndarray) -> np.ndarray:
     half = config.patch_radius
     axis = np.linspace(-half, half, config.grid_size)
     x, y = np.meshgrid(axis, axis)
-    outside = (np.sqrt(x**2 + y**2) >= config.pad_radius + config.pad_taper).reshape(-1)
+    outside = (
+        np.sqrt(x**2 + y**2) >= config.pad_radius + config.pad_taper
+    ).reshape(-1)
     heights = (np.asarray(hfield)[:, outside] - 0.5) * 2 * config.amplitude
     return np.abs(heights).mean(axis=1)
 
@@ -51,21 +58,32 @@ class GridSpace:
     def uniform(self, rng: np.random.Generator, n: int) -> np.ndarray:
         return rng.uniform(0.0, 1.0, (n, *self.shape))
 
-    def scaled(self, rng: np.random.Generator, n: int, difficulty: float) -> np.ndarray:
+    def scaled(
+        self, rng: np.random.Generator, n: int, difficulty: float
+    ) -> np.ndarray:
         return 0.5 + (self.uniform(rng, n) - 0.5) * difficulty
 
-    def easy(self, rng: np.random.Generator, n: int, scale: float) -> np.ndarray:
-        return np.clip(0.5 + rng.uniform(-scale, scale, (n, *self.shape)), 0.0, 1.0)
+    def easy(
+        self, rng: np.random.Generator, n: int, scale: float
+    ) -> np.ndarray:
+        return np.clip(
+            0.5 + rng.uniform(-scale, scale, (n, *self.shape)), 0.0, 1.0
+        )
 
     def mutate(
-        self, level: np.ndarray, rng: np.random.Generator, grow_max: float | None
+        self,
+        level: np.ndarray,
+        rng: np.random.Generator,
+        grow_max: float | None,
     ) -> np.ndarray:
         child = self.manager.mutate(level, rng, self.n_edits, self.edit_scale)
         if grow_max:
             child = 0.5 + (child - 0.5) * rng.uniform(1.0, grow_max)
         return np.clip(child, 0.0, 1.0)
 
-    def from_generated(self, theta: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    def from_generated(
+        self, theta: np.ndarray, rng: np.random.Generator
+    ) -> np.ndarray:
         return np.asarray(theta)
 
     def render(self, levels: np.ndarray) -> np.ndarray:
@@ -98,7 +116,7 @@ GAP_PERIOD_M = 0.6
 
 
 class ParamSpace:
-    """8 terrain parameters in [0, 1] + a seed slot (last entry, never mutated)."""
+    """8 terrain parameters in [0, 1] plus a never-mutated seed slot last."""
 
     def __init__(
         self,
@@ -121,24 +139,37 @@ class ParamSpace:
         r = np.sqrt(self.x**2 + self.y**2)
         start = config.pad_radius + config.pad_taper
         self.d = np.maximum(r - start, 0.0)
-        self.taper = np.clip((r - config.pad_radius) / config.pad_taper, 0.0, 1.0)
+        self.taper = np.clip(
+            (r - config.pad_radius) / config.pad_taper, 0.0, 1.0
+        )
 
-    def _with_seed(self, genome: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    def _with_seed(
+        self, genome: np.ndarray, rng: np.random.Generator
+    ) -> np.ndarray:
         seeds = rng.uniform(0.0, 1.0, (len(genome), 1))
         return np.concatenate([genome, seeds], axis=1)
 
     def uniform(self, rng: np.random.Generator, n: int) -> np.ndarray:
         return self._with_seed(rng.uniform(0.0, 1.0, (n, len(PARAMS))), rng)
 
-    def scaled(self, rng: np.random.Generator, n: int, difficulty: float) -> np.ndarray:
+    def scaled(
+        self, rng: np.random.Generator, n: int, difficulty: float
+    ) -> np.ndarray:
         genome = rng.uniform(0.0, 1.0, (n, len(PARAMS)))
-        return self._with_seed(self.flat + (genome - self.flat) * difficulty, rng)
+        return self._with_seed(
+            self.flat + (genome - self.flat) * difficulty, rng
+        )
 
-    def easy(self, rng: np.random.Generator, n: int, scale: float) -> np.ndarray:
+    def easy(
+        self, rng: np.random.Generator, n: int, scale: float
+    ) -> np.ndarray:
         return self.scaled(rng, n, scale)
 
     def mutate(
-        self, level: np.ndarray, rng: np.random.Generator, grow_max: float | None
+        self,
+        level: np.ndarray,
+        rng: np.random.Generator,
+        grow_max: float | None,
     ) -> np.ndarray:
         child = level.copy()
         idx = rng.choice(
@@ -147,13 +178,15 @@ class ParamSpace:
         child[idx] += rng.uniform(-self.edit_scale, self.edit_scale, len(idx))
         if grow_max:
             genome = child[: len(PARAMS)]
-            child[: len(PARAMS)] = self.flat + (genome - self.flat) * rng.uniform(
-                1.0, grow_max
-            )
+            child[: len(PARAMS)] = self.flat + (
+                genome - self.flat
+            ) * rng.uniform(1.0, grow_max)
         child[: len(PARAMS)] = np.clip(child[: len(PARAMS)], 0.0, 1.0)
         return child
 
-    def from_generated(self, theta: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    def from_generated(
+        self, theta: np.ndarray, rng: np.random.Generator
+    ) -> np.ndarray:
         return self._with_seed(np.asarray(theta), rng)
 
     def physical(self, level: np.ndarray) -> dict[str, float]:
@@ -172,14 +205,21 @@ class ParamSpace:
         h = h + p["rough_amp_m"] * self._field(
             rng, p["rough_wavelength_m"], smooth=True
         )
-        h = h + p["block_height_m"] * self._field(rng, p["block_size_m"], smooth=False)
-        period, depth = GAP_PERIOD_M * self.robot_scale, GAP_DEPTH_M * self.robot_scale
+        h = h + p["block_height_m"] * self._field(
+            rng, p["block_size_m"], smooth=False
+        )
+        period, depth = (
+            GAP_PERIOD_M * self.robot_scale,
+            GAP_DEPTH_M * self.robot_scale,
+        )
         gaps = (d > 0) & ((d % period) < p["gap_width_m"])
         h = np.where(gaps, h - depth, h)
         return h * self.taper
 
-    def _field(self, rng: np.random.Generator, cell: float, smooth: bool) -> np.ndarray:
-        """Seeded field in [-1, 1]: bilinear noise, or piecewise-constant blocks."""
+    def _field(
+        self, rng: np.random.Generator, cell: float, smooth: bool
+    ) -> np.ndarray:
+        """Seeded field in [-1, 1]: bilinear noise, or constant blocks."""
         half = self.config.patch_radius
         n = int(np.ceil(2 * half / cell)) + 1
         values = rng.uniform(-1.0, 1.0, (n, n))
@@ -212,6 +252,9 @@ def make_level_space(
         return GridSpace(config, n_edits=n_edits, edit_scale=edit_scale)
     if kind == "param":
         return ParamSpace(
-            config, n_edits=n_edits, edit_scale=edit_scale, robot_scale=robot_scale
+            config,
+            n_edits=n_edits,
+            edit_scale=edit_scale,
+            robot_scale=robot_scale,
         )
     raise ValueError(f"unknown level space {kind!r}; use 'grid' or 'param'")

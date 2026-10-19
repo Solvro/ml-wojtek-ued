@@ -184,7 +184,9 @@ class CpuPhysics:
         # jax dispatch holding the GIL, which serialized the threads
         arrays = [np.asarray(x) for x in inputs]
         n = len(arrays[0])
-        out = {f: np.empty((n, *specs[f].shape), np.float64) for f in OUT_FIELDS}
+        out = {
+            f: np.empty((n, *specs[f].shape), np.float64) for f in OUT_FIELDS
+        }
         bounds = np.linspace(0, n, self.threads + 1).astype(int)
 
         def work(thread: int) -> None:
@@ -251,7 +253,9 @@ def cpu_physics(physics: CpuPhysics) -> Iterator[None]:
     ) -> mjx.Data:
         del model
         no_delay = jnp.zeros(())
-        return host_step(physics, data, action, action, no_delay, n_substeps=n_substeps)
+        return host_step(
+            physics, data, action, action, no_delay, n_substeps=n_substeps
+        )
 
     def step_with_latency(
         env: Any, data: mjx.Data, prev: Any, new: Any, d: Any

@@ -80,6 +80,8 @@ def test_feature_spawns_count_the_whole_patch() -> None:
     config = registry.TASKS["joystick"][1]()
     config.terrain.spawn_mode = "feature"
     base = SimpleNamespace(
-        _config=config, dt=config.ctrl_dt, _terrain=SimpleNamespace(tile_size=6.0)
+        _config=config,
+        dt=config.ctrl_dt,
+        _terrain=SimpleNamespace(tile_size=6.0),
     )
     assert travel_bounds(base).jitter == pytest.approx(3.0 - SPAWN_EDGE_MARGIN)

@@ -33,13 +33,16 @@ def test_level_sets_names_and_sizes(compose_cfg: Callable[..., Any]) -> None:
     np.testing.assert_allclose(sets["flat"], 0.5, atol=1e-6)
 
 
-def test_uniform_levels_are_eval_brax_prefix(compose_cfg: Callable[..., Any]) -> None:
+def test_uniform_levels_are_eval_brax_prefix(
+    compose_cfg: Callable[..., Any],
+) -> None:
     cfg = level_cfg(compose_cfg)
     config = hfield_config(cfg.robot.name, cfg.arena)
     space = make_level_space("param", config, n_edits=1, edit_scale=0.0)
     eval_brax = space.uniform(np.random.default_rng(cfg.seed + 1), 2048)
     np.testing.assert_array_equal(
-        s2s.level_sets(cfg, config)["param/uniform"], space.render(eval_brax[:8])
+        s2s.level_sets(cfg, config)["param/uniform"],
+        space.render(eval_brax[:8]),
     )
 
 
@@ -72,12 +75,19 @@ def test_summarize_reports_drop_against_mjx_match() -> None:
     sets = {"flat": (fell, travel, 0), "suite/waves_1": (fell, travel, 0)}
     results = {
         "mjx_match": sets,
-        "soft_contact": {"flat": (fell, worse, 2), "suite/waves_1": sets["flat"]},
+        "soft_contact": {
+            "flat": (fell, worse, 2),
+            "suite/waves_1": sets["flat"],
+        },
     }
     metrics = s2s.summarize(results, threshold=1.0)
     assert metrics["mjx_match/flat/success_rate"] == pytest.approx(0.625)
     assert "mjx_match/flat/drop" not in metrics
     assert metrics["soft_contact/flat/drop"] == pytest.approx(0.25)
     assert metrics["soft_contact/suite/drop"] == 0.0
-    assert metrics["soft_contact/flat/diverged_per_episode"] == pytest.approx(0.25)
-    assert metrics["mjx_match/suite/waves_1/success_rate"] == pytest.approx(0.625)
+    assert metrics["soft_contact/flat/diverged_per_episode"] == pytest.approx(
+        0.25
+    )
+    assert metrics["mjx_match/suite/waves_1/success_rate"] == pytest.approx(
+        0.625
+    )

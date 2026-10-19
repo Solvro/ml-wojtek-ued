@@ -18,11 +18,17 @@ def bootstrap_ci(
     rng: np.random.Generator,
 ) -> tuple[float, float]:
     """95% CI of `statistic(indices)` over n resampled levels."""
-    samples = [statistic(rng.integers(0, n, n)) for _ in range(BOOTSTRAP_SAMPLES)]
-    return float(np.percentile(samples, 2.5)), float(np.percentile(samples, 97.5))
+    samples = [
+        statistic(rng.integers(0, n, n)) for _ in range(BOOTSTRAP_SAMPLES)
+    ]
+    return float(np.percentile(samples, 2.5)), float(
+        np.percentile(samples, 97.5)
+    )
 
 
-def envelope(values: np.ndarray, success: np.ndarray, threshold: float = 0.5) -> float:
+def envelope(
+    values: np.ndarray, success: np.ndarray, threshold: float = 0.5
+) -> float:
     """Largest |feature| still passed at `threshold` success, interpolated."""
     if success[0] < threshold:
         return 0.0

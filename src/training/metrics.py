@@ -3,7 +3,9 @@ import numpy as np
 from hfield.level_space import PARAMS, LevelSpace, ParamSpace
 
 
-def level_composition(space: LevelSpace, levels: np.ndarray) -> dict[str, float]:
+def level_composition(
+    space: LevelSpace, levels: np.ndarray
+) -> dict[str, float]:
     """Mean physical parameter values of the levels the student ran on."""
     if not isinstance(space, ParamSpace):
         return {}

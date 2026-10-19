@@ -22,7 +22,9 @@ from hfield.tiles import TileLayout
 from wojtek_env import paths
 
 
-def make_env(config: HFieldConfig, backend: Backend, num_envs: int) -> FunctionalEnv:
+def make_env(
+    config: HFieldConfig, backend: Backend, num_envs: int
+) -> FunctionalEnv:
     overrides = merge_overrides(
         accel_arena_overrides(config.pad_radius),
         movement_overrides(),
@@ -62,8 +64,12 @@ def settle(
     def run(key: jax.Array, tile: jax.Array) -> tuple[jax.Array, jax.Array]:
         _, state = env.reset(key, arena, tile_xy=tile)
 
-        def step(state: Any, _: None) -> tuple[Any, tuple[jax.Array, jax.Array]]:
-            _obs, state, _reward, done, _info = env.step(key, state, action, arena)
+        def step(
+            state: Any, _: None
+        ) -> tuple[Any, tuple[jax.Array, jax.Array]]:
+            _obs, state, _reward, done, _info = env.step(
+                key, state, action, arena
+            )
             return state, (state.data.qpos[2], done)
 
         _, (z, done) = jax.lax.scan(step, state, None, steps)
@@ -78,7 +84,9 @@ def late_z(z: np.ndarray, envs_per_tile: int) -> np.ndarray:
     return z[:, -z.shape[1] // 4 :].mean(axis=1).reshape(-1, envs_per_tile)
 
 
-def report(backend: str, z: np.ndarray, done: np.ndarray, envs_per_tile: int) -> None:
+def report(
+    backend: str, z: np.ndarray, done: np.ndarray, envs_per_tile: int
+) -> None:
     late = late_z(z, envs_per_tile)
     dones = done.sum(axis=1).reshape(-1, envs_per_tile)
     print(f"backend={backend} per tile (late z / dones), even=flat odd=pit:")
@@ -102,7 +110,10 @@ def bench(cfg: CheckHFieldConfig) -> None:
     start = time.perf_counter()
     run()
     rate = cfg.bench_envs * cfg.steps / (time.perf_counter() - start)
-    print(f"bench backend={cfg.backend} envs={cfg.bench_envs}: {rate:,.0f} env-steps/s")
+    print(
+        f"bench backend={cfg.backend} envs={cfg.bench_envs}: "
+        f"{rate:,.0f} env-steps/s"
+    )
 
 
 def compare_backends(
@@ -121,7 +132,8 @@ def compare_backends(
     ok = depth_gap <= cfg.tol and same_dones
     print(
         f"jax vs warp: pit depth jax {depth[Backend.jax].mean():.4f} / warp "
-        f"{depth[Backend.warp].mean():.4f} m, max per-tile gap {depth_gap:.2e} m "
+        f"{depth[Backend.warp].mean():.4f} m, "
+        f"max per-tile gap {depth_gap:.2e} m "
         f"(tol {cfg.tol}), same dones {same_dones}: "
         f"{'PASS' if ok else 'FAIL'}; max base-z gap {z_gap:.2e} m"
     )
@@ -142,7 +154,9 @@ def check(cfg: CheckHFieldConfig) -> None:
     runs = {}
     for backend in backends:
         env = make_env(cfg.arena, backend, n)
-        runs[backend] = settle(env, layout, levels, cfg.envs_per_tile, cfg.steps)
+        runs[backend] = settle(
+            env, layout, levels, cfg.envs_per_tile, cfg.steps
+        )
         report(backend, *runs[backend], cfg.envs_per_tile)
     print(f"expected: pit late z ~{cfg.pit} m below flat, no dones")
     if cfg.compare and not compare_backends(runs, cfg):

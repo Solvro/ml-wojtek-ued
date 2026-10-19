@@ -59,12 +59,15 @@ def dump_history(prefixes: dict[str, str], path: Path) -> None:
                 "eval": _scan(run, EVAL_KEYS),
                 "level": _scan(run, LEVEL_KEYS),
             }
-            print(f"{run.name}: {len(history[run.name]['eval']['env_steps'])} evals")
+            evals = len(history[run.name]["eval"]["env_steps"])
+            print(f"{run.name}: {evals} evals")
     path.write_text(json.dumps(history))
     print(f"wrote {len(history)} run histories to {path}")
 
 
-def _runs_of(history: dict[str, Any], prefix: str, method: str) -> list[dict[str, Any]]:
+def _runs_of(
+    history: dict[str, Any], prefix: str, method: str
+) -> list[dict[str, Any]]:
     pattern = re.compile(rf"^{re.escape(prefix)}_{method}_seed[0-9]+$")
     return [h for name, h in sorted(history.items()) if pattern.match(name)]
 
@@ -87,13 +90,20 @@ def _smooth(ys: np.ndarray) -> np.ndarray:
 def _band(ax: Any, grid: np.ndarray, ys: np.ndarray, method: str) -> None:
     color = COLORS[method]
     ax.plot(grid, ys.mean(axis=0), color=color, lw=1.2, label=METHODS[method])
-    ax.fill_between(grid, ys.min(axis=0), ys.max(axis=0), color=color, alpha=0.15)
+    ax.fill_between(
+        grid, ys.min(axis=0), ys.max(axis=0), color=color, alpha=0.15
+    )
 
 
-def plot_curves(history: dict[str, Any], prefixes: dict[str, str], out: Path) -> None:
+def plot_curves(
+    history: dict[str, Any], prefixes: dict[str, str], out: Path
+) -> None:
     robots = list(prefixes)
     fig, axes = plt.subplots(
-        len(robots), len(EVAL_KEYS), figsize=(6.5, 2.2 * len(robots)), squeeze=False
+        len(robots),
+        len(EVAL_KEYS),
+        figsize=(6.5, 2.2 * len(robots)),
+        squeeze=False,
     )
     for i, robot in enumerate(robots):
         for j, key in enumerate(EVAL_KEYS):
@@ -110,7 +120,9 @@ def plot_curves(history: dict[str, Any], prefixes: dict[str, str], out: Path) ->
             ax.tick_params(labelsize=7)
             ax.grid(alpha=0.3)
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=len(METHODS), fontsize=8)
+    fig.legend(
+        handles, labels, loc="lower center", ncol=len(METHODS), fontsize=8
+    )
     fig.tight_layout(rect=(0, 0.06, 1, 1))
     fig.savefig(out / "curves.pdf")
     plt.close(fig)
@@ -155,7 +167,9 @@ def plot_composition(
             if i == len(robots) - 1:
                 ax.set_xlabel("env steps (M)", fontsize=7)
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=len(METHODS), fontsize=7)
+    fig.legend(
+        handles, labels, loc="lower center", ncol=len(METHODS), fontsize=7
+    )
     fig.tight_layout(rect=(0, 0.08, 1, 1), w_pad=0.3)
     fig.savefig(out / "composition.pdf")
     plt.close(fig)

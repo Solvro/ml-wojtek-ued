@@ -32,7 +32,10 @@ def test_frame_steps_stays_within_rollout() -> None:
 
 
 def test_hold_command_keeps_height_and_blocks_resample() -> None:
-    info = {"command": jnp.array([0.5, -0.1, 0.3, 0.12]), "steps_since_cmd": 240}
+    info = {
+        "command": jnp.array([0.5, -0.1, 0.3, 0.12]),
+        "steps_since_cmd": 240,
+    }
     held = hold_command(info, jnp.array([0.3, 0.0, 0.2]))
     np.testing.assert_allclose(held["command"], [0.3, 0.0, 0.2, 0.12])
     assert held["steps_since_cmd"] == 0
@@ -69,7 +72,9 @@ def test_render_refuses_a_command_without_three_entries(
         render(cfg)
 
 
-def test_render_refuses_a_malformed_level(compose_cfg: Callable[..., Any]) -> None:
+def test_render_refuses_a_malformed_level(
+    compose_cfg: Callable[..., Any],
+) -> None:
     cfg = compose_cfg("render", "checkpoint=none.pkl", "levels=[0.5]")
     with pytest.raises(ValueError, match="DIFFICULTY:SEED"):
         render(cfg)

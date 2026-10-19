@@ -18,7 +18,9 @@ Params = ppo_losses.PPONetworkParams
 class Student:
     """brax PPO networks, optimizer and jitted update / regret / BC KL."""
 
-    def __init__(self, env: FunctionalEnv, key: jax.Array, entropy_coef: float) -> None:
+    def __init__(
+        self, env: FunctionalEnv, key: jax.Array, entropy_coef: float
+    ) -> None:
         obs_size = env.observation_size
         self.entropy_coef = entropy_coef
         self.network = make_network(env)
@@ -74,7 +76,9 @@ class Student:
         teacher: Teacher,
         observation: Any,
     ) -> jax.Array:
-        kl = policy_kl(self.network, normalizer, policy_params, teacher, observation)
+        kl = policy_kl(
+            self.network, normalizer, policy_params, teacher, observation
+        )
         return kl.mean()
 
     def _loss(

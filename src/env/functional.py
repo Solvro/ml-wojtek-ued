@@ -77,7 +77,9 @@ class FunctionalEnv:
         # Playground robots read heights straight from hfield_data; Wojtek
         # keeps a lookup
         self._has_lookup = robot is None
-        self._hfield_geometry = hfield_geometry(base) if self._has_lookup else None
+        self._hfield_geometry = (
+            hfield_geometry(base) if self._has_lookup else None
+        )
         self.action_size = base.action_size
         self.travel = travel_bounds(base)
         self._domain_randomize = dr_fn if domain_randomize else None
@@ -115,7 +117,9 @@ class FunctionalEnv:
         if hfield_data is not None:
             new_model = new_model.tree_replace({"hfield_data": hfield_data})
             if self._has_lookup:
-                base._terrain = self._arena_terrain(old_terrain, hfield_data, tile_xy)
+                base._terrain = self._arena_terrain(
+                    old_terrain, hfield_data, tile_xy
+                )
             elif tile_xy is not None:
                 base.spawn_xy = tile_xy
         base._mjx_model = new_model
@@ -183,7 +187,9 @@ class FunctionalEnv:
     ) -> tuple[Obs, Any, jax.Array, jax.Array, dict]:
         del key
         steps = state.info["steps"]
-        state.info["steps"] = jnp.where(state.done, jnp.zeros_like(steps), steps)
+        state.info["steps"] = jnp.where(
+            state.done, jnp.zeros_like(steps), steps
+        )
         state = state.replace(done=jnp.zeros_like(state.done))
         with self._swapped_model(hfield_data, dr_model):
             state = cast(Any, self._env.step(state, action))
@@ -196,4 +202,6 @@ class FunctionalEnv:
 
     @staticmethod
     def _obs(state: Any) -> Obs:
-        return Obs(actor=state.obs["state"], critic=state.obs["privileged_state"])
+        return Obs(
+            actor=state.obs["state"], critic=state.obs["privileged_state"]
+        )

@@ -99,7 +99,9 @@ def test_policy_kl_gradient_reaches_only_the_student() -> None:
     def mean_kl(student: Any, teacher: Any) -> jax.Array:
         return policy_kl(network, norm, student, (norm, teacher), obs).mean()
 
-    student_grad, teacher_grad = jax.grad(mean_kl, argnums=(0, 1))(student, teacher)
+    student_grad, teacher_grad = jax.grad(mean_kl, argnums=(0, 1))(
+        student, teacher
+    )
     student_norm = sum(jnp.abs(g).sum() for g in jax.tree.leaves(student_grad))
     teacher_norm = sum(jnp.abs(g).sum() for g in jax.tree.leaves(teacher_grad))
     assert float(student_norm) > 0.0

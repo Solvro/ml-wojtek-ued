@@ -23,7 +23,9 @@ from rendering.scene import (
 from robots.scale import ROBOT_SCALE, hfield_config
 from training.ppo import make_network
 
-Rollout = Callable[[jax.Array, jax.Array, jax.Array], tuple[jax.Array, jax.Array]]
+Rollout = Callable[
+    [jax.Array, jax.Array, jax.Array], tuple[jax.Array, jax.Array]
+]
 
 
 def parse_level(text: str) -> tuple[float, int]:
@@ -71,10 +73,14 @@ def make_rollout(
     make_policy = ppo_networks.make_inference_fn(make_network(env))
     policy = make_policy(params, deterministic=True)
 
-    def step(state: Any, hfield: jax.Array) -> tuple[Any, tuple[jax.Array, ...]]:
+    def step(
+        state: Any, hfield: jax.Array
+    ) -> tuple[Any, tuple[jax.Array, ...]]:
         state = state.replace(info=hold_command(state.info, command))
         action, _ = policy(state.obs, jax.random.key(0))
-        _, nxt, _, done, info = env.step(jax.random.key(0), state, action, hfield)
+        _, nxt, _, done, info = env.step(
+            jax.random.key(0), state, action, hfield
+        )
         return nxt, (state.data.qpos, done * (1.0 - info["truncation"]))
 
     @jax.jit
@@ -159,7 +165,9 @@ class LevelRecorder:
         self.model = render_model(self.base, self.config)
         self.steps = frame_steps(n_steps, self.base.dt, cfg.fps)
 
-    def clip(self, difficulty: float, seed: int) -> tuple[str, Iterator[np.ndarray]]:
+    def clip(
+        self, difficulty: float, seed: int
+    ) -> tuple[str, Iterator[np.ndarray]]:
         """The clip's file name and frames; the rollout runs now."""
         cfg = self.cfg
         level = self.space.scaled(np.random.default_rng(seed), 1, difficulty)

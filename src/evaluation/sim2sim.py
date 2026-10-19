@@ -51,8 +51,12 @@ def level_sets(cfg: Sim2SimConfig, config: HFieldConfig) -> dict[str, Any]:
         edit_scale=0.0,
         robot_scale=scale,
     )
-    flat = space.scaled(np.random.default_rng(cfg.seed), cfg.suite_instances, 0.0)
-    uniform = space.uniform(np.random.default_rng(cfg.seed + 1), EVAL_BRAX_UNIFORM)
+    flat = space.scaled(
+        np.random.default_rng(cfg.seed), cfg.suite_instances, 0.0
+    )
+    uniform = space.uniform(
+        np.random.default_rng(cfg.seed + 1), EVAL_BRAX_UNIFORM
+    )
     sets = {
         "flat": space.render(flat),
         "param/uniform": space.render(uniform[: cfg.num_levels]),

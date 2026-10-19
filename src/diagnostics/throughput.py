@@ -27,10 +27,14 @@ def timed(fn: Any, repeats: int) -> float:
 def env_steps_per_s(ctx: TrainContext, hfield: jax.Array, dr: bool) -> float:
     env, cfg, layout = ctx.env, ctx.cfg, ctx.layout
     n = cfg.num_lanes * cfg.envs_per_lane
-    dr_model, dr_axes = env.sample_dr(jax.random.key(1), n) if dr else (None, None)
+    dr_model, dr_axes = (
+        env.sample_dr(jax.random.key(1), n) if dr else (None, None)
+    )
     tile_xy = layout.tile_xy(cfg.num_lanes, cfg.envs_per_lane)
     reset = jax.jit(jax.vmap(env.reset, in_axes=(0, None, dr_axes, 0)))
-    _, state = reset(jax.random.split(jax.random.key(0), n), hfield, dr_model, tile_xy)
+    _, state = reset(
+        jax.random.split(jax.random.key(0), n), hfield, dr_model, tile_xy
+    )
     action = jnp.zeros((n, env.action_size))
 
     def one(s: Any, a: jax.Array, h: jax.Array, m: Any) -> Any:
@@ -56,11 +60,15 @@ def iteration_parts(ctx: TrainContext, levels: np.ndarray) -> dict[str, float]:
     hfield = ctx.assemble(jnp.asarray(ctx.space.render(levels)))
     jax.block_until_ready(hfield)
     rec["render_assemble_s"] = time.perf_counter() - start
-    rec["sample_dr_s"] = timed(lambda: env.sample_dr(jax.random.key(2), n)[0], 2)
+    rec["sample_dr_s"] = timed(
+        lambda: env.sample_dr(jax.random.key(2), n)[0], 2
+    )
     dr_model, _ = env.sample_dr(jax.random.key(2), n)
     tile_xy = ctx.layout.tile_xy(cfg.num_lanes, cfg.envs_per_lane)
     keys = jax.random.split(jax.random.key(3), n)
-    rec["reset_s"] = timed(lambda: ctx.reset(keys, hfield, dr_model, tile_xy), 2)
+    rec["reset_s"] = timed(
+        lambda: ctx.reset(keys, hfield, dr_model, tile_xy), 2
+    )
     _, state = ctx.reset(keys, hfield, dr_model, tile_xy)
 
     def unroll() -> Any:

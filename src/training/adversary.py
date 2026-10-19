@@ -34,11 +34,17 @@ class Adversary:
         params = eqx.filter(self.generator, eqx.is_array)
         self.opt_state = self.optimizer.init(params)
         self.entropy_coef = mode.gen_entropy_coef
-        self.sample = eqx.filter_jit(lambda g, z, keys: jax.vmap(g)(z, keys)[:2])
+        self.sample = eqx.filter_jit(
+            lambda g, z, keys: jax.vmap(g)(z, keys)[:2]
+        )
         self.step = eqx.filter_jit(self._step)
 
-    def _loss(self, generator: LevelGenerator, batch: AdversaryBatch) -> jax.Array:
-        new_log_prob, entropy = jax.vmap(generator.evaluate)(batch.z, batch.theta)
+    def _loss(
+        self, generator: LevelGenerator, batch: AdversaryBatch
+    ) -> jax.Array:
+        new_log_prob, entropy = jax.vmap(generator.evaluate)(
+            batch.z, batch.theta
+        )
         log_ratio = jnp.clip(new_log_prob - batch.log_prob, -20.0, 20.0)
         ratio = jnp.exp(log_ratio)
         adv = batch.advantages

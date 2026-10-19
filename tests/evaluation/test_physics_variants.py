@@ -30,14 +30,18 @@ def test_half_dt_keeps_effective_solref(model: mujoco.MjModel) -> None:
     leg = model.geom("leg_collision").id
     np.testing.assert_allclose(m.geom_solref[leg], [0.02, 1])
     # direct (negative) stiffness/damping is not a time constant
-    np.testing.assert_allclose(m.geom_solref[model.geom("link_geom").id], [-1000, -10])
+    np.testing.assert_allclose(
+        m.geom_solref[model.geom("link_geom").id], [-1000, -10]
+    )
 
 
 def test_soft_contact_scales_run_timeconst(model: mujoco.MjModel) -> None:
     m = pv.soft_contact(model, None)
     scale = pv.SOFT_TIMECONST_SCALE
     # 0.001 s runs at the 2 x 0.004 s floor: scaled from there
-    np.testing.assert_allclose(m.geom_solref[model.geom("box").id], [0.008 * scale, 2])
+    np.testing.assert_allclose(
+        m.geom_solref[model.geom("box").id], [0.008 * scale, 2]
+    )
     leg = model.geom("leg_collision").id
     np.testing.assert_allclose(m.geom_solref[leg], [0.02 * scale, 1])
     link = model.geom("link_geom").id
@@ -52,10 +56,14 @@ def test_soft_contact_without_refsafe_scales_raw_timeconst(
     model.opt.disableflags |= mujoco.mjtDisableBit.mjDSBL_REFSAFE
     m = pv.soft_contact(model, None)
     box = model.geom("box").id
-    np.testing.assert_allclose(m.geom_solref[box], [0.001 * pv.SOFT_TIMECONST_SCALE, 2])
+    np.testing.assert_allclose(
+        m.geom_solref[box], [0.001 * pv.SOFT_TIMECONST_SCALE, 2]
+    )
 
 
-def test_full_collision_meshes_hit_terrain_only(tmp_path: Path, robot_xml: str) -> None:
+def test_full_collision_meshes_hit_terrain_only(
+    tmp_path: Path, robot_xml: str
+) -> None:
     scene = tmp_path / "scene.xml"
     scene.write_text(robot_xml)
     m = pv.wojtek_full_collision_spec(scene).compile()

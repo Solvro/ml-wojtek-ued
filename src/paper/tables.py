@@ -51,7 +51,8 @@ def main_table(runs: RunsByRobot) -> str:
         rf"\multicolumn{{{n}}}{{c}}{{{ROBOT_LABEL[robot]}}}" for robot in robots
     )
     rules = "".join(
-        rf"\cmidrule(lr){{{2 + i * n}-{1 + (i + 1) * n}}}" for i in range(len(robots))
+        rf"\cmidrule(lr){{{2 + i * n}-{1 + (i + 1) * n}}}"
+        for i in range(len(robots))
     )
     names = " & ".join(name for name, _ in MAIN_COLUMNS)
     head = [
@@ -82,7 +83,9 @@ def per_robot_table(
             body.append(r"\midrule")
         methods = method_order({r.method for r in robot_runs})
         groups = by_method(robot_runs, methods)
-        cells = [column_cells(groups, key, s, d, bold) for _, key, s, d in columns]
+        cells = [
+            column_cells(groups, key, s, d, bold) for _, key, s, d in columns
+        ]
         for j, method in enumerate(methods):
             name = ROBOT_LABEL[robot] if j == 0 else ""
             row = [name, method_label(method), *(c[j] for c in cells)]
@@ -127,7 +130,9 @@ def tables(cfg: PaperTablesConfig) -> None:
         dump_wandb(prefixes, Path(cfg.dump_wandb))
         return
     if cfg.eval_dir is None:
-        raise ValueError("set eval_dir=<dir of eval_brax.py outputs>, or dump_wandb")
+        raise ValueError(
+            "set eval_dir=<dir of eval_brax.py outputs>, or dump_wandb"
+        )
     summaries: dict[str, Any] = {}
     if cfg.train_summaries:
         summaries = json.loads(Path(cfg.train_summaries).read_text())

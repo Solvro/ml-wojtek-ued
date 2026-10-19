@@ -7,7 +7,9 @@ from evaluation import cpu_physics as cp
 from evaluation.physics_variants import half_dt, mjx_match
 
 
-def test_sensor_index_follows_names(model: mujoco.MjModel, robot_xml: str) -> None:
+def test_sensor_index_follows_names(
+    model: mujoco.MjModel, robot_xml: str
+) -> None:
     spec = mujoco.MjSpec.from_string(robot_xml)
     spec.add_sensor(
         name="extra",
@@ -45,7 +47,9 @@ def test_cpu_physics_rejects_incompatible_models(
     model: mujoco.MjModel, robot_xml: str
 ) -> None:
     physics = cp.CpuPhysics(model, threads=1)
-    other = mujoco.MjModel.from_xml_string(robot_xml.replace("<freejoint/>", ""))
+    other = mujoco.MjModel.from_xml_string(
+        robot_xml.replace("<freejoint/>", "")
+    )
     with pytest.raises(ValueError, match="nq"):
         physics.use(other)
     odd = mjx_match(model, None)
@@ -122,7 +126,9 @@ def test_cpu_physics_drops_diverged_env(model: mujoco.MjModel) -> None:
     assert physics.take_diverged() == 0
 
 
-def test_cpu_physics_rejects_arena_of_another_model(model: mujoco.MjModel) -> None:
+def test_cpu_physics_rejects_arena_of_another_model(
+    model: mujoco.MjModel,
+) -> None:
     physics = cp.CpuPhysics(model, threads=1)
     with pytest.raises(ValueError, match="TileLayout.assemble"):
         physics.set_arena(np.full((2, model.nhfielddata), 0.5, np.float32))

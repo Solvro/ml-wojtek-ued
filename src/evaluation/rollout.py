@@ -33,7 +33,9 @@ class EvalContext(Generic[C]):
     unroll: Unroll
 
 
-def levels_per_chunk(cfg: EvalConfig | Sim2SimConfig, layout: TileLayout) -> int:
+def levels_per_chunk(
+    cfg: EvalConfig | Sim2SimConfig, layout: TileLayout
+) -> int:
     """Levels per batch: `chunk_envs` envs, at most one level per tile."""
     return min(max(1, cfg.chunk_envs // cfg.episodes), layout.n_tiles)
 
@@ -45,7 +47,9 @@ def make_eval_env(
     check_wojtek_arena(cfg.robot.name, config)
     layout = TileLayout(config)
     num_envs = levels_per_chunk(cfg, layout) * cfg.episodes
-    env = make_env(cfg.robot.name, backend, config, num_envs=num_envs, train=False)
+    env = make_env(
+        cfg.robot.name, backend, config, num_envs=num_envs, train=False
+    )
     # scored on the deterministic policy: its own obs and feet, not the critic
     reach = env.travel.reach(cfg.level_steps, env.travel.actor_sensing)
     layout.check_reach(reach, f"level_steps={cfg.level_steps}")
@@ -100,12 +104,16 @@ def rollout(
     )
 
 
-def two_passes(ctx: EvalContext[Any], hfields: np.ndarray, key: jax.Array) -> Passes:
+def two_passes(
+    ctx: EvalContext[Any], hfields: np.ndarray, key: jax.Array
+) -> Passes:
     """Two independent rollouts of every level (cross-fitted CVaR)."""
     key_a, key_b = jax.random.split(key)
     return [rollout(ctx, hfields, key_a), rollout(ctx, hfields, key_b)]
 
 
-def level_success(fell: np.ndarray, travel: np.ndarray, threshold: float) -> np.ndarray:
+def level_success(
+    fell: np.ndarray, travel: np.ndarray, threshold: float
+) -> np.ndarray:
     """Per level: fraction of episodes with no fall and travel >= threshold."""
     return ((fell == 0) & (travel >= threshold)).mean(axis=1)

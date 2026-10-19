@@ -24,7 +24,9 @@ def render_model(base: Any, config: HFieldConfig) -> Any:
     return single_tile_spec(scene, config).compile()
 
 
-def level_on_single_tile(config: HFieldConfig, hfield: np.ndarray) -> np.ndarray:
+def level_on_single_tile(
+    config: HFieldConfig, hfield: np.ndarray
+) -> np.ndarray:
     """A rendered level as the `render_model` arena's hfield_data."""
     layout = TileLayout(single_tile(config))
     return np.asarray(layout.assemble(jnp.asarray(hfield)[None]))

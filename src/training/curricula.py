@@ -84,7 +84,9 @@ def explore_levels(ctx: TrainContext, fresh: int) -> np.ndarray:
     return dr_levels(ctx, Curriculum.dr_mixed)[:fresh]
 
 
-def accel_iteration(ctx: TrainContext, buffer: LevelBuffer, it: int) -> dict[str, Any]:
+def accel_iteration(
+    ctx: TrainContext, buffer: LevelBuffer, it: int
+) -> dict[str, Any]:
     """Replay (train on buffer levels, queue their mutations) or explore
     (score the queued children plus fresh levels, no training)."""
     cfg, rng = ctx.cfg, ctx.rng
@@ -122,7 +124,9 @@ def paired_iteration(ctx: TrainContext, it: int) -> dict[str, Any]:
     return {**out, "replay": 1, "gen_loss": gen_loss}
 
 
-def run_iteration(ctx: TrainContext, buffer: LevelBuffer, it: int) -> dict[str, Any]:
+def run_iteration(
+    ctx: TrainContext, buffer: LevelBuffer, it: int
+) -> dict[str, Any]:
     curriculum = ctx.cfg.mode.curriculum
     if curriculum in BUFFERED:
         return accel_iteration(ctx, buffer, it)

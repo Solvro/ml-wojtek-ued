@@ -34,7 +34,9 @@ FEATURES = (
 )
 
 
-def _model(robot: Robot, arena: HFieldConfig) -> tuple[Any, ParamSpace, HFieldConfig]:
+def _model(
+    robot: Robot, arena: HFieldConfig
+) -> tuple[Any, ParamSpace, HFieldConfig]:
     config = hfield_config(robot, arena)
     env = make_env(robot, Backend.jax, config, num_envs=1, train=False)
     space = ParamSpace(config, robot_scale=ROBOT_SCALE[robot])

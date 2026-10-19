@@ -18,7 +18,9 @@ def end_diverged(state: Any) -> Any:
 
     leaves = [state.data.qpos, state.data.qvel, state.reward]
     leaves += jax.tree.leaves(state.obs)
-    finite = jnp.all(jnp.stack([per_env(jnp.isfinite(x)) for x in leaves]), axis=0)
+    finite = jnp.all(
+        jnp.stack([per_env(jnp.isfinite(x)) for x in leaves]), axis=0
+    )
     bounded = per_env(jnp.abs(state.data.qvel) <= QVEL_DIVERGED)
     bad = ~(finite & bounded)
     state.info["diverged"] = bad.astype(done.dtype)

@@ -20,7 +20,9 @@ def evaluate(ctx: TrainContext, rng: np.random.Generator) -> dict[str, float]:
             eval_chunk(ctx, rendered[start : start + per_chunk])
             for start in range(0, cfg.eval_levels, per_chunk)
         ]
-        fell, travel, forward_vel, cmd_vx = (np.concatenate(x) for x in zip(*chunks))
+        fell, travel, forward_vel, cmd_vx = (
+            np.concatenate(x) for x in zip(*chunks)
+        )
         success = (fell == 0) & (travel >= threshold)
         tag = f"eval/d{difficulty}"
         out[f"{tag}/success_rate"] = float(success.mean())
@@ -31,7 +33,9 @@ def evaluate(ctx: TrainContext, rng: np.random.Generator) -> dict[str, float]:
     return out
 
 
-def eval_chunk(ctx: TrainContext, rendered: jax.Array) -> tuple[np.ndarray, ...]:
+def eval_chunk(
+    ctx: TrainContext, rendered: jax.Array
+) -> tuple[np.ndarray, ...]:
     """Two episodes per level, one level per tile: per env fell, travel,
     mean forward and commanded velocity."""
     hfield = ctx.assemble(rendered)
