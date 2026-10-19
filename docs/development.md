@@ -22,6 +22,10 @@ repeated here.
 - **Scripts are thin** — `src/scripts/*.py` parse the Hydra config and call
   one function of a package; logic never lives there. The `just` recipes
   and `slurm/` call the scripts by path, so their names stay put.
+- **Run names** — `<prefix>_<robot>_<mode>_seed<N>` (`slurm/`, prefix
+  `ued`), evals `<run>_final_eval`; the paper scripts parse
+  `<prefix>_<method>_seed<k>` with `prefixes.<robot>` (default
+  `ued_<robot>`). Change all three together.
 
 ## Python version
 
@@ -86,6 +90,8 @@ global convention. Tests live in `tests/`, mirroring `src/`
   `just build-accel-arena arena.tiles=8` for `just train ... arena.tiles=8`;
   genome-only fields (`coarse_n`, `level_space.*`) need no rebuild. A new
   benchmark arena = a new `conf/arena/<name>.yaml`.
+- New curriculum → a `conf/mode/<name>.yaml` and a paper label in
+  `paper/labels.py` (`tests/paper/test_labels.py` fails without it).
 - New config field → add it to the schema dataclass in `config/schema.py`
   (field `= MISSING`) and its value to the YAML in `conf/`; the composition
   tests (`tests/config/test_schema.py`) fail on a field left unset.

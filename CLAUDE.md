@@ -9,14 +9,15 @@ it when the code changes.**
 
 | Task / area | Read first |
 |---|---|
-| Anything — get oriented | [docs/overview.md](docs/overview.md) |
+| Anything — get oriented (methods, robots, metrics, pipeline) | [docs/overview.md](docs/overview.md) |
+| Reproducing the paper, run names, cluster values | [README.md](README.md#reproduce-the-paper) |
 | Install, deps/pins, building assets, running | [docs/setup.md](docs/setup.md) |
 | The env, tasks, terrain, `FunctionalEnv`, the shared tiled arena | [docs/environment.md](docs/environment.md) |
 | `training/` (trainer, curriculum modes), heightfield levels, `evaluation/`, `rendering/`, `paper/` | [docs/ued-accel.md](docs/ued-accel.md) |
 | Playground robots (`robots/`: Go1, Barkour vB, Spot, Go2), their scale and scene | [docs/ued-accel.md](docs/ued-accel.md#robots) |
 | Hydra configs (`conf/`, `config/schema.py`), any CLI argument | [docs/configuration.md](docs/configuration.md) |
 | Layout rules, tooling, adding features, gotchas | [docs/development.md](docs/development.md) |
-| Running training/eval on the cluster | `slurm/*.sbatch`, [docs/ued-accel.md](docs/ued-accel.md#brax-ued) |
+| Running training/eval on the cluster | `slurm/*.sbatch`, [README.md](README.md#slurm-job-interface) |
 
 ## Where code lives
 
@@ -34,16 +35,21 @@ it when the code changes.**
   - `src/env/` — `FunctionalEnv` and the env factory/overrides;
     `src/hfield/` — levels and the tiled arena; `src/config/` — schemas.
   - `src/rendering/`, `src/paper/`, `src/diagnostics/` — videos, paper
-    artefacts, arena check and throughput profile.
+    artefacts, arena check (`check_hfield_batch.py`) and throughput
+    profile (`just profile`).
 - `src/robots/` — Playground quadrupeds on the tiled arena: `terrain.py`
   (`TerrainRobot`, the shared scene/spawn/fall/scan/commands) plus one file
   per robot with its constants and differences; `registry.py` lists them,
   `scale.py` holds the robot-size scaling.
   A new robot = a file, a `conf/robot/<name>.yaml`, a `Robot` enum value, a
-  `TERRAIN_ROBOTS` entry, `ROBOT_LABEL` (`paper/labels.py`) and `prefixes`
-  entries.
+  `TERRAIN_ROBOTS` entry, `ROBOT_LABEL` (`paper/labels.py`) and
+  `prefixes` entries (default `ued_<robot>`).
 - `conf/` — Hydra YAML, one primary per entry point plus the `robot`, `mode`,
   `level_space`, `arena` groups; `src/config/schema.py` types each primary.
+  A new curriculum = a `conf/mode/<name>.yaml` and a `METHODS` label
+  (`paper/labels.py`).
+- `slurm/` — job arrays (train, final eval, sim2sim, asset build); cluster
+  values (`#SBATCH` lines, `REPO`, `PDW`, `WB_*`) at the top of each.
 
 ## Project-specific rules (override / complement the global)
 
@@ -57,7 +63,7 @@ it when the code changes.**
 - `just lint` is ruff-only; run `ty check` manually.
 - **Hydra, no argparse** — every research entry point (`src/scripts/`,
   `hfield.arena`) is `@hydra.main` over `conf/<name>.yaml` (the frozen
-  `wojtek_env` tools and the `main.py` viewer keep their own flags). YAML
+  `wojtek_env` tools keep their own flags). YAML
   holds the values, the schema dataclass (fields `= MISSING`) types them:
   a new option is a schema field plus a YAML value, never a default in
   code. Wojtek runs and `just build-accel-arena` must read the same `arena`
@@ -66,6 +72,12 @@ it when the code changes.**
   of one `hfield_data`; never vmap `hfield_data` per env (warp collides every
   env with the first one's). Warp needs `XLA_PYTHON_CLIENT_PREALLOCATE=false`
   (the justfile and `slurm/` export it).
+
+- **Paper state** — docs and comments describe the code as it is: no
+  version names, job IDs or history; results live in wandb and the paper.
+- **Run names** — `ued_<robot>_<mode>_seed<N>` (`slurm/`), evals
+  `<run>_final_eval`; `paper_*` and `domination` parse them via
+  `prefixes.<robot>`.
 
 ## After changing code
 

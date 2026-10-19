@@ -1,23 +1,103 @@
 # Overview
 
-Research codebase for **Unsupervised Environment Design (UED)** — PAIRED/ACCEL —
-on the Wojtek quadruped. A student policy is trained with PPO while an
-adversarial curriculum invents and replays heightfield "levels" it finds hard.
+Unsupervised Environment Design (UED) for quadruped locomotion on procedural
+heightfields: a brax-PPO student trains against a curriculum that generates,
+replays or edits terrain levels. 12 curricula (`conf/mode/`) x 5 robots
+(`conf/robot/`), every level of an iteration on its own tile of one shared
+MJX heightfield.
+
+## Pipeline
+
+```mermaid
+flowchart LR
+  A["just build<br>just build-accel-arena"] --> T["train<br>scripts/brax_ued.py<br>&lt;run&gt;.pkl + wandb run"]
+  T --> E["final eval<br>scripts/eval_brax.py<br>&lt;run&gt;_final_eval.{json,npz}"]
+  T -. optional .-> S["sim2sim<br>scripts/eval_sim2sim.py"]
+  T --> W["wandb summaries / histories"]
+  E --> D["domination<br>scripts/compare_domination.py"]
+  E --> P["paper tables<br>scripts/paper_tables.py"]
+  W --> P
+  W --> F["paper figures<br>scripts/paper_figures.py"]
+```
+
+- Run name `<prefix>_<robot>_<mode>_seed<N>` (prefix `ued`); eval dumps
+  `<run>_final_eval`. The paper scripts read `prefixes.<robot>`
+  (default `ued_<robot>`). Commands: [README](../README.md#reproduce-the-paper).
+
+## Methods — `mode=` (`conf/mode/`)
+
+| `mode=` | curriculum | citation |
+|---|---|---|
+| `dr` | fresh uniform levels at full difficulty | domain randomization (Tobin et al. 2017) |
+| `dr_easy` | DR over the easy generator (control points within `generator_scale` of flat) | ablation: "train easy" without a curriculum |
+| `dr_mixed` | uniform levels scaled by a per-level difficulty `U(0, 1)` | ablation |
+| `plr` | robust PLR (PLR⊥): rank + staleness replay of high-regret levels, explore iterations score fresh DR levels without training | Jiang et al. 2021 (PLR; Replay-Guided Adversarial Environment Design) |
+| `sfl` | PLR⊥ scored by learnability `p(1-p)` | approximation of SFL (Rutherford et al. 2024) |
+| `accel` | PLR⊥ buffer + mutation of replayed levels; explore iterations score children + fresh easy levels | ACCEL (Parker-Holder et al. 2022) |
+| `accel_grow` | ACCEL, mutation also scales the level away from flat by `U(1, grow_max)` | ablation |
+| `accel_sfl` | `accel_grow` scored by learnability | ACCEL + SFL score |
+| `paired` | learned level generator, protagonist + antagonist, PAIRED regret | PAIRED (Dennis et al. 2020) |
+| `paired_uni` | PAIRED + UniBC (protagonist distils the antagonist) | Mediratta et al. 2023 (Stabilizing UED with a Learned Adversary) |
+| `paired_bi` | PAIRED + BiBC (both directions) | Mediratta et al. 2023 |
+| `paired_evo` | ACCEL's buffer and mutation scored by PAIRED regret, two students | PAIRED regret + ACCEL editing |
+
+- Level score: positive value loss = mean positive GAE advantage of a lane
+  (`plr`, `accel`, `accel_grow`); learnability (`sfl`, `accel_sfl`); PAIRED
+  regret (`paired*`). The `dr*` modes score nothing.
+- Details and switches: [ued-accel.md](ued-accel.md#brax-ued).
+
+## Robots — `robot=` (`conf/robot/`)
+
+| `robot=` | model | `SCALE` | physics DR |
+|---|---|---|---|
+| `wojtek` | W01-TEK (closed-chain legs, `wojtek_env`) | 1.0 | `wojtek_env` baseline |
+| `go1` | Unitree Go1 (Playground) | 2.5 | Playground Go1 |
+| `barkour` | Google Barkour vB (Playground) | 2.4 | none |
+| `spot` | Boston Dynamics Spot (Playground) | 4.3 | none |
+| `go2` | Unitree Go2 (Go1's env on the menagerie model) | 2.5 | Go1's |
+
+- `SCALE` = standing trunk height / Wojtek's 0.10 m; scales arena lengths,
+  level lengths, commands and `min_travel` (slopes do not scale).
+- Details: [ued-accel.md](ued-accel.md#robots).
+
+## Level space — `level_space=param` (default)
+
+- 8 parameters in `[0, 1]` + a never-mutated noise seed; ranges in Wojtek
+  units: rough amplitude 0–0.10 m / wavelength 0.2–1.0 m, radial slope
+  −20…+18°, radial stairs −0.08…+0.05 m high / 0.15–0.60 m wide, gaps
+  0–0.06 m wide, blocks 0–0.06 m high / 0.15–0.60 m wide.
+- Rendered onto a 6 m x 6 m patch (`arena=benchmark`, amplitude ±0.3 m,
+  flat spawn pad 0.55 m), one level per tile of a 16 x 16 arena.
+- `level_space=grid` (13 x 13 control-point genome) is the other option.
+- Details: [ued-accel.md](ued-accel.md#level-spaces).
+
+## Metrics (`eval_brax.py`)
+
+- **Success**: no fall and >= `min_travel` (1 m x `SCALE`) from spawn after
+  300 steps (6 s); deterministic policy, no physics DR.
+- **Sets**: `param/uniform` (2048 levels from the full box, headline),
+  `random/d<d>` (difficulty 0.25/0.5/0.75/1.0), `suite/*` (28 held-out
+  structured terrains), `flat`, `axis/<feature>` capability ramps.
+- **CVaR10 / CVaR25**: mean success of the worst 10 / 25 % of levels,
+  cross-fitted over two independent passes.
+- **Solvable subset** (`paper_tables`): `param/uniform` levels some run of the
+  robot passes, cross-fitted.
+- **Axis envelope**: largest feature magnitude passed at 50 % success.
+- **Domination** (`compare_domination`): per-level solve rates of two
+  methods, `a_better` / `b_better` / ties, mean difference with bootstrap
+  CI, binomial noise reference, method x method matrix.
+- 95 % bootstrap CIs over levels. Details:
+  [ued-accel.md](ued-accel.md#eval-brax).
 
 ## Two layers
 
-The repo is split into a frozen env library and the research code that consumes
-it. They never mix — research code lives in sibling packages under `src/`, not
-inside `wojtek_env`.
-
 | Layer | Location | Role | Tooling |
 |---|---|---|---|
-| **Env library** | `src/wojtek_env/` | MJX sim env, procedural terrain, Gymnasium wrapper, build/check CLIs | packaged (hatchling), **excluded from ruff** |
-| **Research code** | `src/{config,env,robots,hfield,training,evaluation,rendering,paper,diagnostics}/`, `src/scripts/` | brax-PPO trainer, ACCEL/PLR curriculum, heightfield levels, eval + paper tooling | ruff + ty enforced |
+| Env library | `src/wojtek_env/` | Wojtek MJX env, procedural terrain, Gymnasium wrapper, build/check CLIs | hatchling-packaged, excluded from ruff |
+| Research code | `src/{config,env,robots,hfield,training,evaluation,rendering,paper,diagnostics,scripts}/` | trainer, curricula, levels, eval, paper tooling | ruff + ty |
 
-`src/wojtek_env/` is extracted from an upstream robot stack (w01-tek) and treated
-as a stable dependency: env only, no trainer, no ROS, no deployment. Details in
-[environment.md](environment.md).
+`src/wojtek_env/` is extracted from the W01-TEK robot stack and treated as a
+stable dependency (env only). Details: [environment.md](environment.md).
 
 ## Repo map
 
@@ -30,9 +110,9 @@ src/
     tools/           build_model / build_terrain / check_* CLIs
     paths.py         repo-relative asset paths, robot constants
   config/            Hydra structured configs  (see configuration.md)
-    hfield_config.py HFieldConfig (level genome envelope, the `arena` group)
+    hfield_config.py HFieldConfig (level envelope, the `arena` group)
     schema.py        schema dataclass per entry point, enums, CONF_DIR
-  env/               wojtek_env / Playground robots as jit/vmap training envs
+  env/               Wojtek / Playground robots as jit/vmap training envs
     functional.py    FunctionalEnv: pure reset/step on the shared arena; Obs
     factory.py       make_env (Wojtek or a Playground robot), check_wojtek_arena
     overrides.py     shared env override dicts (movement / terrain / arena)
@@ -42,15 +122,12 @@ src/
     warp.py          warp backend memory checks and graph cache
   robots/
     terrain.py       TerrainRobot: arena scene, spawn, fall, scan, commands
-    go1.py           Playground Go1 on the tiled arena
-    barkour.py       Barkour vB
-    spot.py          Spot
-    go2.py           Go2 (Go1's env on the menagerie model, feet-only rewrite)
+    go1.py barkour.py spot.py go2.py   one file per Playground robot
     registry.py      TERRAIN_ROBOTS: robot name -> class
     scale.py         ROBOT_SCALE, hfield_config, min_travel (robot size)
   hfield/            heightfield levels  (see ued-accel.md)
-    manager.py       HFieldManager: generate / mutate / upsample a level
-    level_space.py   level spaces (uniform grid, 9-parameter `param`)
+    manager.py       HFieldManager: generate / mutate / upsample a grid level
+    level_space.py   level spaces (`param`, `grid`)
     arena.py         write the static tiled "accel" MJCF arena assets
     tiles.py         TileLayout: one level per tile of the shared arena
   training/          the trainer behind scripts/brax_ued.py
@@ -68,7 +145,7 @@ src/
     evaluate.py      in-training eval on uniform levels
     metrics.py       level composition of the levels trained on
     train.py         the train loop: wandb, logging, checkpoint
-  evaluation/        checkpoint evaluation behind eval_brax / eval_sim2sim
+  evaluation/        behind eval_brax / eval_sim2sim / compare_domination
     rollout.py       EvalContext, chunked deterministic rollouts
     suite.py         held-out structured terrain suite
     stats.py         cross-fitted CVaR, bootstrap CIs, capability envelopes
@@ -77,9 +154,7 @@ src/
     cpu_physics.py   CpuPhysics: CPU MuJoCo stepping under the jax env
     sim2sim.py       sim2sim's level sets, metrics, build
     domination.py    level-by-level method comparison (solve rates, stats)
-  rendering/
-    scene.py         one-tile render model, tracking camera
-    video.py         rollout + mp4 clips (render_video)
+  rendering/         one-tile render model, mp4 clips (render_video)
   paper/
     runs.py          eval/run loading, solvable subset, wandb summaries
     labels.py        robot / method labels
@@ -89,8 +164,8 @@ src/
     domination.py    domination heatmaps and matrices
     terrains.py      rendered example levels
   diagnostics/
-    arena_check.py   per-backend shared-arena sanity check
-    throughput.py    throughput profile of a training iteration
+    arena_check.py   per-backend shared-arena check (check_hfield_batch.py)
+    throughput.py    throughput profile of a training iteration (`just profile`)
   scripts/           thin Hydra entry points (`just` recipes, slurm/)
     brax_ued.py          train                       (`just train`)
     eval_brax.py         final eval of a checkpoint  (`just eval`)
@@ -100,49 +175,24 @@ src/
     compare_domination.py  domination comparison     (`just domination`)
     profile_brax_ued.py  throughput profile          (`just profile`)
     check_hfield_batch.py  shared-arena check
-main.py              random-agent MuJoCo-viewer preview
 conf/                Hydra YAML: one primary per entry point + groups
                      robot/ mode/ level_space/ arena/  (see configuration.md)
+slurm/               SLURM job arrays: train, final eval, sim2sim, assets
 ```
-
-## End-to-end data flow
-
-**Train** (`scripts/brax_ued.py` → `training/`): `FunctionalEnv` wraps a task env on the
-shared tiled arena → each iteration writes `num_lanes` levels into tiles of one
-`hfield_data` (`TileLayout.assemble`), resets `envs_per_lane` envs per tile with
-a fresh physics DR draw, and steps them in 20-step unrolls with brax's PPO
-(networks, running obs normalizer, `compute_ppo_loss`) → per-lane regret
-(mean positive GAE advantage) → `mode=` (`conf/mode/`):
-- `dr` / `dr_easy` / `dr_mixed` — fresh uniform levels every iteration (full difficulty / easy / mixed).
-- `accel` — replay high-regret buffer levels (training), mutate them, and score
-  mutations + fresh easy levels on explore iterations (no training).
-- `plr` — ACCEL's buffer and replay without mutation.
-- `paired` (`paired_uni` / `paired_bi`: + student BC) — a learned
-  `LevelGenerator` proposes levels; two students, PAIRED regret.
-- `paired_evo` — ACCEL's buffer and mutation scored by PAIRED regret.
-
-Levels are `coarse_n × coarse_n` control-point grids (`grid` space) or 9 terrain
-parameters (`param` space), upsampled to the MJX heightfield. Full walkthrough
-in [ued-accel.md](ued-accel.md).
-
-**Eval** (`evaluation/`): `eval_brax.py` scores a saved `<run>.pkl` on fixed terrain suites and
-uniform levels; `eval_sim2sim.py` replays it on CPU MuJoCo under model/solver
-variants; `render_video.py` renders clips. Details in [ued-accel.md](ued-accel.md).
 
 ## Glossary
 
-- **Level / genome** — a `coarse_n × coarse_n` array (or 9 terrain
-  parameters, `param` space) in `[0,1]`; rendered to a heightfield patch and
-  written into its tile of the shared arena's `hfield_data`, the terrain the
-  robot walks on.
-- **Regret** — positive value loss (Eq. 5): how much the critic under-estimated
-  return, i.e. how "surprisingly hard" a level was. The curriculum's score.
-- **Student** — the brax PPO policy being trained.
+- **Level / genome** — the `param` vector (or `grid` control points) in
+  `[0, 1]`, rendered to a heightfield patch on its tile of the arena.
+- **Lane** — one level of an iteration and its `envs_per_lane` envs.
+- **Regret** — positive value loss: how much the critic under-estimated the
+  return on a level. PAIRED: antagonist max return − protagonist mean.
+- **Student** — the brax PPO policy; the protagonist under PAIRED.
 
 ## Where to read next
 
-- Get it running → [setup.md](setup.md)
-- The env, tasks, terrain, hfield-swap trick → [environment.md](environment.md)
-- The curriculum, heightfield levels, trainer + eval scripts → [ued-accel.md](ued-accel.md)
+- Install and run → [setup.md](setup.md)
+- The env, tasks, terrain, tiled arena → [environment.md](environment.md)
+- Curricula, levels, trainer, eval and paper scripts → [ued-accel.md](ued-accel.md)
 - `conf/` groups and every config field → [configuration.md](configuration.md)
-- Tooling, imports, conventions → [development.md](development.md)
+- Tooling, conventions, gotchas → [development.md](development.md)

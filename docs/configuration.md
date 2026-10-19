@@ -7,7 +7,7 @@ no `--flags`.
 ```bash
 python src/scripts/brax_ued.py robot=go1 mode=accel seed=1 name=x
 python src/scripts/eval_brax.py checkpoint=<pkl> name=x out_dir=<dir> robot=go1
-just build-accel-arena                     # arena=v10
+just build-accel-arena                     # arena=benchmark
 just render-video checkpoint=<pkl> 'levels=[0.75:3,1.0:17]'
 python src/scripts/brax_ued.py --cfg job mode=dr name=x   # print the composed config
 ```
@@ -26,10 +26,10 @@ python src/scripts/brax_ued.py --cfg job mode=dr name=x   # print the composed c
   composed config of the run. Checkpoint / eval / video paths are the
   config's own (`checkpoint_dir`, `out_dir`, `out`), relative to the launch
   directory.
-- `HYDRA_FULL_ERROR=1` is exported in `slurm/*.sbatch` and
-  `experiments/tiled-draft/*.sbatch` (full tracebacks in job logs).
+- `HYDRA_FULL_ERROR=1` is exported in `slurm/*.sbatch` (full tracebacks in
+  job logs).
 - `conf/` resolves from `src/..` (`config.schema.CONF_DIR`), like the assets:
-  a frozen copy (`SRC` on WCSS) needs `conf/` beside `src/`.
+  a frozen copy (`SRC` in `slurm/`) needs `conf/` beside `src/`.
 - wandb gets the composed config (`config.schema.as_dict`), nested
   (`mode.curriculum`, `robot.name`, ...).
 
@@ -38,7 +38,7 @@ python src/scripts/brax_ued.py --cfg job mode=dr name=x   # print the composed c
 | primary | script | `just` | groups |
 |---|---|---|---|
 | `train.yaml` | `scripts/brax_ued.py` | `train` | robot, mode, level_space, arena |
-| `profile.yaml` | `scripts/profile_brax_ued.py` | `profile` | `train.yaml` with `mode: dr`, `level_space: param`, `name: profile` |
+| `profile.yaml` | `scripts/profile_brax_ued.py` | `profile` | `train.yaml` with `mode: dr`, `name: profile` |
 | `eval.yaml` | `scripts/eval_brax.py` | `eval` | robot, level_space, arena |
 | `sim2sim.yaml` | `scripts/eval_sim2sim.py` | `sim2sim` | robot, arena |
 | `render.yaml` | `scripts/render_video.py` | `render-video` | robot, level_space, arena |
@@ -107,20 +107,20 @@ each `mode/<option>.yaml` sets its switches.
 
 | option | `kind` | `n_edits` (`local` / `grow`) | `edit_scale` |
 |---|---|---|---|
-| `grid` (train / eval default) | `grid` | `8` / `16` | `0.15` |
-| `param` (render default; v10) | `param` | `2` / `2` | `0.1` |
+| `param` (default: train, eval, render) | `param` | `2` / `2` | `0.1` |
+| `grid` | `grid` | `8` / `16` | `0.15` |
 
 `n_edits` / `edit_scale`: ACCEL mutation strength, training only (eval and
 render read `kind`); the only place they exist (`HFieldConfig` is arena
 geometry, so `arena.n_edits=...` fails at startup). `n_edits` picks from
 `n_edits_by_mutation` by `mode.mutation`, so `mode=accel_grow` / `accel_sfl`
-on `level_space=grid` compose to 16 edits locally and on WCSS alike; an
-explicit `level_space.n_edits=N` overrides it. Spaces:
+on `level_space=grid` compose to 16 edits; an explicit
+`level_space.n_edits=N` overrides it. Spaces:
 [ued-accel.md](ued-accel.md#level-spaces).
 
 ### `arena/` — `HFieldConfig` {#hfield}
 
-`v10` (the only option, default everywhere) is the benchmark arena:
+`benchmark` (the only option, default everywhere):
 `amplitude: 0.3`, `coarse_n: 13`, `pad_radius: 0.55`, `pad_taper: 0.2`; the
 rest are `HFieldConfig` defaults. Values are in Wojtek units; training,
 eval, sim2sim, render and the paper figures scale every length by the robot
@@ -136,7 +136,7 @@ just train mode=dr name=x arena.tiles=8
 Plain dataclass (`config/hfield_config.py`); the level genome envelope. See
 [ued-accel.md](ued-accel.md#level-representation).
 
-| field | dataclass default | v10 | meaning |
+| field | dataclass default | `benchmark` | meaning |
 |---|---|---|---|
 | `patch_radius` | `3.0` | | m, half-width of the square patch |
 | `cell_size` | `0.05` | | m, fine hfield resolution |
@@ -155,13 +155,10 @@ Plain dataclass (`config/hfield_config.py`); the level genome envelope. See
 `just build-accel-arena` with the same overrides. `coarse_n` and the edits
 shape the genome and can vary between runs.
 
-`patch_radius=3.0` (was `6.0`): at `ctrl_dt=0.02`/`steps_in_episode=200` a
-rollout is 4s, so even a fast-command robot covers only a few metres —
-most of a 12m-diameter patch was never reached, let alone scored by regret.
-`level_space.edit_scale` stays small (`0.1`-`0.15`, an old default was `0.5`): `HFieldManager.mutate`'s intent is a *small*
-nudge from an already-curated parent; `0.5` was half the entire `[0,1]`
-genome range per edited point, closer to a fresh `generate()` than an
-incremental edit.
+- `patch_radius=3.0`: a 300-step (6 s) level takes a robot a few metres
+  from spawn, so a larger patch would mostly go unwalked and unscored.
+- `level_space.edit_scale` is small (`0.1`-`0.15`): an ACCEL mutation is a
+  small nudge from a curated parent, not a fresh `generate()`.
 
 ## Primaries
 
@@ -188,7 +185,7 @@ incremental edit.
 
 ### `profile.yaml` — `TrainConfig`
 
-`train.yaml` with `mode: dr`, `level_space: param`, `name: profile`; set
+`train.yaml` with `mode: dr`, `name: profile`; set
 `backend`, `robot`, `num_lanes`, `envs_per_lane`, `level_steps`,
 `eval_levels` as in training (`just profile backend=warp`). The printed
 record's `backend` is the config value.
@@ -233,7 +230,7 @@ data layout), `level_space` (always `param`), `alphas` and `tags`;
 
 ### `arena.yaml` — `ArenaBuildConfig`
 
-`arena` (group, `v10`) and `seed` (`0`). Writes the `accel` arena assets.
+`arena` (group, `benchmark`) and `seed` (`0`). Writes the `accel` arena assets.
 
 ### `check_hfield.yaml` — `CheckHFieldConfig`
 
@@ -252,7 +249,7 @@ data layout), `level_space` (always `param`), `alphas` and `tags`;
 
 | field | default | meaning |
 |---|---|---|
-| `prefixes.<robot>` (`wojtek`, `go1`, `barkour`, `spot`, `go2`) | `null` | run-name prefix per robot; robots left null are skipped |
+| `prefixes.<robot>` (`wojtek`, `go1`, `barkour`, `spot`, `go2`) | `ued_<robot>` | run-name prefix per robot; a robot set to `null` is skipped |
 | `eval_dir` | `null` | tables: dir of `eval_brax.py` outputs (required unless `dump_wandb`) |
 | `train_summaries` | `null` | tables: JSON from `dump_wandb`, for `compute.tex` |
 | `dump_wandb` | `null` | tables: write training summaries JSON, exit |
@@ -267,7 +264,7 @@ data layout), `level_space` (always `param`), `alphas` and `tags`;
 
 | field | default | meaning |
 |---|---|---|
-| `prefixes.<robot>` | `null` | run-name prefix per robot, as in `paper_tables`; robots left null are skipped |
+| `prefixes.<robot>` | `ued_<robot>` | run-name prefix per robot, as in `paper_tables`; a robot set to `null` is skipped |
 | `eval_dir` | `???` | dir of `eval_brax.py` npz dumps |
 | `level_set` | `param_uniform` | per-level npz set: `param_uniform` or `random_d<d>` (`random_d1.0`, ...) |
 | `method_a` / `method_b` | `accel` / `dr` | the heatmap's pair: A on x, B on y |
