@@ -51,6 +51,7 @@ of those pins.
 | `just render-video *args` | `scripts/render_video.py` (`conf/render.yaml`) |
 | `just paper-tables *args` | `scripts/paper_tables.py` (`conf/paper_tables.yaml`) |
 | `just paper-figures *args` | `scripts/paper_figures.py` (`conf/paper_figures.yaml`) |
+| `just domination *args` | `scripts/compare_domination.py` (`conf/domination.yaml`) |
 
 `*args` are Hydra overrides ([configuration.md](configuration.md)).
 

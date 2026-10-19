@@ -31,6 +31,7 @@ REQUIRED = {
     "check_hfield": (),
     "paper_tables": (),
     "paper_figures": (),
+    "domination": ("eval_dir=e",),
 }
 GROUPS = {
     "train": ("robot", "mode", "level_space", "arena"),

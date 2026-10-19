@@ -76,6 +76,7 @@ src/
     physics_variants.py  sim2sim's CPU MuJoCo model transforms
     cpu_physics.py   CpuPhysics: CPU MuJoCo stepping under the jax env
     sim2sim.py       sim2sim's level sets, metrics, build
+    domination.py    level-by-level method comparison (solve rates, stats)
   rendering/
     scene.py         one-tile render model, tracking camera
     video.py         rollout + mp4 clips (render_video)
@@ -85,6 +86,7 @@ src/
     latex.py         booktabs cells and tabulars
     tables.py        main / envelopes / compute tables, CSV
     figures.py       curves and composition figures
+    domination.py    domination heatmaps and matrices
     terrains.py      rendered example levels
   diagnostics/
     arena_check.py   per-backend shared-arena sanity check
@@ -95,6 +97,7 @@ src/
     eval_sim2sim.py      CPU MuJoCo variants         (`just sim2sim`)
     render_video.py      mp4 clips of a checkpoint   (`just render-video`)
     paper_tables.py / paper_figures.py               (`just paper-*`)
+    compare_domination.py  domination comparison     (`just domination`)
     profile_brax_ued.py  throughput profile          (`just profile`)
     check_hfield_batch.py  shared-arena check
 main.py              random-agent MuJoCo-viewer preview

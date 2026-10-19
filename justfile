@@ -118,3 +118,8 @@ paper-tables *args:
 [group('paper')]
 paper-figures *args:
     MUJOCO_GL="${MUJOCO_GL:-$([ "$(uname)" = Darwin ] && echo cgl || echo egl)}" uv run python src/scripts/paper_figures.py {{ args }}
+
+# Level-by-level domination heatmaps and matrices from eval_brax.py dumps (conf/domination.yaml, e.g. `just domination eval_dir=evals prefixes.wojtek=v10_wojtek`)
+[group('paper')]
+domination *args:
+    uv run python src/scripts/compare_domination.py {{ args }}

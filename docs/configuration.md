@@ -46,6 +46,7 @@ python src/scripts/brax_ued.py --cfg job mode=dr name=x   # print the composed c
 | `check_hfield.yaml` | `scripts/check_hfield_batch.py` | — | arena |
 | `paper_tables.yaml` | `scripts/paper_tables.py` | `paper-tables` | — |
 | `paper_figures.yaml` | `scripts/paper_figures.py` (+ `paper/terrains.py`) | `paper-figures` | arena |
+| `domination.yaml` | `scripts/compare_domination.py` | `domination` | — |
 
 ## Groups
 
@@ -259,3 +260,17 @@ data layout), `level_space` (always `param`), `alphas` and `tags`;
 | `history` | `null` | figures: JSON from `dump_history` → `curves.pdf`, `composition.pdf` |
 | `terrains` | `false` | figures: render `terrains.pdf` / `robots.pdf` on `arena` |
 | `out` | `artifacts/paper/tables` / `artifacts/paper/figs` | |
+
+### `domination.yaml` — `DominationConfig`
+
+[ued-accel.md](ued-accel.md#domination).
+
+| field | default | meaning |
+|---|---|---|
+| `prefixes.<robot>` | `null` | run-name prefix per robot, as in `paper_tables`; robots left null are skipped |
+| `eval_dir` | `???` | dir of `eval_brax.py` npz dumps |
+| `level_set` | `param_uniform` | per-level npz set: `param_uniform` or `random_d<d>` (`random_d1.0`, ...) |
+| `method_a` / `method_b` | `accel` / `dr` | the heatmap's pair: A on x, B on y |
+| `min_travel` | `1.0` | m (Wojtek units, scaled by robot) for a solved episode, as eval_brax |
+| `bins` | `10` | heatmap bins per axis |
+| `out` | `artifacts/paper/domination` | `domination.json` and figures |

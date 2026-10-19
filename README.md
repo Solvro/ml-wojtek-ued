@@ -68,6 +68,7 @@ exported for every recipe. `just` lists them all.
 | `just render-video *args` | mp4 clips of a checkpoint walking generated levels (`levels=[D:SEED,...]`); `conf/render.yaml` |
 | `just paper-tables *args` | LaTeX tables from final evals; `conf/paper_tables.yaml` |
 | `just paper-figures *args` | paper figures from wandb + rendered terrains; `conf/paper_figures.yaml` |
+| `just domination *args` | level-by-level domination heatmaps + matrices from eval_brax dumps; `conf/domination.yaml` |
 
 `*args` are Hydra overrides of the recipe's config.
 
