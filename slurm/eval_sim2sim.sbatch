@@ -7,31 +7,38 @@
 #SBATCH --time=02:00:00
 #SBATCH --output=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued/logs/%x_%A_%a.out
 #SBATCH --error=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued/logs/%x_%A_%a.out
-# Same task layout as brax_ued.sbatch: task = mode_index * 3 + seed over MODES.
-# CPU-only (physics on CPU MuJoCo); Lem CPU nodes run the same AlmaLinux 9
-# as the GPU nodes the venv was built for.
+# Cluster-specific: the #SBATCH account, partition and log paths above and
+# the variables below (README "Cluster-specific values").
+# Same task layout as brax_ued.sbatch (MODES, NSEEDS, SEED0, PREFIX, ROBOT,
+# SRC). CPU-only (physics on CPU MuJoCo); the CPU nodes run the same OS as
+# the GPU nodes the venv was built for.
 set -euo pipefail
+
+REPO="$HOME/workspace/ml-wojtek-ued"
+PDW=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued
+WB_ENTITY=dominikgalus9-wroc-aw-university-of-science-and-technology
+WB_PROJECT=wojtyla
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1 JAX_PLATFORMS=cpu
 export HYDRA_FULL_ERROR=1
 # SRC=<dir>/src, a frozen copy with the built assets/ and conf/ beside it
 # (wojtek_env and config.schema resolve them from src/..), keeps queued jobs
 # on the submitted code
-SRC="${SRC:-$HOME/workspace/ml-wojtek-ued/src}"
+SRC="${SRC:-$REPO/src}"
 export PYTHONPATH="$SRC"
-PDW=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued
-cd "$HOME/workspace/ml-wojtek-ued" || exit 1
+cd "$REPO" || exit 1
 
 read -ra MODES <<<"${MODES:?set MODES, e.g. 'dr accel'}"
-MODE="${MODES[$((SLURM_ARRAY_TASK_ID / 3))]}"
-SEED=$((SLURM_ARRAY_TASK_ID % 3))
-PREFIX="${PREFIX:-v10_wojtek}"
-# ROBOT=go1|barkour|spot|go2 runs a Playground robot at its size (robots/)
+NSEEDS="${NSEEDS:-3}"
+MODE="${MODES[$((SLURM_ARRAY_TASK_ID / NSEEDS))]}"
+SEED=$((${SEED0:-0} + SLURM_ARRAY_TASK_ID % NSEEDS))
+PREFIX="${PREFIX:-ued}"
+# ROBOT: a conf/robot/ option
 ROBOT="${ROBOT:-wojtek}"
-RUN="${PREFIX}_${MODE}_seed${SEED}"
+RUN="${PREFIX}_${ROBOT}_${MODE}_seed${SEED}"
 echo "job ${SLURM_JOB_ID} task ${SLURM_ARRAY_TASK_ID}: sim2sim $RUN"
 
 uv run --no-sync python "$SRC/scripts/eval_sim2sim.py" \
   "checkpoint=$PDW/artifacts/brax_ued/$RUN.pkl" "name=${RUN}_sim2sim" \
-  entity=dominikgalus9-wroc-aw-university-of-science-and-technology \
-  project=wojtyla "out_dir=$PDW/runs/sim2sim" "robot=$ROBOT"
+  "entity=$WB_ENTITY" "project=$WB_PROJECT" \
+  "out_dir=$PDW/runs/sim2sim" "robot=$ROBOT"

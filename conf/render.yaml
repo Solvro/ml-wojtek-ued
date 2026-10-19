@@ -3,7 +3,7 @@ defaults:
   - _self_
   - robot: wojtek
   - level_space: param
-  - arena: v10
+  - arena: benchmark
 
 checkpoint: ???
 out_dir: artifacts/videos

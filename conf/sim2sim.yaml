@@ -2,7 +2,7 @@ defaults:
   - sim2sim_schema
   - _self_
   - robot: wojtek
-  - arena: v10
+  - arena: benchmark
 
 checkpoint: ???
 name: ???

@@ -60,9 +60,11 @@ OPTIONS = {
         "paired_evo",
     ),
     "level_space": ("grid", "param"),
-    "arena": ("v10",),
+    "arena": ("benchmark",),
 }
-V10 = HFieldConfig(amplitude=0.3, coarse_n=13, pad_radius=0.55, pad_taper=0.2)
+BENCHMARK = HFieldConfig(
+    amplitude=0.3, coarse_n=13, pad_radius=0.55, pad_taper=0.2
+)
 
 
 @pytest.mark.parametrize("name", REQUIRED)
@@ -91,9 +93,9 @@ def test_every_group_option_composes(
 def test_train_defaults(compose_cfg: Compose) -> None:
     cfg = compose_cfg("train", "mode=dr", "name=t")
     assert cfg.robot.name == Robot.wojtek
-    assert cfg.level_space.kind == LevelSpaceKind.grid
-    assert (cfg.level_space.n_edits, cfg.level_space.edit_scale) == (8, 0.15)
-    assert cfg.arena == V10
+    assert cfg.level_space.kind == LevelSpaceKind.param
+    assert (cfg.level_space.n_edits, cfg.level_space.edit_scale) == (2, 0.1)
+    assert cfg.arena == BENCHMARK
     assert cfg.backend == Backend.auto
     assert (cfg.seed, cfg.num_timesteps) == (0, 300_000_000)
     assert (cfg.num_lanes, cfg.envs_per_lane, cfg.level_steps) == (256, 32, 300)
@@ -185,7 +187,7 @@ def test_arena_builder_and_training_read_the_same_arena(
 ) -> None:
     built = compose_cfg("arena").arena
     for name in ("train", "eval", "sim2sim", "render", "check_hfield"):
-        assert compose_cfg(name, *REQUIRED[name]).arena == built == V10
+        assert compose_cfg(name, *REQUIRED[name]).arena == built == BENCHMARK
     tiles = compose_cfg("arena", "arena.tiles=8").arena
     assert (
         compose_cfg("train", "mode=dr", "name=t", "arena.tiles=8").arena
@@ -204,7 +206,7 @@ def test_profile_is_a_param_dr_run(compose_cfg: Compose) -> None:
 
 
 def test_per_entry_point_defaults(compose_cfg: Compose) -> None:
-    assert compose_cfg("eval", *REQUIRED["eval"]).level_space.kind == "grid"
+    assert compose_cfg("eval", *REQUIRED["eval"]).level_space.kind == "param"
     assert (
         compose_cfg("render", *REQUIRED["render"]).level_space.kind == "param"
     )
@@ -219,14 +221,24 @@ def test_lists_from_the_command_line(compose_cfg: Compose) -> None:
     assert render.levels == ["0.5:1", "1.0:17"]
 
 
+@pytest.mark.parametrize(
+    "name", ["paper_tables", "paper_figures", "domination"]
+)
+def test_paper_prefixes_default_to_the_slurm_run_names(
+    compose_cfg: Compose, name: str
+) -> None:
+    cfg = compose_cfg(name, *REQUIRED[name])
+    assert cfg.prefixes == {robot: f"ued_{robot}" for robot in Robot}
+
+
 def test_paper_prefixes_per_robot(compose_cfg: Compose) -> None:
-    cfg = compose_cfg("paper_tables", "prefixes.go1=v10_go1")
+    cfg = compose_cfg("paper_tables", "prefixes.go1=x", "prefixes.spot=null")
     assert cfg.prefixes == {
-        Robot.wojtek: None,
-        Robot.go1: "v10_go1",
-        Robot.barkour: None,
+        Robot.wojtek: "ued_wojtek",
+        Robot.go1: "x",
+        Robot.barkour: "ued_barkour",
         Robot.spot: None,
-        Robot.go2: None,
+        Robot.go2: "ued_go2",
     }
 
 

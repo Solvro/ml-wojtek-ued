@@ -73,7 +73,7 @@ lint:
 build:
     uv run python -m wojtek_env.tools.build_model
 
-# Write the "accel" terrain arena's static assets (scene/hfield/spec/lookup); args are Hydra overrides of conf/arena.yaml (default arena=v10)
+# Write the "accel" terrain arena's static assets (scene/hfield/spec/lookup); args are Hydra overrides of conf/arena.yaml (default arena=benchmark)
 [group('build')]
 build-accel-arena *args:
     uv run python -m hfield.arena {{ args }}
@@ -119,7 +119,7 @@ paper-tables *args:
 paper-figures *args:
     MUJOCO_GL="${MUJOCO_GL:-$([ "$(uname)" = Darwin ] && echo cgl || echo egl)}" uv run python src/scripts/paper_figures.py {{ args }}
 
-# Level-by-level domination heatmaps and matrices from eval_brax.py dumps (conf/domination.yaml, e.g. `just domination eval_dir=evals prefixes.wojtek=v10_wojtek`)
+# Level-by-level domination heatmaps and matrices from eval_brax.py dumps (conf/domination.yaml, e.g. `just domination eval_dir=evals method_a=accel method_b=dr`)
 [group('paper')]
 domination *args:
     uv run python src/scripts/compare_domination.py {{ args }}

@@ -2,8 +2,8 @@ defaults:
   - eval_schema
   - _self_
   - robot: wojtek
-  - level_space: grid
-  - arena: v10
+  - level_space: param
+  - arena: benchmark
 
 checkpoint: ???
 name: ???
