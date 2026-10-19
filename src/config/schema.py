@@ -5,6 +5,7 @@ from typing import Any, TypeVar
 
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING, DictConfig, OmegaConf
+from omegaconf.errors import MissingMandatoryValue
 
 from config.hfield_config import HFieldConfig
 
@@ -67,6 +68,7 @@ class RobotConfig:
 @dataclass
 class LevelSpaceConfig:
     kind: LevelSpaceKind = MISSING
+    n_edits_by_mutation: dict[str, int] = MISSING
     n_edits: int = MISSING
     edit_scale: float = MISSING
 
@@ -220,6 +222,19 @@ for _name, _schema in SCHEMAS.items():
     ConfigStore.instance().store(name=f"{_name}_schema", node=_schema)
 
 T = TypeVar("T")
+
+
+def _run_name(*, _root_: DictConfig) -> str:
+    try:
+        return str(_root_.name)
+    except MissingMandatoryValue:
+        raise ValueError(
+            "name is required: it names the wandb run and the "
+            "artifacts/hydra/<name> directory; pass name=<run name>"
+        ) from None
+
+
+OmegaConf.register_new_resolver("run_name", _run_name, replace=True)
 
 
 def to_dataclass(cfg: DictConfig, schema: type[T]) -> T:

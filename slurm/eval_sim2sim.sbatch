@@ -13,6 +13,7 @@
 set -euo pipefail
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1 JAX_PLATFORMS=cpu
+export HYDRA_FULL_ERROR=1
 # SRC=<dir>/src, a frozen copy with the built assets/ and conf/ beside it
 # (wojtek_env and config.schema resolve them from src/..), keeps queued jobs
 # on the submitted code

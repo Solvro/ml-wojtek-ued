@@ -756,11 +756,7 @@ def paired_iteration(ctx: dict[str, Any], it: int) -> dict[str, Any]:
 
 def build(cfg: TrainConfig) -> dict[str, Any]:
     space_cfg = cfg.level_space
-    config = dataclasses.replace(
-        hfield_config(cfg.robot.name, cfg.arena),
-        n_edits=space_cfg.n_edits,
-        edit_scale=space_cfg.edit_scale,
-    )
+    config = hfield_config(cfg.robot.name, cfg.arena)
     space = make_level_space(
         space_cfg.kind,
         config,
