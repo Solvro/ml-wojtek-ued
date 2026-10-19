@@ -116,7 +116,10 @@ def bench(cfg: CheckHFieldConfig) -> None:
         jax.random.key(1), (layout.n_tiles, cfg.arena.grid_size**2)
     )
     per_tile = cfg.bench_envs // layout.n_tiles
-    run = lambda: settle(env, layout, levels, per_tile, cfg.steps)
+
+    def run() -> None:
+        settle(env, layout, levels, per_tile, cfg.steps)
+
     run()
     start = time.perf_counter()
     run()

@@ -12,6 +12,7 @@
 set -euo pipefail
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1
+export HYDRA_FULL_ERROR=1
 # fail instead of silently falling back to CPU when CUDA init fails
 # (seen: CUDA_ERROR_MPS_CONNECTION_FAILED on some Lem nodes)
 export JAX_PLATFORMS=cuda

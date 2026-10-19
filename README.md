@@ -1,8 +1,8 @@
 # Wojtek UED Research
 
 Unsupervised Environment Design (PAIRED/ACCEL) on the Wojtek quadruped: a PPO
-student (brax PPO in `scripts/brax_ued.py`) trained against an adversarial curriculum of procedurally generated
-heightfield levels. Built on `wojtek_env`, an extracted MJX simulation env +
+student (brax PPO in `scripts/brax_ued.py`) trained against an adversarial
+curriculum of procedurally generated heightfield levels. Built on `wojtek_env`, an extracted MJX simulation env +
 procedural terrain generator + Gymnasium interface (env only — no ROS, no
 deployment).
 

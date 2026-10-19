@@ -1,3 +1,4 @@
 kind: param
-n_edits: 2
+n_edits_by_mutation: {local: 2, grow: 2}
+n_edits: ${level_space.n_edits_by_mutation.${oc.select:mode.mutation,local}}
 edit_scale: 0.1

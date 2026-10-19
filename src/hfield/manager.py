@@ -14,12 +14,18 @@ class HFieldManager:
         n = self.config.coarse_n
         return rng.uniform(0.0, 1.0, size=(n, n))
 
-    def mutate(self, level: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    def mutate(
+        self,
+        level: np.ndarray,
+        rng: np.random.Generator,
+        n_edits: int,
+        edit_scale: float,
+    ) -> np.ndarray:
         c = self.config
         out = level.copy()
-        rows = rng.integers(0, c.coarse_n, size=c.n_edits)
-        cols = rng.integers(0, c.coarse_n, size=c.n_edits)
-        nudge = rng.uniform(-c.edit_scale, c.edit_scale, size=c.n_edits)
+        rows = rng.integers(0, c.coarse_n, size=n_edits)
+        cols = rng.integers(0, c.coarse_n, size=n_edits)
+        nudge = rng.uniform(-edit_scale, edit_scale, size=n_edits)
         out[rows, cols] = np.clip(out[rows, cols] + nudge, 0.0, 1.0)
         return out
 

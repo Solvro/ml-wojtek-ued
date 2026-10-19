@@ -4,7 +4,7 @@ from typing import Any
 import pytest
 from hydra import compose, initialize_config_dir
 from hydra.errors import ConfigCompositionException, MissingConfigException
-from omegaconf.errors import MissingMandatoryValue
+from omegaconf.errors import InterpolationResolutionError, MissingMandatoryValue
 
 from config.hfield_config import HFieldConfig
 from config.schema import (
@@ -231,6 +231,46 @@ def test_required_fields_fail_when_unset(
     overrides = [o for o in REQUIRED[name] if not o.startswith(f"{missing}=")]
     with pytest.raises(MissingMandatoryValue, match=missing):
         compose_cfg(name, *overrides)
+
+
+def test_run_dir_without_name_says_what_to_pass() -> None:
+    with initialize_config_dir(config_dir=CONF_DIR, version_base="1.3"):
+        cfg = compose("train", overrides=["mode=dr"], return_hydra_config=True)
+        with pytest.raises(InterpolationResolutionError, match="pass name="):
+            _ = cfg.hydra.run.dir
+
+
+@pytest.mark.parametrize("key", ["n_edits", "edit_scale"])
+def test_edit_strength_is_only_a_level_space_key(
+    compose_cfg: Compose, key: str
+) -> None:
+    with pytest.raises(ConfigCompositionException, match=key):
+        compose_cfg("train", "mode=dr", "name=t", f"arena.{key}=3")
+
+
+@pytest.mark.parametrize(
+    ("space", "mode", "n_edits"),
+    [
+        ("grid", "accel", 8),
+        ("grid", "accel_grow", 16),
+        ("grid", "accel_sfl", 16),
+        ("param", "accel", 2),
+        ("param", "accel_grow", 2),
+        ("param", "accel_sfl", 2),
+    ],
+)
+def test_grow_variants_edit_more_grid_cells(
+    compose_cfg: Compose, space: str, mode: str, n_edits: int
+) -> None:
+    cfg = compose_cfg("train", f"mode={mode}", "name=t", f"level_space={space}")
+    assert cfg.level_space.n_edits == n_edits
+
+
+def test_n_edits_override_wins_over_the_mutation_default(
+    compose_cfg: Compose,
+) -> None:
+    cfg = compose_cfg("train", "mode=accel_grow", "name=t", "level_space.n_edits=4")
+    assert cfg.level_space.n_edits == 4
 
 
 def test_run_dir_records_the_config_beside_the_run() -> None:
