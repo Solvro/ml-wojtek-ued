@@ -55,6 +55,10 @@ analysis.replace-imports-with-any = ["mujoco"]
 [tool.ruff]
 extend-exclude = ["src/wojtek_env"]
 
+[tool.ruff.lint.isort]
+# local wandb/ run dirs would otherwise make ruff sort wandb as first-party
+known-third-party = ["wandb"]
+
 [build-system]
 requires = ["hatchling>=1.26"]
 build-backend = "hatchling.build"

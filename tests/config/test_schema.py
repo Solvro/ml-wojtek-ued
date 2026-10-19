@@ -264,7 +264,7 @@ def test_run_dir_without_name_says_what_to_pass() -> None:
     with initialize_config_dir(config_dir=CONF_DIR, version_base="1.3"):
         cfg = compose("train", overrides=["mode=dr"], return_hydra_config=True)
         with pytest.raises(InterpolationResolutionError, match="pass name="):
-            cfg.hydra.run.dir
+            _ = cfg.hydra.run.dir
 
 
 @pytest.mark.parametrize("key", ["n_edits", "edit_scale"])
