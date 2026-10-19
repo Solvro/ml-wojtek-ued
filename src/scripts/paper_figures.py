@@ -27,7 +27,7 @@ import wandb
 from omegaconf import DictConfig
 
 from config.schema import CONF_DIR, PaperFiguresConfig, to_dataclass
-from scripts.brax_ued import ROBOT_SCALE
+from robots.scale import ROBOT_SCALE
 from scripts.paper_tables import (
     ENTITY,
     METHODS,

@@ -16,8 +16,9 @@ import numpy as np
 
 from config.hfield_config import HFieldConfig
 from config.schema import Backend, Robot
+from env.factory import make_env
 from hfield.level_space import PARAMS, ParamSpace
-from scripts.brax_ued import ROBOT_SCALE, hfield_config, make_env
+from robots.scale import ROBOT_SCALE, hfield_config
 from scripts.paper_tables import ROBOT_LABEL
 from scripts.render_video import level_on_single_tile, render_model
 

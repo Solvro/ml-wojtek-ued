@@ -59,18 +59,12 @@ from config.schema import (
     as_dict,
     to_dataclass,
 )
+from env.factory import check_wojtek_arena, make_env
 from hfield.level_space import make_level_space
 from hfield.tiles import TileLayout
+from robots.scale import ROBOT_SCALE, hfield_config, min_travel
 from robots.terrain import TerrainRobot
-from scripts.brax_ued import (
-    ROBOT_SCALE,
-    check_wojtek_arena,
-    hfield_config,
-    make_env,
-    make_network,
-    make_unroll,
-    min_travel,
-)
+from scripts.brax_ued import make_network, make_unroll
 from scripts.eval_brax import (
     SUITE_STRENGTHS,
     SUITE_TERRAINS,

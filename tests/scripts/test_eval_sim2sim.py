@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 
 from hfield.level_space import make_level_space
+from robots.scale import ROBOT_SCALE, hfield_config
 from scripts import eval_sim2sim as s2s
-from scripts.brax_ued import ROBOT_SCALE, hfield_config
 from scripts.eval_brax import SUITE_STRENGTHS, SUITE_TERRAINS, suite_hfield
 
 ROBOT_XML = """

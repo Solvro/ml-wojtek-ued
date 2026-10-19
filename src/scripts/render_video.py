@@ -28,18 +28,14 @@ from omegaconf import DictConfig
 
 from config.hfield_config import HFieldConfig
 from config.schema import CONF_DIR, RenderConfig, to_dataclass
+from env.factory import check_wojtek_arena, make_env
+from env.functional import FunctionalEnv
 from hfield.arena import single_tile, single_tile_spec
 from hfield.level_space import make_level_space
 from hfield.tiles import TileLayout
+from robots.scale import ROBOT_SCALE, hfield_config
 from robots.terrain import TerrainRobot
-from scripts.brax_ued import (
-    ROBOT_SCALE,
-    check_wojtek_arena,
-    hfield_config,
-    make_env,
-    make_network,
-)
-from utils.env import FunctionalEnv
+from scripts.brax_ued import make_network
 
 # mujoco is a C extension that ty cannot introspect
 mj: Any = mujoco

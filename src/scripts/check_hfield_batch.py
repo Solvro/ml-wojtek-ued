@@ -32,15 +32,15 @@ from omegaconf import DictConfig
 
 from config.hfield_config import HFieldConfig
 from config.schema import CONF_DIR, Backend, CheckHFieldConfig, to_dataclass
-from hfield.arena import check_arena
-from hfield.tiles import TileLayout
-from utils.env import FunctionalEnv
-from utils.env_overrides import (
+from env.functional import FunctionalEnv
+from env.overrides import (
     accel_arena_overrides,
     merge_overrides,
     movement_overrides,
     terrain_overrides,
 )
+from hfield.arena import check_arena
+from hfield.tiles import TileLayout
 from wojtek_env import paths
 
 

@@ -7,7 +7,7 @@ import pytest
 
 from config.hfield_config import HFieldConfig
 from hfield.tiles import TileLayout
-from scripts.brax_ued import hfield_config
+from robots.scale import hfield_config
 
 SMALL = HFieldConfig(patch_radius=1.0, tiles=3, reach=1.5)
 Compose = Callable[..., Any]

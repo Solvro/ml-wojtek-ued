@@ -8,9 +8,10 @@ from typing import Any
 
 import pytest
 
+from env.factory import wojtek_overrides
+from env.travel import TravelBounds, max_command_speed, travel_bounds
 from hfield.tiles import TileLayout
-from scripts.brax_ued import hfield_config, wojtek_overrides
-from utils.env import TravelBounds, max_command_speed, travel_bounds
+from robots.scale import hfield_config
 from wojtek_env.envs import registry
 from wojtek_env.terrain.terrain_env import SPAWN_EDGE_MARGIN
 

@@ -40,7 +40,7 @@ from omegaconf import DictConfig
 
 from config.schema import CONF_DIR, PaperTablesConfig, Robot, to_dataclass
 from hfield.level_space import PARAMS
-from scripts.brax_ued import ROBOT_SCALE
+from robots.scale import ROBOT_SCALE
 from scripts.eval_brax import AXES
 
 ENTITY = "dominikgalus9-wroc-aw-university-of-science-and-technology"

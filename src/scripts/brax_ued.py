@@ -42,7 +42,6 @@ fresh uniform levels at several difficulties: success = no fall and at least
 Configured by Hydra: `conf/train.yaml`, typed by `config.schema.TrainConfig`.
 """
 
-import dataclasses
 import functools
 import time
 from pathlib import Path
@@ -64,22 +63,20 @@ from brax.training.agents.ppo import networks as ppo_networks
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
 
-from config.hfield_config import HFieldConfig
 from config.schema import (
     BC,
     CONF_DIR,
-    Backend,
     Curriculum,
     Generator,
     ModeConfig,
     Mutation,
-    Robot,
     Score,
     TrainConfig,
     as_dict,
     to_dataclass,
 )
-from hfield.arena import check_arena
+from env.factory import check_wojtek_arena, make_env
+from env.functional import FunctionalEnv
 from hfield.level_space import (
     PARAMS,
     LevelSpace,
@@ -90,16 +87,7 @@ from hfield.level_space import (
 from hfield.tiles import TileLayout
 from modules.generator import LevelGenerator
 from modules.paired import Teacher, paired_regret, policy_kl
-from robots.registry import TERRAIN_ROBOTS
-from utils.env import FunctionalEnv
-from utils.env_overrides import (
-    accel_arena_overrides,
-    merge_overrides,
-    movement_overrides,
-    terrain_overrides,
-    terrain_task_overrides,
-)
-from wojtek_env import paths
+from robots.scale import ROBOT_SCALE, hfield_config, min_travel
 
 PPO: dict[str, Any] = {
     "unroll_length": 20,
@@ -118,67 +106,9 @@ PAIRED = (Curriculum.paired, Curriculum.paired_evo)
 BUFFERED = (Curriculum.accel, Curriculum.plr, Curriculum.paired_evo)
 
 
-ROBOT_SCALE = {"wojtek": 1.0, **{n: r.SCALE for n, r in TERRAIN_ROBOTS.items()}}
-
-
 def body_velocity(data: Any) -> jax.Array:
     # free-joint linear qvel is world-frame; commands are body-frame
     return brax_math.inv_rotate(data.qvel[:3], data.qpos[3:7])
-
-
-def hfield_config(robot: Robot, arena: HFieldConfig) -> HFieldConfig:
-    """The `arena` config (Wojtek units) at the robot's size: every length
-    scales, slopes do not."""
-    s = ROBOT_SCALE[robot]
-    return dataclasses.replace(
-        arena,
-        patch_radius=arena.patch_radius * s,
-        cell_size=arena.cell_size * s,
-        amplitude=arena.amplitude * s,
-        pad_radius=arena.pad_radius * s,
-        pad_taper=arena.pad_taper * s,
-        reach=arena.reach * s,
-    )
-
-
-def check_wojtek_arena(robot: Robot, config: HFieldConfig) -> None:
-    # Playground robots build their arena from `config` at construction;
-    # Wojtek loads it
-    if robot == Robot.wojtek:
-        check_arena(paths.terrain_paths("accel")["spec"], config, "accel")
-
-
-def make_env(
-    robot: Robot,
-    backend: Backend,
-    config: HFieldConfig,
-    *,
-    num_envs: int,
-    train: bool,
-) -> FunctionalEnv:
-    if robot in TERRAIN_ROBOTS:
-        terrain_robot = TERRAIN_ROBOTS[robot](
-            config, backend=backend, num_envs=num_envs
-        )
-        return FunctionalEnv(domain_randomize=train, robot=terrain_robot)
-    overrides = wojtek_overrides(config, backend, num_envs, train)
-    return FunctionalEnv(
-        task="joystick", env_overrides=overrides, domain_randomize=train
-    )
-
-
-def wojtek_overrides(
-    config: HFieldConfig, backend: Backend, num_envs: int, train: bool
-) -> dict[str, Any]:
-    return merge_overrides(
-        accel_arena_overrides(config.pad_radius, backend),
-        movement_overrides(),
-        terrain_overrides(),
-        terrain_task_overrides(),
-        {"sim": {"num_envs": num_envs}},
-        # eval scores falls and travel; the stochastic cut only adds noise
-        {} if train else {"no_progress": {"enable": False}},
-    )
 
 
 def make_network(env: FunctionalEnv) -> ppo_networks.PPONetworks:
@@ -428,10 +358,6 @@ class LevelBuffer:
     def update(self, idx: np.ndarray, scores: np.ndarray, now: int) -> None:
         self.scores[idx] = scores
         self.last_seen[idx] = now
-
-
-def min_travel(robot: Robot, wojtek_m: float) -> float:
-    return wojtek_m * ROBOT_SCALE[robot]
 
 
 def run_levels(

@@ -1,6 +1,6 @@
 import pytest
 
-from utils.env import require_warp_memory
+from env.warp import require_warp_memory
 
 
 def test_warp_refused_while_jax_preallocates(monkeypatch: pytest.MonkeyPatch) -> None:
