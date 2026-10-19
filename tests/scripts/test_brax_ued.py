@@ -1,11 +1,15 @@
 import math
 from collections.abc import Callable, Iterator
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, cast
 
 import jax
+import jax.numpy as jnp
 import pytest
+from brax.training import types
 
 from config.schema import BC, ModeConfig
+from modules.paired import Teacher
 from scripts import brax_ued
 
 Compose = Callable[..., Any]
@@ -107,7 +111,7 @@ def test_paired_variant_cpu_smoke(
     run = FakeRun()
     monkeypatch.setattr(brax_ued.wandb, "init", lambda **_: run)
     cfg = compose_cfg("train", f"mode={mode_name}", f"mode.bc={bc}", "name=t", *TINY)
-    brax_ued.train(cfg)
+    brax_ued.train(cfg, mode_name)
     assert len(run.logs) == 3
     for row in run.logs:
         assert math.isfinite(row["prot_bc_kl"]) and math.isfinite(row["antag_bc_kl"])
@@ -116,3 +120,77 @@ def test_paired_variant_cpu_smoke(
     if mode_name == "paired_evo":
         assert {row["replay"] for row in run.logs} == {0, 1}
         assert run.logs[-1]["buffer_size"] > 0
+
+
+@dataclass
+class FakeObsSize:
+    actor: int = 6
+    critic: int = 8
+
+
+@dataclass
+class FakeEnv:
+    observation_size: FakeObsSize = field(default_factory=FakeObsSize)
+    action_size: int = 3
+
+
+def make_batch(env: FakeEnv, envs: int = 32, steps: int = 20) -> types.Transition:
+    keys = iter(jax.random.split(jax.random.key(1), 7))
+
+    def normal(*shape: int) -> jax.Array:
+        return jax.random.normal(next(keys), shape)
+
+    obs = {
+        "state": normal(envs, steps, env.observation_size.actor),
+        "privileged_state": normal(envs, steps, env.observation_size.critic),
+    }
+    return types.Transition(
+        observation=obs,  # ty: ignore[invalid-argument-type]
+        action=normal(envs, steps, env.action_size),
+        reward=normal(envs, steps),
+        discount=jnp.ones((envs, steps)),
+        next_observation=obs,  # ty: ignore[invalid-argument-type]
+        extras={  # ty: ignore[invalid-argument-type]
+            "policy_extras": {
+                "log_prob": normal(envs, steps),
+                "raw_action": normal(envs, steps, env.action_size),
+                "distribution_params": normal(envs, steps, 2 * env.action_size),
+            },
+            "state_extras": {"truncation": jnp.zeros((envs, steps))},
+        },
+    )
+
+
+def updated_policy(
+    student: brax_ued.Student,
+    batch: types.Transition,
+    teacher: Teacher | None,
+    bc_coef: float,
+) -> Any:
+    params, *_ = student.update(
+        student.params,
+        student.opt_state,
+        student.normalizer,
+        batch,
+        jax.random.key(2),
+        teacher=teacher,
+        bc_coef=jnp.float32(bc_coef),
+    )
+    return params.policy
+
+
+def max_abs_diff(a: Any, b: Any) -> float:
+    diffs = jax.tree.map(lambda x, y: jnp.abs(x - y).max(), a, b)
+    return float(max(jax.tree.leaves(diffs)))
+
+
+def test_bc_coef_changes_the_student_update() -> None:
+    env = FakeEnv()
+    student = brax_ued.Student(cast(Any, env), jax.random.key(0), 1e-3)
+    teacher = brax_ued.Student(cast(Any, env), jax.random.key(7), 1e-3)
+    batch = make_batch(env)
+    no_teacher = updated_policy(student, batch, None, 0.0)
+    zero_coef = updated_policy(student, batch, teacher.as_teacher(), 0.0)
+    distilled = updated_policy(student, batch, teacher.as_teacher(), 0.5)
+    assert max_abs_diff(zero_coef, no_teacher) < 1e-5
+    assert max_abs_diff(distilled, no_teacher) > 1e-3

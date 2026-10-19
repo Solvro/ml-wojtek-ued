@@ -60,6 +60,7 @@ from brax.training import types
 from brax.training.acme import running_statistics, specs
 from brax.training.agents.ppo import losses as ppo_losses
 from brax.training.agents.ppo import networks as ppo_networks
+from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
 
 from config.hfield_config import HFieldConfig
@@ -191,10 +192,13 @@ def make_network(env: FunctionalEnv) -> ppo_networks.PPONetworks:
     )
 
 
+Normalizer = running_statistics.RunningStatisticsState
+
+
 class Student:
     """brax PPO networks, optimizer and jitted unroll / update / regret."""
 
-    def __init__(self, env: FunctionalEnv, key: jax.Array, entropy_coef: float):
+    def __init__(self, env: FunctionalEnv, key: jax.Array, entropy_coef: float) -> None:
         obs_size = env.observation_size
         self.entropy_coef = entropy_coef
         self.network = make_network(env)
@@ -227,11 +231,26 @@ class Student:
     def as_teacher(self) -> Teacher:
         return (self.normalizer, self.params.policy)
 
-    def _bc_kl(self, policy_params, normalizer, teacher, observation):
+    def _bc_kl(
+        self,
+        policy_params: Any,
+        normalizer: Normalizer,
+        teacher: Teacher,
+        observation: Any,
+    ) -> jax.Array:
         kl = policy_kl(self.network, normalizer, policy_params, teacher, observation)
         return kl.mean()
 
-    def _loss(self, params, normalizer, data, key, *, teacher, bc_coef):
+    def _loss(
+        self,
+        params: ppo_losses.PPONetworkParams,
+        normalizer: Normalizer,
+        data: types.Transition,
+        key: jax.Array,
+        *,
+        teacher: Teacher | None,
+        bc_coef: jax.Array,
+    ) -> tuple[jax.Array, types.Metrics]:
         loss, metrics = ppo_losses.compute_ppo_loss(
             params,
             normalizer,
@@ -248,7 +267,17 @@ class Student:
         kl = self._bc_kl(params.policy, normalizer, teacher, data.observation)
         return loss + bc_coef * kl, metrics
 
-    def _update(self, params, opt_state, normalizer, data, key, *, teacher, bc_coef):
+    def _update(
+        self,
+        params: ppo_losses.PPONetworkParams,
+        opt_state: optax.OptState,
+        normalizer: Normalizer,
+        data: types.Transition,
+        key: jax.Array,
+        *,
+        teacher: Teacher | None,
+        bc_coef: jax.Array,
+    ) -> tuple[ppo_losses.PPONetworkParams, optax.OptState, Normalizer, types.Metrics]:
         """One PPO update; a `teacher` (None unless this student distils)
         adds `bc_coef * KL(teacher || student)` on the batch observations."""
         normalizer = running_statistics.update(normalizer, data.observation)
@@ -279,7 +308,12 @@ class Student:
         )
         return params, opt_state, normalizer, jax.tree.map(jnp.mean, metrics)
 
-    def _regret(self, params, normalizer, data):
+    def _regret(
+        self,
+        params: ppo_losses.PPONetworkParams,
+        normalizer: Normalizer,
+        data: types.Transition,
+    ) -> jax.Array:
         value_apply = self.network.value_network.apply
         data = jax.tree.map(lambda x: jnp.swapaxes(x, 0, 1), data)
         values = value_apply(normalizer, params.value, data.observation)
@@ -789,7 +823,8 @@ def build(cfg: TrainConfig) -> dict[str, Any]:
 
 @hydra.main(config_path=CONF_DIR, config_name="train", version_base="1.3")
 def main(dict_cfg: DictConfig) -> None:
-    train(to_dataclass(dict_cfg, TrainConfig))
+    mode_name = HydraConfig.get().runtime.choices["mode"]
+    train(to_dataclass(dict_cfg, TrainConfig), mode_name)
 
 
 def check_config(cfg: TrainConfig) -> None:
@@ -814,14 +849,14 @@ def check_config(cfg: TrainConfig) -> None:
         )
 
 
-def train(cfg: TrainConfig) -> None:
+def train(cfg: TrainConfig, mode_name: str) -> None:
     check_config(cfg)
     launch = time.time()
     run = wandb.init(
         entity=cfg.entity or None,
         project=cfg.project,
         name=cfg.name,
-        tags=["brax-ued", cfg.mode.curriculum, cfg.robot.name, *cfg.tags],
+        tags=["brax-ued", mode_name, cfg.robot.name, *cfg.tags],
         config={**as_dict(cfg), "ppo": PPO},
     )
     ctx = build(cfg)
