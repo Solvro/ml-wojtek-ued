@@ -9,9 +9,9 @@ repeated here.
 - **Research code goes in sibling packages under `src/`** — `config/`,
   `env/`, `robots/`, `hfield/`, `training/`, `evaluation/`, `rendering/`,
   `paper/`, `diagnostics/`, `scripts/` ([overview](overview.md#repo-map)).
-  Never add files inside
-  `src/wojtek_env/`; it is the extracted env library and is ruff-excluded and
-  hatchling-packaged (`packages = ["src/wojtek_env"]`).
+  Never add files inside `src/wojtek_env/`; it is the extracted env library
+  and is ruff-excluded and hatchling-packaged
+  (`packages = ["src/wojtek_env"]`).
 - **Namespace packages** — research code has no `__init__.py`. Imports are
   top-level and absolute (`from hfield.tiles import ...`), resolved via
   `PYTHONPATH=src` (exported by the `justfile`).
@@ -57,8 +57,7 @@ of those pins.
 `just lint` covers ruff only; run `ty check` (static types) manually per the
 global convention. Tests live in `tests/`, mirroring `src/`
 (`tests/evaluation/test_sim2sim.py` for `evaluation/sim2sim.py`);
-`uv run pytest -q` (pyproject sets
-`pythonpath = ["src"]`).
+`uv run pytest -q` (pyproject sets `pythonpath = ["src"]`).
 - `@pytest.mark.slow` = end-to-end CPU training runs (the PAIRED variant
   smoke runs in `tests/training/test_train.py`, ~3-6 min each, sharing a
   jax compile cache), deselected by default;
