@@ -2,8 +2,8 @@
 
 The research core: an adversarial curriculum that generates and replays
 heightfield levels to train the student. Two halves: the **heightfield levels**
-(`src/hfield/`) and the trainer that runs the curriculum,
-`scripts/brax_ued.py` ([below](#brax-ued)).
+(`src/hfield/`) and the trainer that runs the curriculum, `src/training/`
+(entry point `scripts/brax_ued.py`, [below](#brax-ued)).
 
 ## Level representation {#level-representation}
 
@@ -73,6 +73,9 @@ per-iteration levels are assembled into this arena's `hfield_data` at
 rollout time; the static asset just fixes the compile-time envelope.
 
 ## DR vs ACCEL on brax PPO — `scripts/brax_ued.py` {#brax-ued}
+
+Code: `src/training/` (`student.py`, `iteration.py` = one outer iteration,
+`curricula.py` = the modes below, `train.py` = the loop and logging).
 
 `just train mode=<option> name=<run> [overrides]` (`conf/train.yaml`;
 every field: [configuration.md](configuration.md)).
@@ -177,11 +180,11 @@ each with its own params, optimizer and running obs normalizer. Port of
 PAIRED+Evo is `mode=paired_evo mode.bc=uni|bi`. `mode.bc` on a one-student
 curriculum (`dr*`, `accel`, `plr`) fails at startup.
 
-- **PAIRED regret** (`modules/paired.py:paired_regret`), per level over its
+- **PAIRED regret** (`training/paired.py:paired_regret`), per level over its
   `envs_per_lane` episodes: `max(antag max return - prot mean return, 0)`.
   Both students run the same levels in separate rollouts (own reset keys
   and physics DR draws), protagonist first.
-- **Adversary** (`mode=paired*`): `modules/generator.py`, latent seed ->
+- **Adversary** (`mode=paired*`): `training/adversary.py` + `training/generator.py`, latent seed ->
   sigmoid-squashed Gaussian over the genome (`param`: the 8 parameters, a
   random seed appended), `num_lanes` levels per iteration; reward = PAIRED
   regret; single-step PPO, 5 epochs, clip 0.2, batch-mean baseline,
@@ -197,7 +200,7 @@ curriculum (`dr*`, `accel`, `plr`) fails at startup.
     the protagonist as this iteration's updates left it (it trains first).
   - Teacher = the other student's policy params and its own normalizer
     (`Student.as_teacher`), fixed during the student's iteration.
-  - KL (`modules/paired.py:policy_kl`): brax's `NormalTanhDistribution`
+  - KL (`training/paired.py:policy_kl`): brax's `NormalTanhDistribution`
     turns the policy logits into `loc`, `softplus(raw) + 0.001`; both
     students push the Gaussian through the same tanh, and KL is invariant
     under a shared bijection, so the closed-form diagonal-Gaussian KL of
@@ -236,7 +239,8 @@ curriculum (`dr*`, `accel`, `plr`) fails at startup.
 
 ## Throughput {#throughput}
 
-H100, 8192 envs (256 lanes x 32), `scripts/profile_brax_ued.py`; full
+H100, 8192 envs (256 lanes x 32), `scripts/profile_brax_ued.py`
+(`diagnostics/throughput.py`); full
 numbers and the old loop's profile in `experiments/tiled-arena/report.md`.
 
 - v10 loop (jax, per-env hfield swap): 12.9k env steps/s, ~9.7k end to
@@ -378,6 +382,9 @@ Per robot:
 
 ## Final eval — `scripts/eval_brax.py` {#eval-brax}
 
+Code: `src/evaluation/final_eval.py` (sets, metrics), `suite.py`, `stats.py`,
+`rollout.py`.
+
 `just eval checkpoint=<run>.pkl name=<run>_final_eval out_dir=<dir>`
 (`conf/eval.yaml`; pass the run's `robot`, `level_space`, `arena`).
 Loads a `brax_ued.py` checkpoint, deterministic
@@ -424,6 +431,9 @@ on).
   as `brax_ued.sbatch`).
 
 ## Sim2sim — `scripts/eval_sim2sim.py` {#sim2sim}
+
+Code: `src/evaluation/sim2sim.py` (sets, metrics), `cpu_physics.py`,
+`physics_variants.py`.
 
 Transfer test in place of sim2real: the MJX-trained policy, physics stepped
 by CPU MuJoCo under several model/solver variants. Same checkpoint loading,
@@ -517,6 +527,8 @@ network and deterministic policy as eval_brax; no physics DR.
 
 ## Demo videos — `scripts/render_video.py` {#render-video}
 
+Code: `src/rendering/video.py`, `scene.py`.
+
 mp4 clips of a `brax_ued.py` checkpoint walking generated levels, for demos
 (not an eval: no metrics beyond a printed fall time and travel per clip).
 
@@ -570,6 +582,8 @@ just render-video checkpoint=artifacts/checkpoints/<run>.pkl \
 
 ## Paper tables — `scripts/paper_tables.py` {#paper-tables}
 
+Code: `src/paper/tables.py`, `runs.py` (loading, solvable subset), `latex.py`.
+
 Builds the workshop paper's tables from `eval_brax.py` outputs
 (`<prefix>_<method>_seed<k>_final_eval.{json,npz}`); bare booktabs
 `tabular`s; the paper (on Overleaf) owns float, caption and label.
@@ -604,6 +618,8 @@ just paper-tables eval_dir=<evals> prefixes.wojtek=v10_wojtek \
 
 ## Paper figures — `scripts/paper_figures.py` {#paper-figures}
 
+Code: `src/paper/figures.py`, `terrains.py`.
+
 ```sh
 just paper-figures dump_history=history.json \
   prefixes.wojtek=v10_wojtek prefixes.go1=v10_go1
@@ -619,7 +635,7 @@ JAX_PLATFORMS=cpu just paper-figures terrains=true
   min-max band.
 - `composition.pdf`: mean physical value of the magnitude parameters and
   genome distance among training levels, Wojtek units, running mean over 9 points.
-- `terrains.pdf` / `robots.pdf` (`scripts/paper_terrains.py`): offscreen MuJoCo
+- `terrains.pdf` / `robots.pdf` (`paper/terrains.py`): offscreen MuJoCo
   renders of one level per feature at full strength plus uniform samples, and
   both robots on one shared genome. Needs the built assets (`just build`,
   `just build-accel-arena`); the recipe sets `MUJOCO_GL` as `render-video`

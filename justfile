@@ -1,5 +1,5 @@
 export PYTHONPATH := "src"
-# warp (sim.backend auto on a GPU) allocates outside JAX's pool; utils/env.py
+# warp (sim.backend auto on a GPU) allocates outside JAX's pool; env/warp.py
 # refuses warp without this
 export XLA_PYTHON_CLIENT_PREALLOCATE := "false"
 
