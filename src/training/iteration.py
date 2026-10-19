@@ -1,4 +1,3 @@
-import dataclasses
 from typing import Any
 
 import jax
@@ -14,24 +13,16 @@ from training.ppo import PPO
 from training.student import Student
 
 
-@dataclasses.dataclass
 class LaneTotals:
     """Per-env sums over one iteration's unrolls."""
 
-    n: int
-    regret: jax.Array = dataclasses.field(init=False)
-    episode_return: jax.Array = dataclasses.field(init=False)
-    fell_any: jax.Array = dataclasses.field(init=False)
-    leaked: jax.Array = dataclasses.field(init=False)
-    bc_kl: jax.Array = dataclasses.field(init=False)
-    logs: list[dict[str, jax.Array]] = dataclasses.field(default_factory=list)
-
-    def __post_init__(self) -> None:
-        self.regret = jnp.zeros(self.n)
-        self.episode_return = jnp.zeros(self.n)
-        self.fell_any = jnp.zeros(self.n)
-        self.leaked = jnp.zeros(self.n, bool)
+    def __init__(self, n: int) -> None:
+        self.regret = jnp.zeros(n)
+        self.episode_return = jnp.zeros(n)
+        self.fell_any = jnp.zeros(n)
+        self.leaked = jnp.zeros(n, bool)
         self.bc_kl = jnp.zeros(())
+        self.logs: list[dict[str, jax.Array]] = []
 
     def add(self, data: types.Transition, leaked: jax.Array) -> None:
         log = data.extras["log"]
