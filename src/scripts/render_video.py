@@ -24,7 +24,6 @@ import mujoco
 import numpy as np
 from brax.io import model as brax_model
 from brax.training.agents.ppo import networks as ppo_networks
-from mujoco_playground._src.locomotion.go1 import base as go1_base
 from omegaconf import DictConfig
 
 from config.hfield_config import HFieldConfig
@@ -32,7 +31,7 @@ from config.schema import CONF_DIR, RenderConfig, to_dataclass
 from hfield.arena import single_tile, single_tile_spec
 from hfield.level_space import make_level_space
 from hfield.tiles import TileLayout
-from robots.go1 import Go1Terrain, scene_xml
+from robots.terrain import TerrainRobot
 from scripts.brax_ued import (
     ROBOT_SCALE,
     check_wojtek_arena,
@@ -78,6 +77,9 @@ def hold_command(info: dict[str, Any], command: jax.Array) -> dict[str, Any]:
         # stops Go1 resampling when its countdown reaches 0
         counter = held["steps_until_next_cmd"]
         held["steps_until_next_cmd"] = jnp.full_like(counter, 2**30)
+    if "step" in held:
+        # Barkour and Spot resample (Barkour also kicks) off this counter
+        held["step"] = jnp.zeros_like(held["step"])
     return held
 
 
@@ -114,9 +116,9 @@ def make_rollout(
 def render_model(base: Any, config: HFieldConfig) -> Any:
     """The env's scene with its arena cut to one tile, the level at the
     origin (`single_tile`)."""
-    if isinstance(base, Go1Terrain):
-        xml = scene_xml(single_tile(config))
-        return mj.MjModel.from_xml_string(xml, assets=go1_base.get_assets())
+    if isinstance(base, TerrainRobot):
+        xml = base.scene_xml(single_tile(config))
+        return mj.MjModel.from_xml_string(xml, assets=base.assets())
     return single_tile_spec(Path(base._terrain.files["scene"]), config).compile()
 
 

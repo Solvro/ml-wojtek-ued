@@ -43,7 +43,7 @@ GROUPS = {
     "paper_figures": ("arena",),
 }
 OPTIONS = {
-    "robot": ("wojtek", "go1"),
+    "robot": ("wojtek", "go1", "barkour", "spot", "go2"),
     "mode": (
         "dr",
         "dr_easy",
@@ -211,7 +211,13 @@ def test_lists_from_the_command_line(compose_cfg: Compose) -> None:
 
 def test_paper_prefixes_per_robot(compose_cfg: Compose) -> None:
     cfg = compose_cfg("paper_tables", "prefixes.go1=v10_go1")
-    assert cfg.prefixes == {Robot.wojtek: None, Robot.go1: "v10_go1"}
+    assert cfg.prefixes == {
+        Robot.wojtek: None,
+        Robot.go1: "v10_go1",
+        Robot.barkour: None,
+        Robot.spot: None,
+        Robot.go2: None,
+    }
 
 
 def test_as_dict_writes_enums_as_strings(compose_cfg: Compose) -> None:
@@ -239,8 +245,8 @@ def test_typos_fail_at_startup(compose_cfg: Compose, overrides: tuple[str]) -> N
 
 
 def test_unknown_group_option_fails(compose_cfg: Compose) -> None:
-    with pytest.raises(MissingConfigException, match="go2"):
-        compose_cfg("train", "mode=dr", "name=t", "robot=go2")
+    with pytest.raises(MissingConfigException, match="anymal"):
+        compose_cfg("train", "mode=dr", "name=t", "robot=anymal")
 
 
 def test_mode_is_required(compose_cfg: Compose) -> None:

@@ -45,7 +45,13 @@ from scripts.eval_brax import AXES
 
 ENTITY = "dominikgalus9-wroc-aw-university-of-science-and-technology"
 PROJECT = "wojtyla"
-ROBOT_LABEL = {"wojtek": "W01-TEK", "go1": "Go1"}
+ROBOT_LABEL = {
+    "wojtek": "W01-TEK",
+    "go1": "Go1",
+    "barkour": "Barkour vB",
+    "spot": "Spot",
+    "go2": "Go2",
+}
 MIN_TRAVEL_M = 1.0  # eval_brax.py min_travel, at Wojtek's size
 METHODS = {
     "dr": "DR",

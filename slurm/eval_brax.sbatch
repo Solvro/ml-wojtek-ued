@@ -31,7 +31,7 @@ NSEEDS="${NSEEDS:-3}"
 MODE="${MODES[$((SLURM_ARRAY_TASK_ID / NSEEDS))]}"
 SEED=$((${SEED0:-0} + SLURM_ARRAY_TASK_ID % NSEEDS))
 PREFIX="${PREFIX:-v7_brax}"
-# ROBOT=go1 runs Playground's Go1 at its size (robots/go1.py)
+# ROBOT=go1|barkour|spot|go2 runs a Playground robot at its size (robots/)
 ROBOT="${ROBOT:-wojtek}"
 # BACKEND: auto (warp on the GPU) | jax | warp; TAGS: extra wandb tags
 read -ra TAG_LIST <<<"${TAGS:-}"

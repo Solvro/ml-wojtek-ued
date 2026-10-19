@@ -48,7 +48,6 @@ from brax.io import model as brax_model
 from brax.training.agents.ppo import networks as ppo_networks
 from mujoco import mjx
 from mujoco_playground._src import mjx_env
-from mujoco_playground._src.locomotion.go1 import base as go1_base
 from omegaconf import DictConfig
 
 from config.hfield_config import HFieldConfig
@@ -62,7 +61,7 @@ from config.schema import (
 )
 from hfield.level_space import make_level_space
 from hfield.tiles import TileLayout
-from robots.go1 import Go1Terrain, scene_xml
+from robots.terrain import TerrainRobot
 from scripts.brax_ued import (
     ROBOT_SCALE,
     check_wojtek_arena,
@@ -188,12 +187,17 @@ def copy_tuning(train: mujoco.MjModel, m: mujoco.MjModel) -> mujoco.MjModel:
 
 
 def full_collision(model: mujoco.MjModel, base: Any) -> mujoco.MjModel:
-    if isinstance(base, Go1Terrain):
-        # Playground's full-collision Go1 (capsule/cylinder links, trunk)
-        xml = scene_xml(base._hfield_config).replace(
-            "go1_mjx_feetonly.xml", "go1_mjx_fullcollisions.xml"
-        )
-        m = mujoco.MjModel.from_xml_string(xml, assets=go1_base.get_assets())
+    if isinstance(base, TerrainRobot):
+        if base.FULL_COLLISION is None:
+            raise ValueError(
+                f"{type(base).__name__} has no full-collision model, so "
+                "eval_sim2sim cannot run its full_collision variant; use "
+                "robot=wojtek, go1 or spot"
+            )
+        # Playground's full-collision model (capsule/cylinder links, trunk)
+        feet_only, full = base.FULL_COLLISION
+        xml = base.scene_xml(base._hfield_config).replace(feet_only, full)
+        m = mujoco.MjModel.from_xml_string(xml, assets=base.assets())
         return copy_tuning(model, m)
     scene = Path(base._terrain.files["scene"])
     return copy_tuning(model, wojtek_full_collision_spec(scene).compile())

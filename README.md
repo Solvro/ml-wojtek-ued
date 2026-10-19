@@ -35,6 +35,17 @@ Every entry point is configured by Hydra from `conf/` (overrides
 `key=value` / `group=option`, e.g. `robot=go1 mode=accel_sfl
 level_space=param seed=1`); see [configuration.md](docs/configuration.md).
 
+Robots (`robot=`): Wojtek (default) and Playground quadrupeds on the same tiled
+arena, each at its own size (`SCALE` = standing trunk height / 0.10 m):
+
+| `robot=` | model | `SCALE` | DR |
+|---|---|---|---|
+| `wojtek` | W01-TEK | 1.0 | `wojtek_env` |
+| `go1` | Unitree Go1 | 2.5 | Playground |
+| `barkour` | Google Barkour vB | 2.4 | off |
+| `spot` | Boston Dynamics Spot | 4.3 | off |
+| `go2` | Unitree Go2 (Go1's env) | 2.5 | Go1's |
+
 Cluster launchers: `slurm/*.sbatch` (see [ued-accel.md](docs/ued-accel.md#brax-ued)).
 
 ## Justfile recipes
