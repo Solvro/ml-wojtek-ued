@@ -113,8 +113,8 @@ def load_dump(path: Path, level_set: str) -> Dump:
         )
         raise KeyError(
             f"{path} lacks {missing} for level_set={level_set}; "
-            f"per-level sets in it: {sets}. Pre-v10 dumps lack _travel and "
-            "the level genomes: rerun eval_brax.py"
+            f"per-level sets in it: {sets}. param_uniform needs a "
+            "level_space=param eval_brax.py run"
         )
     return Dump(path, raw[keys[0]], raw[keys[1]], raw[keys[2]])
 

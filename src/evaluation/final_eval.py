@@ -226,7 +226,7 @@ def evaluate(ctx: EvalContext[EvalConfig]) -> tuple[Metrics, Raw]:
         param_metrics, param_raw = param_space_sets(ctx, space, key)
         metrics.update(param_metrics)
         raw.update(param_raw)
-    # own streams, so the sets above keep the levels and keys they had in v8
+    # own streams, so the flat set does not shift the sets above
     flat = space.scaled(
         np.random.default_rng(cfg.seed), cfg.suite_instances, 0.0
     )

@@ -226,12 +226,11 @@ def check_arena(spec_path: Path, config: HFieldConfig, kind: str) -> None:
     if not spec_path.exists():
         raise FileNotFoundError(f"no {kind} arena at {spec_path}; {rebuild}")
     spec = json.loads(spec_path.read_text())
-    # a single-level arena from before the tiled layout has no tile_layout
-    layout = spec.get("tile_layout", {})
+    layout = spec["tile_layout"]
     built = {
         "pad_radius": spec["pad_radius"],
         "amplitude": spec["hfield"]["elevation_z"] / 2,
-        **{k: layout.get(k) for k in ("tiles", "level_grid", "gap")},
+        **{k: layout[k] for k in ("tiles", "level_grid", "gap")},
     }
     wanted = {
         "pad_radius": config.pad_radius,
@@ -239,9 +238,7 @@ def check_arena(spec_path: Path, config: HFieldConfig, kind: str) -> None:
         **tile_layout(config),
     }
     # amplitude sets the hfield's height scale: a mismatch runs silently
-    if not all(
-        built[k] is not None and np.isclose(built[k], wanted[k]) for k in wanted
-    ):
+    if not all(np.isclose(built[k], wanted[k]) for k in wanted):
         raise ValueError(
             f"the {kind} arena at {spec_path} was built with {built}, this "
             f"run needs {wanted}; re{rebuild}"

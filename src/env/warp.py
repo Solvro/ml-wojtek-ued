@@ -7,7 +7,7 @@ WARP_GRAPH_CACHE = 4
 def configure_warp() -> None:
     require_warp_memory()
     # a CUDA graph (GBs of scratch) per buffer-address set; our separate jitted
-    # calls pass new addresses, so the default cache ran OOM (job 6110159);
+    # calls pass new addresses, so the default cache runs out of memory;
     # the setting has no public import path, only mjx's vendored warp
     from mujoco.mjx.third_party.warp._src.jax_experimental import ffi
 

@@ -38,7 +38,7 @@ def run_prefixes(prefixes: dict[Robot, str | None]) -> dict[str, str]:
     if not chosen:
         raise ValueError(
             "no run prefix set; pass prefixes.<robot>=<prefix>, e.g. "
-            "prefixes.wojtek=v10_wojtek prefixes.go1=v10_go1"
+            "prefixes.wojtek=ued_wojtek prefixes.go1=ued_go1"
         )
     return chosen
 
@@ -89,11 +89,12 @@ def add_solvable(runs: list[Run]) -> None:
     selected on one pass, scored on the other, both ways."""
     robot = runs[0].robot
     needed = {"param_uniform_fell", "param_uniform_travel"}
-    old = [r for r in runs if not needed <= r.raw.keys()]
-    if old:
+    lacking = [r for r in runs if not needed <= r.raw.keys()]
+    if lacking:
         warnings.warn(
-            f"{robot}: {len(old)}/{len(runs)} runs lack param_uniform_travel "
-            "(pre-v10 eval); solvable-subset success left as --"
+            f"{robot}: {len(lacking)}/{len(runs)} runs lack "
+            "param_uniform_travel (not a level_space=param eval); "
+            "solvable-subset success left as --"
         )
         return
     check_same_levels(runs)
