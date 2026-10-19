@@ -33,7 +33,7 @@ final eval, then the domination comparison, tables and figures.
 
 - Linux x86_64, one NVIDIA GPU per run with a CUDA 12 driver (H100 used);
   macOS installs CPU jax only (tests, CPU smoke runs, figures).
-- Python 3.12 (`requires-python >=3.11,<3.13`), [uv](https://docs.astral.sh/uv/),
+- Python 3.12, pinned in `.python-version` (`requires-python >=3.11,<3.13`), [uv](https://docs.astral.sh/uv/),
   [just](https://just.systems/), `ffmpeg` for videos.
 - Exact versions from `uv.lock` (jax/jaxlib 0.9.2 + `jax[cuda12]`,
   mujoco 3.11.0, mujoco-mjx 3.10.0, warp-lang 1.13.0, brax 0.14.2,
