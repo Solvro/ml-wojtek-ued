@@ -64,7 +64,6 @@ from hfield.level_space import make_level_space
 from hfield.tiles import TileLayout
 from robots.scale import ROBOT_SCALE, hfield_config, min_travel
 from robots.terrain import TerrainRobot
-from scripts.brax_ued import make_network, make_unroll
 from scripts.eval_brax import (
     SUITE_STRENGTHS,
     SUITE_TERRAINS,
@@ -73,6 +72,8 @@ from scripts.eval_brax import (
     rollout,
     suite_hfield,
 )
+from training.ppo import make_network
+from training.unroll import make_unroll
 from wojtek_env.envs.base import WojtekEnv
 
 # eval_brax's default num_levels; param/uniform is a prefix of its draw

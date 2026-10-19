@@ -1,0 +1,134 @@
+import dataclasses
+from typing import Any
+
+import jax
+import jax.numpy as jnp
+import numpy as np
+from brax.training import types
+
+from config.schema import Score
+from hfield.level_space import mean_abs_height
+from robots.scale import min_travel
+from training.context import TrainContext
+from training.ppo import PPO
+from training.student import Student
+
+
+@dataclasses.dataclass
+class LaneTotals:
+    """Per-env sums over one iteration's unrolls."""
+
+    n: int
+    regret: jax.Array = dataclasses.field(init=False)
+    episode_return: jax.Array = dataclasses.field(init=False)
+    fell_any: jax.Array = dataclasses.field(init=False)
+    leaked: jax.Array = dataclasses.field(init=False)
+    bc_kl: jax.Array = dataclasses.field(init=False)
+    logs: list[dict[str, jax.Array]] = dataclasses.field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.regret = jnp.zeros(self.n)
+        self.episode_return = jnp.zeros(self.n)
+        self.fell_any = jnp.zeros(self.n)
+        self.leaked = jnp.zeros(self.n, bool)
+        self.bc_kl = jnp.zeros(())
+
+    def add(self, data: types.Transition, leaked: jax.Array) -> None:
+        log = data.extras["log"]
+        self.episode_return = self.episode_return + data.reward.sum(axis=1)
+        self.fell_any = jnp.maximum(self.fell_any, log["fell"].max(axis=1))
+        self.leaked = self.leaked | leaked.any(axis=1)
+        self.logs.append(jax.tree.map(jnp.mean, log))
+
+
+def run_levels(
+    ctx: TrainContext,
+    levels: np.ndarray,
+    train: bool,
+    *,
+    student: Student | None = None,
+    teacher: Student | None = None,
+    bc_coef: float | None = None,
+) -> dict[str, Any]:
+    """One outer iteration, level i on tile i (one lane each); a PPO update
+    after every unroll when training. With a `teacher` (PAIRED), `bc_kl` =
+    mean KL(teacher || student) over the observations; a `bc_coef` (0 on
+    off-iterations) also adds `bc_coef` x that KL to every update."""
+    env, cfg = ctx.env, ctx.cfg
+    student = student or ctx.student
+    ref = teacher.as_teacher() if teacher else None
+    loss_ref = None if bc_coef is None else ref
+    key = ctx.next_key()
+    rendered = ctx.space.render(levels)
+    hfield = ctx.assemble(jnp.asarray(rendered))
+    tile_xy = ctx.layout.tile_xy(cfg.num_lanes, cfg.envs_per_lane)
+    n = cfg.num_lanes * cfg.envs_per_lane
+    dr_model, _ = env.sample_dr(ctx.next_key(), n)
+    _, state = ctx.reset(jax.random.split(key, n), hfield, dr_model, tile_xy)
+    start_xy = state.data.qpos[:, :2]
+    totals = LaneTotals(n)
+    unrolls = cfg.level_steps // PPO["unroll_length"]
+    for _ in range(unrolls):
+        state, data = ctx.unroll(
+            student.inference_params(),
+            state,
+            ctx.next_key(),
+            hfield,
+            dr_model,
+            deterministic=False,
+            length=PPO["unroll_length"],
+        )
+        if train:
+            student.train_step(data, ctx.next_key(), loss_ref, bc_coef)
+        if ref is not None:
+            totals.bc_kl = totals.bc_kl + student.bc_kl(
+                student.params.policy,
+                student.normalizer,
+                ref,
+                data.observation,
+            )
+        totals.regret = totals.regret + student.regret(
+            student.params, student.normalizer, data
+        )
+        xy = data.extras["log"]["xy"]
+        sensing = env.travel.sensing
+        totals.add(data, ctx.layout.leaked(xy, tile_xy[:, None], sensing))
+    travel = jnp.linalg.norm(state.data.qpos[:, :2] - start_xy, axis=-1)
+    out = summarize_lanes(ctx, totals, travel, unrolls)
+    out["lane_roughness"] = mean_abs_height(ctx.space.config, rendered)
+    out["levels"] = levels
+    if ref is not None:
+        out["bc_kl"] = float(totals.bc_kl) / unrolls
+    return out
+
+
+def summarize_lanes(
+    ctx: TrainContext, totals: LaneTotals, travel: jax.Array, unrolls: int
+) -> dict[str, Any]:
+    cfg = ctx.cfg
+    lanes = cfg.num_lanes
+    lane_regret = np.asarray(totals.regret.reshape(lanes, -1).mean(axis=1))
+    lane_returns = np.asarray(totals.episode_return.reshape(lanes, -1))
+    threshold = min_travel(cfg.robot.name, cfg.min_travel)
+    success = np.asarray((totals.fell_any == 0) & (travel >= threshold), dtype=float)
+    lane_success = success.reshape(lanes, -1).mean(axis=1)
+    lane_regret = lane_regret / unrolls
+    # SFL learnability: highest where the student sometimes succeeds
+    learnability = lane_success * (1.0 - lane_success)
+    log = jax.tree.map(lambda *x: float(np.mean(x)), *totals.logs)
+    use_learnability = cfg.mode.score == Score.learnability
+    return {
+        "regret": lane_regret,
+        "score": learnability if use_learnability else lane_regret,
+        "lane_returns": lane_returns,
+        "train_success": float(success.mean()),
+        "learnability_mean": float(learnability.mean()),
+        "falls_per_step": log["fell"],
+        "diverged_per_step": log["diverged"],
+        "reward_per_step": log["reward"],
+        "cmd_vx": log["cmd_vx"],
+        "forward_vel": log["forward_vel"],
+        "travel": float(travel.mean()),
+        # envs whose feet or height scan reached another lane's level
+        "tile_leak_frac": float(totals.leaked.mean()),
+    }

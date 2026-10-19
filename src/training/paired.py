@@ -5,6 +5,8 @@ import jax.numpy as jnp
 import numpy as np
 from brax.training.agents.ppo import networks as ppo_networks
 
+from config.schema import BC, ModeConfig
+
 # a BC teacher as one student's (running obs normalizer, policy params)
 Teacher = tuple[Any, Any]
 
@@ -43,3 +45,12 @@ def policy_kl(
     teacher_normalizer, teacher_policy = jax.lax.stop_gradient(teacher)
     ref = dist.create_dist(apply(teacher_normalizer, teacher_policy, observation))
     return gaussian_kl(ref.loc, ref.scale, student.loc, student.scale)
+
+
+def bc_coefs(mode: ModeConfig, it: int) -> tuple[float | None, float | None]:
+    """(protagonist, antagonist) BC weight this iteration, None for a
+    student that never distils: UniBC distils the protagonist from the
+    antagonist, BiBC also the other way round."""
+    weight = 0.0 if it % mode.bc_every else mode.bc_coef
+    prot = None if mode.bc == BC.none else weight
+    return prot, weight if mode.bc == BC.bi else None

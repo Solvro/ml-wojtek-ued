@@ -1,5 +1,6 @@
 import math
 from collections.abc import Callable
+from typing import Any
 
 import distrax
 import equinox as eqx
@@ -8,14 +9,8 @@ import jax.numpy as jnp
 
 
 class LevelGenerator(eqx.Module):
-    """The PAIRED learned adversary.
-
-    The policy is a diagonal Gaussian over the level genome (`shape`),
-    squashed through a Sigmoid bijector into [0, 1] (a distrax
-    Transformed distribution).
-    Reward is the PAIRED regret, the generator is trained with single-step PPO
-    plus a high entropy bonus.
-    """
+    """PAIRED's adversary policy: a diagonal Gaussian over the level genome
+    (`shape`), squashed into [0, 1] by a sigmoid."""
 
     activation_func: Callable = eqx.field(static=True)
     trunk: eqx.nn.Sequential
@@ -35,7 +30,8 @@ class LevelGenerator(eqx.Module):
         out_dim = math.prod(self.shape)
 
         k1, k2, k3 = jax.random.split(key, 3)
-        self.activation_func = jax.nn.relu if activation == "relu" else jax.nn.tanh
+        relu = activation == "relu"
+        self.activation_func = jax.nn.relu if relu else jax.nn.tanh
 
         self.trunk = eqx.nn.Sequential(
             [
@@ -56,16 +52,18 @@ class LevelGenerator(eqx.Module):
         bijector = distrax.Block(distrax.Sigmoid(), ndims=1)
         return distrax.Transformed(distribution=base, bijector=bijector)
 
-    def __call__(self, z: jax.Array, key: jax.Array):
-        """Sample a level. Returns (theta, log_prob, entropy)"""
+    def __call__(
+        self, z: jax.Array, key: jax.Array
+    ) -> tuple[Any, Any, Any]:
+        """A sampled level: (theta, log_prob, entropy estimate)."""
         pi = self.distribution(z)
         flat = pi.sample(seed=key)
         log_prob = pi.log_prob(flat)
         theta = flat.reshape(self.shape)
         return theta, log_prob, -1 * log_prob
 
-    def evaluate(self, z: jax.Array, theta: jax.Array):
-        """Score a previously sampled theta under the current policy."""
+    def evaluate(self, z: jax.Array, theta: jax.Array) -> tuple[Any, Any]:
+        """(log_prob, entropy estimate) of a sampled `theta` now."""
         pi = self.distribution(z)
         log_prob = pi.log_prob(theta.reshape(-1))
         return log_prob, -1 * log_prob

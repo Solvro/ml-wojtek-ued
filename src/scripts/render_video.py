@@ -35,7 +35,7 @@ from hfield.level_space import make_level_space
 from hfield.tiles import TileLayout
 from robots.scale import ROBOT_SCALE, hfield_config
 from robots.terrain import TerrainRobot
-from scripts.brax_ued import make_network
+from training.ppo import make_network
 
 # mujoco is a C extension that ty cannot introspect
 mj: Any = mujoco

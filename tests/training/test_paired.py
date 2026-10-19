@@ -8,7 +8,8 @@ import pytest
 from brax.training.acme import running_statistics, specs
 from brax.training.agents.ppo import networks as ppo_networks
 
-from modules.paired import gaussian_kl, paired_regret, policy_kl
+from config.schema import BC, ModeConfig
+from training.paired import bc_coefs, gaussian_kl, paired_regret, policy_kl
 
 OBS, ACTIONS = 5, 3
 
@@ -116,3 +117,25 @@ def test_paired_regret_uses_the_antagonist_best_episode() -> None:
     prot = np.zeros((1, 4))
     antag = np.array([[-5.0, -5.0, -5.0, 0.5]])
     assert paired_regret(prot, antag) == pytest.approx([0.5])
+
+
+def mode(bc: BC, bc_every: int = 1) -> ModeConfig:
+    return ModeConfig(bc=bc, bc_coef=0.5, bc_every=bc_every)
+
+
+@pytest.mark.parametrize(
+    ("bc", "it", "expected"),
+    [
+        (BC.none, 0, (None, None)),
+        (BC.uni, 0, (0.5, None)),
+        (BC.bi, 0, (0.5, 0.5)),
+        (BC.bi, 3, (0.5, 0.5)),
+    ],
+)
+def test_bc_coefs_per_variant(bc: BC, it: int, expected: tuple) -> None:
+    assert bc_coefs(mode(bc), it) == expected
+
+
+def test_bc_coefs_zero_between_distillation_iterations() -> None:
+    assert bc_coefs(mode(BC.bi, bc_every=3), 4) == (0.0, 0.0)
+    assert bc_coefs(mode(BC.uni, bc_every=3), 6) == (0.5, None)

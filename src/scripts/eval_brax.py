@@ -59,7 +59,8 @@ from env.factory import check_wojtek_arena, make_env
 from hfield.level_space import PARAMS, ParamSpace, make_level_space
 from hfield.tiles import TileLayout
 from robots.scale import ROBOT_SCALE, hfield_config, min_travel
-from scripts.brax_ued import make_network, make_unroll
+from training.ppo import make_network
+from training.unroll import make_unroll
 
 DIFFICULTIES = (0.25, 0.5, 0.75, 1.0)
 SUITE_STRENGTHS = (1, 2, 3, 4)
