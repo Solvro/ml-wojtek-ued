@@ -8,9 +8,11 @@ ROBOT_LABEL = {
 METHODS = {
     "dr": "DR",
     "dr_easy": "DR-easy",
+    "dr_mixed": "DR-mixed",
     "plr": r"PLR$^{\perp}$",
     "sfl": "SFL",
     "accel": "ACCEL",
+    "accel_grow": "ACCEL-grow",
     "accel_sfl": "ACCEL-SFL",
     "paired": "PAIRED",
     "paired_uni": "PAIRED+UniBC",
