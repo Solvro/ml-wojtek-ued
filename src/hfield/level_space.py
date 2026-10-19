@@ -1,21 +1,5 @@
-"""Level spaces for UED: what a level is, how it is sampled, mutated, rendered.
-
-A level is a float array; `render` turns a batch into the `hfield_data` rows
-`FunctionalEnv` swaps in. Two spaces:
-
-- `GridSpace`: the original genome, a `coarse_n x coarse_n` control-point
-  grid in [0, 1] (`HFieldManager`). Every level is i.i.d. noise, so levels at
-  one scale are statistically alike.
-- `ParamSpace`: 8 terrain parameters in [0, 1] (mapped to physical ranges in
-  `PARAMS`) plus a noise seed. Radial features (slope, stairs, gaps) and
-  seeded fields (noise, blocks) compose into the heightfield, so uniform
-  samples range from flat to impossible - the setting where curation can
-  beat random sampling.
-
-Shared conventions: `flat` is the genome of a featureless level; `scaled(d)`
-samples uniformly and shrinks the genome toward `flat` by `d` (0 = flat, 1 =
-full space); `easy(s)` is the explore generator ACCEL starts from.
-"""
+"""Level spaces (docs/ued-accel.md#level-spaces): `flat` is a featureless
+genome, `scaled(d)` shrinks a uniform draw toward it by d (0 = flat)."""
 
 from typing import NamedTuple, Protocol
 
@@ -97,9 +81,8 @@ class Param(NamedTuple):
     flat: float  # genome value of "no feature"
 
 
-# Ranges for a ~0.10 m tall robot (v10). Uphill slope, step-up, gap and
-# block maxima sit at the 50%-success envelope of the best v8 policies;
-# features compound, so a uniform level is still hard (docs/ued-accel.md).
+# v10 ranges for a 0.10 m robot: uphill, step-up, gap and block maxima sit at
+# the best v8 policies' 50%-success envelope (docs/ued-accel.md)
 PARAMS = (
     Param("rough_amp_m", 0.0, 0.10, 0.0),
     Param("rough_wavelength_m", 0.2, 1.0, 0.5),

@@ -1,9 +1,5 @@
-"""A training checkpoint with its physics stepped by CPU MuJoCo variants
-(docs/ued-accel.md#sim2sim).
-
-Configured by Hydra: `conf/sim2sim.yaml`, typed by
-`config.schema.Sim2SimConfig`.
-"""
+"""A training checkpoint with its physics on CPU MuJoCo variants
+(`conf/sim2sim.yaml`)."""
 
 import json
 from pathlib import Path

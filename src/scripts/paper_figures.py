@@ -1,9 +1,5 @@
-"""Paper figures from wandb training histories and rendered levels
-(docs/ued-accel.md#paper-figures).
-
-Configured by Hydra: `conf/paper_figures.yaml`, typed by
-`config.schema.PaperFiguresConfig`.
-"""
+"""Paper figures from wandb histories and rendered levels
+(`conf/paper_figures.yaml`)."""
 
 import hydra
 from omegaconf import DictConfig

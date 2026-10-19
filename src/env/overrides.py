@@ -15,9 +15,8 @@ def merge_overrides(*overrides: dict[str, Any]) -> dict[str, Any]:
 def accel_arena_overrides(
     pad_radius: float, backend: str = "auto", arena: str = "accel"
 ) -> dict[str, Any]:
-    # every env shares the tiled arena's hfield_data, so warp is valid (auto:
-    # warp on a GPU); its contact pool clears the 84-contact floor of 21
-    # ground-colliding geoms (base.py) and njmax leaves room for rough terrain
+    # shared hfield_data makes warp valid; 116 clears the 84-contact floor of
+    # 21 ground-colliding geoms (base.py), njmax leaves room for rough terrain
     return {
         "terrain": {"enable": True, "arena": arena, "pad_radius": pad_radius},
         "sim": {"backend": backend, "naconmax_per_env": 116, "njmax": 1024},

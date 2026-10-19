@@ -106,12 +106,8 @@ def check_transferable(train: mujoco.MjModel, model: mujoco.MjModel) -> int:
 
 
 class CpuPhysics:
-    """Steps a batch of envs on CPU MuJoCo, one model and data per thread.
-
-    Every env stands on its own tile of one shared arena: `set_arena` takes
-    the next unroll's `hfield_data`, which each thread copies into its model
-    once per arena.
-    """
+    """Steps a batch of envs on CPU MuJoCo, one model and data per thread;
+    `set_arena` takes the next unroll's shared arena `hfield_data`."""
 
     def __init__(self, train_model: mujoco.MjModel, threads: int):
         self.train_model = train_model

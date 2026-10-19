@@ -9,11 +9,8 @@ QVEL_DIVERGED = 200.0
 
 
 def end_diverged(state: Any) -> Any:
-    """End the episode of an env whose step blew up or turned nan.
-
-    Such obs would reach brax's running obs normalizer and never wash out:
-    one env's blow-up once collapsed the policy, a nan one every env.
-    """
+    """End the episode of an env whose step blew up or turned nan: such obs
+    poison brax's running obs normalizer for good."""
     done = state.done
 
     def per_env(ok: jax.Array) -> jax.Array:

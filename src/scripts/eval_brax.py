@@ -1,7 +1,4 @@
-"""Final evaluation of a training checkpoint (docs/ued-accel.md#eval-brax).
-
-Configured by Hydra: `conf/eval.yaml`, typed by `config.schema.EvalConfig`.
-"""
+"""Final evaluation of a training checkpoint (`conf/eval.yaml`)."""
 
 import json
 from pathlib import Path

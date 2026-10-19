@@ -1,9 +1,4 @@
-"""mp4 clips of a training checkpoint on generated levels
-(docs/ued-accel.md#render-video). Needs MUJOCO_GL=cgl on macOS,
-egl/osmesa headless.
-
-Configured by Hydra: `conf/render.yaml`, typed by `config.schema.RenderConfig`.
-"""
+"""mp4 clips of a training checkpoint on generated levels (`conf/render.yaml`)."""
 
 import hydra
 from omegaconf import DictConfig

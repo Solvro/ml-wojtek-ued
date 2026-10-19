@@ -1,9 +1,4 @@
-"""LaTeX tables and a per-run CSV from final evals and training summaries
-(docs/ued-accel.md#paper-tables).
-
-Configured by Hydra: `conf/paper_tables.yaml`, typed by
-`config.schema.PaperTablesConfig`.
-"""
+"""LaTeX tables and a per-run CSV from final evals (`conf/paper_tables.yaml`)."""
 
 import hydra
 from omegaconf import DictConfig

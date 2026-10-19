@@ -1,7 +1,4 @@
-"""Train a brax PPO student under a UED curriculum (docs/ued-accel.md).
-
-Configured by Hydra: `conf/train.yaml`, typed by `config.schema.TrainConfig`.
-"""
+"""Train a brax PPO student under a UED curriculum (`conf/train.yaml`)."""
 
 import hydra
 from hydra.core.hydra_config import HydraConfig

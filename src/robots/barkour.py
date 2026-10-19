@@ -1,11 +1,4 @@
-"""Google Barkour vB on the UED heightfield arena (MuJoCo Playground).
-
-Playground's `Barkour` joystick env (its own reward, a 15-step obs history as
-the blind actor); the arena, command, fall and critic-scan changes are
-`robots.terrain.TerrainRobot`'s. Barkour has no privileged obs, so the critic
-sees the actor's obs plus the height scan. Its collisions are feet-only
-already; Playground has no Barkour randomization, so DR is off for it.
-"""
+"""Google Barkour vB: Playground's Barkour joystick env on the tiled arena."""
 
 import dataclasses
 from typing import Any

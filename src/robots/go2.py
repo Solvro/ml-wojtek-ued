@@ -1,18 +1,5 @@
-"""Unitree Go2 on the UED heightfield arena.
-
-Playground has no Go2 env: this is its Go1 joystick (`Go1Terrain`: reward,
-obs) with the menagerie Go2 model and that model's PD gains.
-`unitree_go2/go2_mjx.xml` collides every link and lacks the sensors and names
-the Go1 env reads, so `feet_only_model` rewrites it:
-
-- only the four foot spheres collide, and only with the hfield;
-- the trunk body is `trunk`, the foot sites are named like their geoms;
-- the Go1 feet-only model's sensors are added, the model's keyframe dropped
-  for the scene's.
-
-Go1's randomization applies: the hfield is geom 0, the trunk body 1, and the
-12 joints are dofs 6:.
-"""
+"""Unitree Go2: Go1's joystick env on the menagerie Go2 model, rewritten
+feet-only (docs/ued-accel.md#robots)."""
 
 import re
 from typing import Any

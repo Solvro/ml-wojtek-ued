@@ -6,9 +6,8 @@ WARP_GRAPH_CACHE = 4
 
 def configure_warp() -> None:
     require_warp_memory()
-    # one CUDA graph (with GBs of collision scratch) per set of buffer
-    # addresses; our separate jitted reset/unroll/eval calls pass new ones
-    # every call and the default cache ran out of GPU memory (job 6110159)
+    # a CUDA graph (GBs of scratch) per buffer-address set; our separate jitted
+    # calls pass new addresses, so the default cache ran OOM (job 6110159)
     from mujoco.mjx.third_party.warp._src.jax_experimental import ffi
 
     ffi.set_jax_callable_default_graph_cache_max(WARP_GRAPH_CACHE)

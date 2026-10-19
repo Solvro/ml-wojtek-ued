@@ -1,8 +1,4 @@
-"""Throughput profile of a training iteration; prints one JSON line.
-
-Configured by Hydra: `conf/profile.yaml` (`train.yaml` with profiling
-defaults), typed by `config.schema.TrainConfig`.
-"""
+"""Throughput profile of a training iteration (`conf/profile.yaml`)."""
 
 import hydra
 from omegaconf import DictConfig

@@ -1,11 +1,4 @@
-"""Boston Dynamics Spot on the UED heightfield arena (MuJoCo Playground).
-
-Playground's `SpotJoystick` (feet-only collisions, its own reward and blind
-actor); the arena, command, fall and critic-scan changes are
-`robots.terrain.TerrainRobot`'s, with forward commands capped at
-Playground's Spot command range. Playground has no Spot randomization, so DR
-is off for it.
-"""
+"""Boston Dynamics Spot: Playground's SpotJoystick on the tiled arena."""
 
 from typing import Any
 

@@ -1,15 +1,5 @@
-"""The shared tiled arena: one static heightfield holding every lane's level.
-
-`tiles x tiles` square cells of `pitch` m, row-major from (-half, -half).
-Cell `i` holds level `i` (the `grid_size x grid_size` patch a level renders
-to) at its centre, surrounded by half a `gap` of flat ground (`0.5`, the
-neutral plane). The gap is `reach - patch_radius`: a robot spawned on its
-pad reads terrain (feet, height scan) at most `reach` m from it within one
-level, so lanes do not see each other's levels (`check_reach`).
-
-Every env collides with the same `hfield_data`, so it is shared (unbatched)
-under vmap, which is what the warp backend needs (docs/environment.md).
-"""
+"""The shared tiled arena: level i on tile i of one static heightfield
+(docs/environment.md#tiled-arena)."""
 
 import math
 from dataclasses import dataclass

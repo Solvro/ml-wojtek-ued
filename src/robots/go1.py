@@ -1,9 +1,4 @@
-"""Unitree Go1 on the UED heightfield arena (MuJoCo Playground joystick task).
-
-Playground's `Go1JoystickRoughTerrain` (feet-only collisions, its own reward
-and blind actor) on the tiled ACCEL arena; the arena, command, fall and
-critic-scan changes are `robots.terrain.TerrainRobot`'s.
-"""
+"""Unitree Go1: Playground's Go1JoystickRoughTerrain on the tiled arena."""
 
 import dataclasses
 from typing import Any

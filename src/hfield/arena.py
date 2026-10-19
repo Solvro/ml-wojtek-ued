@@ -108,11 +108,8 @@ def build_accel_arena(config: HFieldConfig, seed: int = 0) -> terrain.Arena:
     grid = layout.nodes
     radius = layout.half
     hfield_data = np.full((grid, grid), 0.5, dtype=np.float32)
-    # MuJoCo rescales a loaded hfield to span [0, 1]: a constant 0.5 compiles
-    # to 0, sinking the static ground to -amplitude, where real_pose_ref's
-    # standing-height settle and any unswapped rollout would see it. Pinning
-    # two far corners (outside every tile) to 0 and 1 makes the rescale the
-    # identity.
+    # MuJoCo rescales a loaded hfield to [0, 1], sinking a constant 0.5 to
+    # -amplitude; two far corners at 0 and 1 make the rescale the identity
     hfield_data[0, 0] = 0.0
     hfield_data[-1, -1] = 1.0
     lookup = (2 * hfield_data - 1) * config.amplitude

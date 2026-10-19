@@ -33,12 +33,9 @@ def policy_kl(
     teacher: Teacher,
     observation: Any,
 ) -> jax.Array:
-    """KL(pi_teacher || pi_student) per observation, each policy reading the
-    observation through its own normalizer; no gradient into the teacher.
-
-    brax squashes both Gaussians through the same tanh, and KL is invariant
-    under a shared bijection, so the KL of the pre-tanh Gaussians is exact.
-    """
+    """KL(pi_teacher || pi_student) per observation, each policy through its
+    own normalizer, no gradient into the teacher. KL is invariant under the
+    shared tanh squash, so the pre-tanh Gaussian KL is exact."""
     apply = network.policy_network.apply
     dist = network.parametric_action_distribution
     student = dist.create_dist(apply(normalizer, policy_params, observation))

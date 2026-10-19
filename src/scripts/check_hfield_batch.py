@@ -1,11 +1,5 @@
-"""Check that every env of a batch stands on its own tile of the shared
-arena; `compare=true` runs jax and warp, `bench_envs=N` times env steps
-(docs/environment.md#tiled-arena). Needs the `accel` arena built from the
-same `arena` config.
-
-Configured by Hydra: `conf/check_hfield.yaml`, typed by
-`config.schema.CheckHFieldConfig`.
-"""
+"""Check that every env stands on its own arena tile, per backend
+(`conf/check_hfield.yaml`)."""
 
 import hydra
 from omegaconf import DictConfig
