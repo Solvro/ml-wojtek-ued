@@ -8,9 +8,8 @@ class HFieldConfig:
     coarse_n: int = 9  # control points per axis, before upsampling
     amplitude: float = 0.12
     difficulty: float = 1.0  # runtime terrain-intensity scale in [0, 1]
-    base_z: float = (
-        1.0  # solid base thickness under the hfield, MJCF requires > 0
-    )
+    # m, solid base thickness under the hfield; MJCF requires > 0
+    base_z: float = 1.0
     pad_radius: float = 0.6  # flat spawn disc at the patch centre
     pad_taper: float = 0.3  # ramp width from flat pad to full terrain
     tiles: int = 16  # tiles per side of the shared arena, one level each
