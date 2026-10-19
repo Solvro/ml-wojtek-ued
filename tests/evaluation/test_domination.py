@@ -253,3 +253,11 @@ def test_cli_writes_json_and_figures(tmp_path: Path) -> None:
         "domination_accel_vs_dr_go1.pdf",
         "domination_matrix.pdf",
     } <= written
+
+
+def test_same_method_twice_refuses(compose_cfg: Compose) -> None:
+    cfg = compose_cfg(
+        "domination", "eval_dir=e", "prefixes.wojtek=w", "method_b=accel"
+    )
+    with pytest.raises(ValueError, match="both accel"):
+        compare(cfg)
