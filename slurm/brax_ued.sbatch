@@ -17,13 +17,15 @@
 set -euo pipefail
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1
+export HYDRA_FULL_ERROR=1
 # fail instead of silently falling back to CPU when CUDA init fails
 # (seen: CUDA_ERROR_MPS_CONNECTION_FAILED on some Lem nodes)
 export JAX_PLATFORMS=cuda
 # warp allocates its collision scratch outside JAX's pool (utils/env.py)
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
-# SRC=<dir>/src, a frozen copy with the built assets/ beside it (wojtek_env
-# resolves assets from src/..), keeps queued jobs on the submitted code
+# SRC=<dir>/src, a frozen copy with the built assets/ and conf/ beside it
+# (wojtek_env and config.schema resolve them from src/..), keeps queued jobs
+# on the submitted code
 SRC="${SRC:-$HOME/workspace/ml-wojtek-ued/src}"
 export PYTHONPATH="$SRC"
 PDW=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued
@@ -32,39 +34,32 @@ cd "$HOME/workspace/ml-wojtek-ued" || exit 1
 read -ra MODES <<<"${MODES:-dr accel}"
 NSEEDS="${NSEEDS:-3}"
 VARIANT="${MODES[$((SLURM_ARRAY_TASK_ID / NSEEDS))]}"
-# ACCEL variants share --mode accel and differ only in curriculum switches;
-# a "-s<scale>" suffix sets the easy generator's --generator_scale.
-# SPACE=param switches to the 8-parameter level space (2 edits of +-0.1
-# per mutation instead of the grid's 16 of +-0.15).
+# VARIANT = a conf/mode/ option; a "-s<scale>" suffix overrides the easy
+# generator's mode.generator_scale. SPACE: conf/level_space/ option (param =
+# v10's 8 parameters, 2 edits of +-0.1; grid = control points, 8 of +-0.15,
+# 16 edits for the grow variants: conf/grow_edits/).
 SPACE="${SPACE:-grid}"
 PREFIX="${PREFIX:-v7_brax}"
 # ROBOT=go1 runs Playground's Go1 at its size (robots/go1.py)
 ROBOT="${ROBOT:-wojtek}"
 # BACKEND: auto (warp on the GPU) | jax | warp; TAGS: extra wandb tags
-read -ra TAG_ARGS <<<"${TAGS:-}"
-if [[ "$SPACE" == param ]]; then
-  SPACE_ARGS=(--level_space param --n_edits 2 --edit_scale 0.1)
-  GROW=(--mutation grow)
-else
-  SPACE_ARGS=()
-  GROW=(--mutation grow --n_edits 16)
-fi
-BASE="${VARIANT%-s*}"
-case "$BASE" in
-accel_grow) MODE=accel EXTRA=("${GROW[@]}") ;;
-accel_sfl) MODE=accel EXTRA=("${GROW[@]}" --score learnability) ;;
-*) MODE="$BASE" EXTRA=() ;;
-esac
-EXTRA=("${SPACE_ARGS[@]}" "${EXTRA[@]}")
+read -ra TAG_LIST <<<"${TAGS:-}"
+TAG_LIST_CSV="$(
+  IFS=,
+  echo "${TAG_LIST[*]}"
+)"
+MODE="${VARIANT%-s*}"
+OVERRIDES=("mode=$MODE" "level_space=$SPACE")
 if [[ "$VARIANT" == *-s* ]]; then
-  EXTRA+=(--generator_scale "${VARIANT##*-s}")
+  OVERRIDES+=("mode.generator_scale=${VARIANT##*-s}")
 fi
 SEED=$((${SEED0:-0} + SLURM_ARRAY_TASK_ID % NSEEDS))
 RUN="${PREFIX}_${VARIANT}_seed${SEED}"
 echo "job ${SLURM_JOB_ID} task ${SLURM_ARRAY_TASK_ID} on ${SLURM_JOB_NODELIST}: $RUN"
 
-uv run --no-sync python "$SRC/scripts/brax_ued.py" --mode "$MODE" --name "$RUN" \
-  --seed "$SEED" --entity dominikgalus9-wroc-aw-university-of-science-and-technology \
-  --project wojtyla --num_timesteps "${NUM_TIMESTEPS:-300000000}" "${EXTRA[@]}" \
-  --checkpoint_dir "$PDW/artifacts/brax_ued" --robot "$ROBOT" \
-  --backend "${BACKEND:-auto}" --tags "${TAG_ARGS[@]}"
+uv run --no-sync python "$SRC/scripts/brax_ued.py" "${OVERRIDES[@]}" \
+  "name=$RUN" "seed=$SEED" \
+  entity=dominikgalus9-wroc-aw-university-of-science-and-technology \
+  project=wojtyla "num_timesteps=${NUM_TIMESTEPS:-300000000}" \
+  "checkpoint_dir=$PDW/artifacts/brax_ued" "robot=$ROBOT" \
+  "backend=${BACKEND:-auto}" "tags=[$TAG_LIST_CSV]"

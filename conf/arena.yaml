@@ -1,0 +1,12 @@
+defaults:
+  - arena_schema
+  - _self_
+  - arena: v10
+
+seed: 0
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: artifacts/hydra/arena/${now:%Y-%m-%d_%H-%M-%S}

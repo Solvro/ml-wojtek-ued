@@ -1,0 +1,41 @@
+defaults:
+  - train_schema
+  - _self_
+  - robot: wojtek
+  - mode: ???
+  - level_space: grid
+  - arena: v10
+
+name: ???
+entity: ""
+project: wojtyla
+backend: auto
+seed: 0
+num_timesteps: 300000000
+num_lanes: 256
+envs_per_lane: 32
+level_steps: 300
+eval_every: 10
+eval_levels: 512
+min_travel: 1.0
+checkpoint_dir: null
+tags: []
+
+# every mode starts from these; mode/<name>.yaml sets its own switches
+mode:
+  replay_prob: 0.8
+  buffer_size: 4000
+  generator_scale: 0.1
+  mutation: local
+  grow_max: 1.3
+  score: pvl
+  generator: easy
+  latent_dim: 16
+  gen_learning_rate: 1.0e-4
+  gen_entropy_coef: 0.1
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: artifacts/hydra/${run_name:}

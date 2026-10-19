@@ -1,0 +1,20 @@
+defaults:
+  - check_hfield_schema
+  - _self_
+  - arena: v10
+
+backend: auto
+pit: 0.05
+tiles: 8
+envs_per_tile: 2
+steps: 100
+compare: false
+# a misread tile is off by `pit`
+tol: 5.0e-3
+bench_envs: 0
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: artifacts/hydra/check_hfield/${now:%Y-%m-%d_%H-%M-%S}

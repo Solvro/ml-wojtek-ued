@@ -1,0 +1,5 @@
+# the benchmark arena (Wojtek units; brax_ued.py scales it by the robot size)
+amplitude: 0.3
+coarse_n: 13
+pad_radius: 0.55
+pad_taper: 0.2

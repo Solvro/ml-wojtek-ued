@@ -14,26 +14,27 @@ that tile and step for `level_steps` (in `unroll_length` chunks, a PPO
 update after each chunk when training). Per-lane regret = mean positive GAE
 advantage (positive value loss) over the iteration.
 
-- `--mode dr`: every iteration trains on fresh uniform levels at full
+- `mode=dr`: every iteration trains on fresh uniform levels at full
   difficulty.
-- `--mode accel`: ACCEL with batched lanes. Replay iterations (prob
+- `mode=accel`: ACCEL with batched lanes. Replay iterations (prob
   `replay_prob` once the buffer holds `num_lanes` levels) train on levels
   drawn rank-prioritized from the buffer, refresh their scores, and queue
   their mutations. Explore iterations do not train: they score the queued
   children plus fresh *easy* levels (control points within
   `generator_scale` of flat) and add them to the buffer, which keeps the
   highest-regret `buffer_size` levels.
-- `--mode plr`: robust PLR (PLR-perp) - ACCEL's buffer and replay without
+- `mode=plr`: robust PLR (PLR-perp) - ACCEL's buffer and replay without
   mutation; explore iterations score fresh uniform (DR) levels.
-- `--robot go1`: Playground's Go1 (`robots/go1.py`) instead of Wojtek. The
+- `robot=go1`: Playground's Go1 (`robots/go1.py`) instead of Wojtek. The
   arena, level lengths, commands and `min_travel` scale by `GO1_SCALE`.
 
 All evaluate the deterministic policy every `eval_every` iterations on
 fresh uniform levels at several difficulties: success = no fall and at least
 `min_travel` m from spawn after `level_steps`.
+
+Configured by Hydra: `conf/train.yaml`, typed by `config.schema.TrainConfig`.
 """
 
-import argparse
 import dataclasses
 import functools
 import time
@@ -41,6 +42,7 @@ from pathlib import Path
 from typing import Any
 
 import equinox as eqx
+import hydra
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -52,8 +54,22 @@ from brax.training import types
 from brax.training.acme import running_statistics, specs
 from brax.training.agents.ppo import losses as ppo_losses
 from brax.training.agents.ppo import networks as ppo_networks
+from omegaconf import DictConfig
 
 from config.hfield_config import HFieldConfig
+from config.schema import (
+    CONF_DIR,
+    Backend,
+    Curriculum,
+    Generator,
+    ModeConfig,
+    Mutation,
+    Robot,
+    Score,
+    TrainConfig,
+    as_dict,
+    to_dataclass,
+)
 from hfield.arena import check_arena
 from hfield.level_space import (
     PARAMS,
@@ -97,44 +113,49 @@ def body_velocity(data: Any) -> jax.Array:
     return brax_math.inv_rotate(data.qvel[:3], data.qpos[3:7])
 
 
-def hfield_config(args: argparse.Namespace) -> HFieldConfig:
-    """The arena at the robot's size: every length scales, slopes do not."""
-    s = ROBOT_SCALE[args.robot]
-    base = HFieldConfig()
-    return HFieldConfig(
-        patch_radius=base.patch_radius * s,
-        cell_size=base.cell_size * s,
-        amplitude=args.amplitude * s,
-        coarse_n=args.coarse_n,
-        pad_radius=args.pad_radius * s,
-        pad_taper=args.pad_taper * s,
-        reach=base.reach * s,
+def hfield_config(robot: Robot, arena: HFieldConfig) -> HFieldConfig:
+    """The `arena` config (Wojtek units) at the robot's size: every length
+    scales, slopes do not."""
+    s = ROBOT_SCALE[robot]
+    return dataclasses.replace(
+        arena,
+        patch_radius=arena.patch_radius * s,
+        cell_size=arena.cell_size * s,
+        amplitude=arena.amplitude * s,
+        pad_radius=arena.pad_radius * s,
+        pad_taper=arena.pad_taper * s,
+        reach=arena.reach * s,
     )
 
 
-def check_wojtek_arena(args: argparse.Namespace, config: HFieldConfig) -> None:
+def check_wojtek_arena(robot: Robot, config: HFieldConfig) -> None:
     # Go1 builds its arena from `config` at construction; Wojtek loads it
-    if args.robot == "wojtek":
+    if robot == Robot.wojtek:
         check_arena(paths.terrain_paths("accel")["spec"], config, "accel")
 
 
 def make_env(
-    args: argparse.Namespace, config: HFieldConfig, num_envs: int, train: bool
+    robot: Robot,
+    backend: Backend,
+    config: HFieldConfig,
+    *,
+    num_envs: int,
+    train: bool,
 ) -> FunctionalEnv:
-    if args.robot == "go1":
-        go1 = Go1Terrain(config, backend=args.backend, num_envs=num_envs)
+    if robot == Robot.go1:
+        go1 = Go1Terrain(config, backend=backend, num_envs=num_envs)
         return FunctionalEnv(domain_randomize=train, go1=go1)
-    overrides = wojtek_overrides(args, num_envs, train)
+    overrides = wojtek_overrides(config, backend, num_envs, train)
     return FunctionalEnv(
         task="joystick", env_overrides=overrides, domain_randomize=train
     )
 
 
 def wojtek_overrides(
-    args: argparse.Namespace, num_envs: int, train: bool
+    config: HFieldConfig, backend: Backend, num_envs: int, train: bool
 ) -> dict[str, Any]:
     return merge_overrides(
-        accel_arena_overrides(args.pad_radius, args.backend),
+        accel_arena_overrides(config.pad_radius, backend),
         movement_overrides(),
         terrain_overrides(),
         terrain_task_overrides(),
@@ -343,8 +364,8 @@ class LevelBuffer:
         self.last_seen[idx] = now
 
 
-def min_travel(args: argparse.Namespace) -> float:
-    return args.min_travel * ROBOT_SCALE[args.robot]
+def min_travel(robot: Robot, wojtek_m: float) -> float:
+    return wojtek_m * ROBOT_SCALE[robot]
 
 
 def run_levels(
@@ -354,14 +375,14 @@ def run_levels(
     student: "Student | None" = None,
 ) -> dict[str, Any]:
     """One outer iteration on `levels` (one per lane). Returns lane regret."""
-    env, args = ctx["env"], ctx["args"]
+    env, cfg = ctx["env"], ctx["cfg"]
     student = student or ctx["student"]
     key = ctx["next_key"]()
     rendered = ctx["space"].render(levels)
     layout: TileLayout = ctx["layout"]
     hfield = ctx["assemble"](jnp.asarray(rendered))
-    tile_xy = layout.tile_xy(args.num_lanes, args.envs_per_lane)
-    n = args.num_lanes * args.envs_per_lane
+    tile_xy = layout.tile_xy(cfg.num_lanes, cfg.envs_per_lane)
+    n = cfg.num_lanes * cfg.envs_per_lane
     dr_model, _ = env.sample_dr(ctx["next_key"](), n)
     reset_keys = jax.random.split(key, n)
     _, state = ctx["reset"](reset_keys, hfield, dr_model, tile_xy)
@@ -371,7 +392,7 @@ def run_levels(
     fell_any = jnp.zeros(n)
     leaked = jnp.zeros(n, bool)
     logs = []
-    for _ in range(args.level_steps // PPO["unroll_length"]):
+    for _ in range(cfg.level_steps // PPO["unroll_length"]):
         state, data = ctx["unroll"](
             student.inference_params(),
             state,
@@ -396,18 +417,19 @@ def run_levels(
         reads = layout.leaked(xy, tile_xy[:, None], env.travel.sensing)
         leaked = leaked | reads.any(axis=1)
         logs.append(jax.tree.map(jnp.mean, data.extras["log"]))
-    lane_regret = np.asarray(regret.reshape(args.num_lanes, -1).mean(axis=1))
-    lane_returns = np.asarray(episode_return.reshape(args.num_lanes, -1))
+    lane_regret = np.asarray(regret.reshape(cfg.num_lanes, -1).mean(axis=1))
+    lane_returns = np.asarray(episode_return.reshape(cfg.num_lanes, -1))
     travel = jnp.linalg.norm(state.data.qpos[:, :2] - start_xy, axis=-1)
-    success = np.asarray((fell_any == 0) & (travel >= min_travel(args)), dtype=float)
-    lane_success = success.reshape(args.num_lanes, -1).mean(axis=1)
-    lane_regret = lane_regret / (args.level_steps // PPO["unroll_length"])
+    threshold = min_travel(cfg.robot.name, cfg.min_travel)
+    success = np.asarray((fell_any == 0) & (travel >= threshold), dtype=float)
+    lane_success = success.reshape(cfg.num_lanes, -1).mean(axis=1)
+    lane_regret = lane_regret / (cfg.level_steps // PPO["unroll_length"])
     # learnability (SFL): highest where the student sometimes succeeds
     learnability = lane_success * (1.0 - lane_success)
     log = jax.tree.map(lambda *x: float(np.mean(x)), *logs)
     return {
         "regret": lane_regret,
-        "score": learnability if args.score == "learnability" else lane_regret,
+        "score": learnability if cfg.mode.score == Score.learnability else lane_regret,
         "lane_returns": lane_returns,
         "train_success": float(success.mean()),
         "learnability_mean": float(learnability.mean()),
@@ -426,20 +448,19 @@ def run_levels(
 
 
 def evaluate(ctx: dict[str, Any], rng: np.random.Generator) -> dict[str, float]:
-    args, out = ctx["args"], {}
-    per_chunk = min(args.eval_levels, ctx["layout"].n_tiles)
+    cfg, out = ctx["cfg"], {}
+    per_chunk = min(cfg.eval_levels, ctx["layout"].n_tiles)
+    threshold = min_travel(cfg.robot.name, cfg.min_travel)
     for difficulty in EVAL_DIFFICULTIES:
-        levels = ctx["space"].scaled(rng, args.eval_levels, difficulty)
+        levels = ctx["space"].scaled(rng, cfg.eval_levels, difficulty)
         rendered = jnp.asarray(ctx["space"].render(levels))
         chunks = [
             eval_chunk(ctx, rendered[start : start + per_chunk])
-            for start in range(0, args.eval_levels, per_chunk)
+            for start in range(0, cfg.eval_levels, per_chunk)
         ]
         fell, travel, forward_vel, cmd_vx = (np.concatenate(x) for x in zip(*chunks))
         tag = f"eval/d{difficulty}"
-        out[f"{tag}/success_rate"] = float(
-            ((fell == 0) & (travel >= min_travel(args))).mean()
-        )
+        out[f"{tag}/success_rate"] = float(((fell == 0) & (travel >= threshold)).mean())
         out[f"{tag}/fall_rate"] = float(fell.mean())
         out[f"{tag}/mean_travel"] = float(travel.mean())
         out[f"{tag}/forward_vel"] = float(forward_vel.mean())
@@ -462,7 +483,7 @@ def eval_chunk(ctx: dict[str, Any], rendered: jax.Array) -> tuple[np.ndarray, ..
         hfield,
         None,
         deterministic=True,
-        length=ctx["args"].level_steps,
+        length=ctx["cfg"].level_steps,
     )
     log = data.extras["log"]
     travel = jnp.linalg.norm(log["xy"][:, -1] - start_xy, axis=-1)
@@ -491,14 +512,14 @@ def level_composition(space: LevelSpace, levels: np.ndarray) -> dict[str, float]
 
 
 def easy_levels(ctx: dict[str, Any], n: int) -> np.ndarray:
-    return ctx["space"].easy(ctx["rng"], n, ctx["args"].generator_scale)
+    return ctx["space"].easy(ctx["rng"], n, ctx["cfg"].mode.generator_scale)
 
 
-def dr_levels(ctx: dict[str, Any], mode: str) -> np.ndarray:
-    n, rng, space = ctx["args"].num_lanes, ctx["rng"], ctx["space"]
-    if mode == "dr_easy":
+def dr_levels(ctx: dict[str, Any], curriculum: Curriculum) -> np.ndarray:
+    n, rng, space = ctx["cfg"].num_lanes, ctx["rng"], ctx["space"]
+    if curriculum == Curriculum.dr_easy:
         return easy_levels(ctx, n)
-    if mode == "dr_mixed":
+    if curriculum == Curriculum.dr_mixed:
         # a per-level difficulty in [0, 1]: covers the easy levels too
         return np.concatenate(
             [space.scaled(rng, 1, d) for d in rng.uniform(0.0, 1.0, n)]
@@ -507,10 +528,10 @@ def dr_levels(ctx: dict[str, Any], mode: str) -> np.ndarray:
 
 
 def mutate(ctx: dict[str, Any], level: np.ndarray) -> np.ndarray:
-    args = ctx["args"]
+    cfg = ctx["cfg"]
     # symmetric local edits smooth as often as they roughen; "grow" also
     # scales the whole genome away from flat so each generation has a direction
-    grow_max = args.grow_max if args.mutation == "grow" else None
+    grow_max = cfg.mode.grow_max if cfg.mode.mutation == Mutation.grow else None
     return ctx["space"].mutate(level, ctx["rng"], grow_max)
 
 
@@ -531,22 +552,22 @@ def buffer_stats(buffer: LevelBuffer) -> dict[str, float]:
 def accel_iteration(
     ctx: dict[str, Any], buffer: LevelBuffer, it: int
 ) -> dict[str, Any]:
-    args, rng = ctx["args"], ctx["rng"]
-    if len(buffer) >= args.num_lanes and rng.random() < args.replay_prob:
-        idx = buffer.sample(rng, args.num_lanes, it)
+    cfg, rng = ctx["cfg"], ctx["rng"]
+    if len(buffer) >= cfg.num_lanes and rng.random() < cfg.mode.replay_prob:
+        idx = buffer.sample(rng, cfg.num_lanes, it)
         levels = np.stack([buffer.levels[i] for i in idx])
         out = run_levels(ctx, levels, train=True)
         buffer.update(idx, out["score"], it)
-        if args.mode == "accel":
+        if cfg.mode.curriculum == Curriculum.accel:
             ctx["children"] = np.stack([mutate(ctx, level) for level in levels])
         return {**out, "replay": 1, **buffer_stats(buffer)}
-    fresh = args.num_lanes - len(ctx["children"])
-    if args.mode == "plr":
+    fresh = cfg.num_lanes - len(ctx["children"])
+    if cfg.mode.curriculum == Curriculum.plr:
         new = ctx["space"].uniform(rng, fresh)
-    elif args.generator == "easy":
+    elif cfg.mode.generator == Generator.easy:
         new = easy_levels(ctx, fresh)
     else:
-        new = dr_levels(ctx, "dr_mixed")[:fresh]
+        new = dr_levels(ctx, Curriculum.dr_mixed)[:fresh]
     levels = np.concatenate([ctx["children"], new]) if len(ctx["children"]) else new
     ctx["children"] = np.zeros((0, *ctx["space"].shape))
     out = run_levels(ctx, levels, train=False)
@@ -557,18 +578,16 @@ def accel_iteration(
 class Adversary:
     """PAIRED's learned level designer, trained by single-step PPO on regret."""
 
-    def __init__(
-        self, args: argparse.Namespace, shape: tuple[int, ...], key: jax.Array
-    ):
-        self.latent_dim = args.latent_dim
+    def __init__(self, mode: ModeConfig, shape: tuple[int, ...], key: jax.Array):
+        self.latent_dim = mode.latent_dim
         self.generator = LevelGenerator(
-            latent_dim=args.latent_dim, dense_dim=128, shape=shape, key=key
+            latent_dim=mode.latent_dim, dense_dim=128, shape=shape, key=key
         )
         self.optimizer = optax.chain(
-            optax.clip_by_global_norm(0.5), optax.adam(args.gen_learning_rate)
+            optax.clip_by_global_norm(0.5), optax.adam(mode.gen_learning_rate)
         )
         self.opt_state = self.optimizer.init(eqx.filter(self.generator, eqx.is_array))
-        self.entropy_coef = args.gen_entropy_coef
+        self.entropy_coef = mode.gen_entropy_coef
         self.sample = eqx.filter_jit(lambda g, z, keys: jax.vmap(g)(z, keys)[:2])
         self.step = eqx.filter_jit(self._step)
 
@@ -602,9 +621,9 @@ class Adversary:
 
 
 def paired_iteration(ctx: dict[str, Any]) -> dict[str, Any]:
-    args, adversary = ctx["args"], ctx["adversary"]
-    z = jax.random.normal(ctx["next_key"](), (args.num_lanes, adversary.latent_dim))
-    keys = jax.random.split(ctx["next_key"](), args.num_lanes)
+    cfg, adversary = ctx["cfg"], ctx["adversary"]
+    z = jax.random.normal(ctx["next_key"](), (cfg.num_lanes, adversary.latent_dim))
+    keys = jax.random.split(ctx["next_key"](), cfg.num_lanes)
     theta, log_prob = adversary.sample(adversary.generator, z, keys)
     levels = ctx["space"].from_generated(np.asarray(theta), ctx["rng"])
     out = run_levels(ctx, levels, train=True)
@@ -626,47 +645,47 @@ def paired_iteration(ctx: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build(args: argparse.Namespace) -> dict[str, Any]:
-    config = dataclasses.replace(
-        hfield_config(args), n_edits=args.n_edits, edit_scale=args.edit_scale
-    )
+def build(cfg: TrainConfig) -> dict[str, Any]:
+    space_cfg = cfg.level_space
+    config = hfield_config(cfg.robot.name, cfg.arena)
     space = make_level_space(
-        args.level_space,
+        space_cfg.kind,
         config,
-        n_edits=args.n_edits,
-        edit_scale=args.edit_scale,
-        robot_scale=ROBOT_SCALE[args.robot],
+        n_edits=space_cfg.n_edits,
+        edit_scale=space_cfg.edit_scale,
+        robot_scale=ROBOT_SCALE[cfg.robot.name],
     )
-    check_wojtek_arena(args, config)
+    check_wojtek_arena(cfg.robot.name, config)
     layout = TileLayout(config)
-    if args.num_lanes > layout.n_tiles:
+    if cfg.num_lanes > layout.n_tiles:
         raise ValueError(
-            f"--num_lanes {args.num_lanes} exceeds the arena's {layout.n_tiles} "
-            "tiles, one level each; rebuild it with a larger hfield_params.tiles"
+            f"num_lanes={cfg.num_lanes} exceeds the arena's {layout.n_tiles} "
+            "tiles, one level each; rebuild it with a larger arena.tiles"
         )
-    num_envs = args.num_lanes * args.envs_per_lane
-    env = make_env(args, config, num_envs, train=True)
-    reach = env.travel.reach(args.level_steps, env.travel.sensing)
-    layout.check_reach(reach, f"--level_steps {args.level_steps}")
-    eval_levels = min(args.eval_levels, layout.n_tiles)
-    eval_env = make_env(args, config, 2 * eval_levels, train=False)
-    key_state = {"key": jax.random.key(args.seed)}
+    num_envs = cfg.num_lanes * cfg.envs_per_lane
+    robot, backend = cfg.robot.name, cfg.backend
+    env = make_env(robot, backend, config, num_envs=num_envs, train=True)
+    reach = env.travel.reach(cfg.level_steps, env.travel.sensing)
+    layout.check_reach(reach, f"level_steps={cfg.level_steps}")
+    eval_levels = min(cfg.eval_levels, layout.n_tiles)
+    eval_env = make_env(robot, backend, config, num_envs=2 * eval_levels, train=False)
+    key_state = {"key": jax.random.key(cfg.seed)}
 
     def next_key() -> jax.Array:
         key_state["key"], key = jax.random.split(key_state["key"])
         return key
 
     student = Student(env, next_key())
-    paired = args.mode == "paired"
+    paired = cfg.mode.curriculum == Curriculum.paired
     antagonist = Student(env, next_key()) if paired else None
-    adversary = Adversary(args, space.gen_shape, next_key()) if paired else None
+    adversary = Adversary(cfg.mode, space.gen_shape, next_key()) if paired else None
     _, dr_in_axes = env.sample_dr(jax.random.key(0), num_envs)
     reset = jax.jit(jax.vmap(env.reset, in_axes=(0, None, dr_in_axes, 0)))
     eval_reset = jax.jit(
         jax.vmap(lambda k, h, t: eval_env.reset(k, h, tile_xy=t), in_axes=(0, None, 0))
     )
     return {
-        "args": args,
+        "cfg": cfg,
         "env": env,
         "student": student,
         "antagonist": antagonist,
@@ -674,7 +693,7 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "space": space,
         "layout": layout,
         "assemble": jax.jit(layout.assemble),
-        "rng": np.random.default_rng(args.seed),
+        "rng": np.random.default_rng(cfg.seed),
         "next_key": next_key,
         "reset": reset,
         "eval_reset": eval_reset,
@@ -684,84 +703,40 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument(
-        "--mode",
-        required=True,
-        choices=["dr", "dr_easy", "dr_mixed", "accel", "plr", "paired"],
-    )
-    p.add_argument("--robot", default="wojtek", choices=list(ROBOT_SCALE))
-    p.add_argument("--name", required=True)
-    p.add_argument("--entity", default="")
-    p.add_argument("--project", default="wojtyla")
-    p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--num_timesteps", type=int, default=300_000_000)
-    p.add_argument("--num_lanes", type=int, default=256)
-    p.add_argument("--envs_per_lane", type=int, default=32)
-    p.add_argument("--level_steps", type=int, default=300)
-    p.add_argument("--amplitude", type=float, default=0.3)
-    p.add_argument("--level_space", default="grid", choices=["grid", "param"])
-    p.add_argument("--coarse_n", type=int, default=13)
-    p.add_argument("--pad_radius", type=float, default=0.55)
-    p.add_argument("--pad_taper", type=float, default=0.2)
-    p.add_argument("--replay_prob", type=float, default=0.8)
-    p.add_argument("--buffer_size", type=int, default=4000)
-    p.add_argument("--generator_scale", type=float, default=0.1)
-    p.add_argument("--n_edits", type=int, default=8)
-    p.add_argument("--edit_scale", type=float, default=0.15)
-    p.add_argument("--mutation", default="local", choices=["local", "grow"])
-    p.add_argument("--grow_max", type=float, default=1.3)
-    p.add_argument("--score", default="pvl", choices=["pvl", "learnability"])
-    p.add_argument("--generator", default="easy", choices=["easy", "mixed"])
-    p.add_argument("--latent_dim", type=int, default=16)
-    p.add_argument("--gen_learning_rate", type=float, default=1e-4)
-    p.add_argument("--gen_entropy_coef", type=float, default=0.1)
-    p.add_argument("--eval_every", type=int, default=10)
-    p.add_argument("--eval_levels", type=int, default=512)
-    p.add_argument("--min_travel", type=float, default=1.0)
-    p.add_argument("--checkpoint_dir", default=None)
-    p.add_argument("--tags", nargs="*", default=[], help="extra wandb tags")
-    add_backend_arg(p)
-    return p.parse_args(argv)
+@hydra.main(config_path=CONF_DIR, config_name="train", version_base="1.3")
+def main(dict_cfg: DictConfig) -> None:
+    train(to_dataclass(dict_cfg, TrainConfig))
 
 
-def add_backend_arg(p: argparse.ArgumentParser) -> None:
-    # the tiled arena shares one hfield_data, so warp is valid; a policy
-    # scores differently under warp and jax, so compare within one backend
-    p.add_argument("--backend", default="auto", choices=["auto", "jax", "warp"])
-
-
-def main() -> None:
-    args = parse_args()
-    if args.level_steps % PPO["unroll_length"]:
+def train(cfg: TrainConfig) -> None:
+    if cfg.level_steps % PPO["unroll_length"]:
         raise ValueError(
-            f"--level_steps={args.level_steps} must be a multiple of "
+            f"level_steps={cfg.level_steps} must be a multiple of "
             f"unroll_length={PPO['unroll_length']}"
         )
     launch = time.time()
     run = wandb.init(
-        entity=args.entity or None,
-        project=args.project,
-        name=args.name,
-        tags=["brax-ued", args.mode, args.robot, *args.tags],
-        config={**vars(args), "ppo": PPO},
+        entity=cfg.entity or None,
+        project=cfg.project,
+        name=cfg.name,
+        tags=["brax-ued", cfg.mode.curriculum, cfg.robot.name, *cfg.tags],
+        config={**as_dict(cfg), "ppo": PPO},
     )
-    ctx = build(args)
-    buffer = LevelBuffer(args.buffer_size)
-    steps_per_iteration = args.num_lanes * args.envs_per_lane * args.level_steps
+    ctx = build(cfg)
+    buffer = LevelBuffer(cfg.mode.buffer_size)
+    steps_per_iteration = cfg.num_lanes * cfg.envs_per_lane * cfg.level_steps
     # the PAIRED antagonist simulates (and trains on) the same levels again
-    sims_per_iteration = 2 if args.mode == "paired" else 1
+    sims_per_iteration = 2 if cfg.mode.curriculum == Curriculum.paired else 1
     env_steps, it, start = 0, 0, time.time()
     sim_steps, student_train_steps = 0, 0
-    while env_steps < args.num_timesteps:
+    while env_steps < cfg.num_timesteps:
         out: dict[str, Any]
-        if args.mode in ("accel", "plr"):
+        if cfg.mode.curriculum in (Curriculum.accel, Curriculum.plr):
             out = accel_iteration(ctx, buffer, it)
-        elif args.mode == "paired":
+        elif cfg.mode.curriculum == Curriculum.paired:
             out = paired_iteration(ctx)
         else:
-            levels = dr_levels(ctx, args.mode)
+            levels = dr_levels(ctx, cfg.mode.curriculum)
             out = {**run_levels(ctx, levels, train=True), "replay": 1}
         env_steps += steps_per_iteration
         sim_steps += sims_per_iteration * steps_per_iteration
@@ -785,7 +760,7 @@ def main() -> None:
             "student_train_steps": student_train_steps,
             "elapsed_s": time.time() - launch,
         }
-        if it % args.eval_every == 0 or env_steps >= args.num_timesteps:
+        if it % cfg.eval_every == 0 or env_steps >= cfg.num_timesteps:
             log.update(evaluate(ctx, np.random.default_rng(1234)))
         run.log(log)
         print(
@@ -793,8 +768,8 @@ def main() -> None:
             flush=True,
         )
         it += 1
-    if args.checkpoint_dir:
-        path = Path(args.checkpoint_dir) / f"{args.name}.pkl"
+    if cfg.checkpoint_dir:
+        path = Path(cfg.checkpoint_dir) / f"{cfg.name}.pkl"
         path.parent.mkdir(parents=True, exist_ok=True)
         brax_model.save_params(str(path), ctx["student"].inference_params())
     run.summary["final/elapsed_h"] = (time.time() - launch) / 3600

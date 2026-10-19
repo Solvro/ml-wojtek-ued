@@ -1,10 +1,11 @@
-import argparse
+from collections.abc import Callable
+from typing import Any
 
 import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from scripts.render_video import frame_steps, hold_command, parse_level
+from scripts.render_video import frame_steps, hold_command, parse_level, render
 
 
 def test_parse_level_reads_difficulty_and_seed() -> None:
@@ -13,7 +14,7 @@ def test_parse_level_reads_difficulty_and_seed() -> None:
 
 @pytest.mark.parametrize("text", ["0.5", "0.5:x", "a:1", "1.5:2", "-0.1:2", ""])
 def test_parse_level_rejects_malformed(text: str) -> None:
-    with pytest.raises(argparse.ArgumentTypeError, match="DIFFICULTY:SEED"):
+    with pytest.raises(ValueError, match="DIFFICULTY:SEED"):
         parse_level(text)
 
 
@@ -49,3 +50,19 @@ def test_hold_command_without_resample_counter() -> None:
     held = hold_command({"command": jnp.zeros(3)}, jnp.ones(3))
     np.testing.assert_allclose(held["command"], np.ones(3))
     assert set(held) == {"command"}
+
+
+def test_render_refuses_a_command_without_three_entries(
+    compose_cfg: Callable[..., Any],
+) -> None:
+    cfg = compose_cfg(
+        "render", "checkpoint=none.pkl", "levels=[0.5:1]", "command=[0.3,0.0]"
+    )
+    with pytest.raises(ValueError, match="VX, VY, WZ"):
+        render(cfg)
+
+
+def test_render_refuses_a_malformed_level(compose_cfg: Callable[..., Any]) -> None:
+    cfg = compose_cfg("render", "checkpoint=none.pkl", "levels=[0.5]")
+    with pytest.raises(ValueError, match="DIFFICULTY:SEED"):
+        render(cfg)

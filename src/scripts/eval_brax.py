@@ -5,7 +5,7 @@ an episode succeeds when it never falls and ends at least `min_travel` m
 from spawn after `level_steps`:
 
 - `random/d<d>`: `num_levels` fresh levels per difficulty from
-  `--level_space` (the training distribution of DR, shrunk toward flat by
+  `level_space` (the training distribution of DR, shrunk toward flat by
   d; the same base levels at every d).
 - `flat`: `suite_instances` flat levels (`scaled(0)`) - the no-terrain
   reference.
@@ -20,7 +20,7 @@ episodes would bias it low by selection noise. 95% CIs bootstrap over
 levels. `level_success_corr` (pass A vs pass B per-level success) checks
 that levels genuinely differ in difficulty.
 
-With `--level_space param` two more sets:
+With `level_space=param` two more sets:
 
 - `param/uniform`: `num_levels` levels drawn uniformly from the 8-parameter
   space (DR's training distribution) - heterogeneous, so CVaR reads a real
@@ -29,27 +29,36 @@ With `--level_space param` two more sets:
   full range in `AXIS_STEPS` steps (`suite_instances` seeded levels each),
   everything else off. `envelope` = the largest |feature| (m or deg) still
   passed at 50% success, interpolated; `auc` = mean success over the ramp.
+
+Configured by Hydra: `conf/eval.yaml`, typed by `config.schema.EvalConfig`.
 """
 
-import argparse
 import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import hydra
 import jax
 import jax.numpy as jnp
 import numpy as np
 import wandb
 from brax.io import model as brax_model
 from brax.training.agents.ppo import networks as ppo_networks
+from omegaconf import DictConfig
 
 from config.hfield_config import HFieldConfig
+from config.schema import (
+    CONF_DIR,
+    EvalConfig,
+    Sim2SimConfig,
+    as_dict,
+    to_dataclass,
+)
 from hfield.level_space import PARAMS, ParamSpace, make_level_space
 from hfield.tiles import TileLayout
 from scripts.brax_ued import (
     ROBOT_SCALE,
-    add_backend_arg,
     check_wojtek_arena,
     hfield_config,
     make_env,
@@ -126,14 +135,14 @@ def rollout(
     ctx: dict[str, Any], hfields: np.ndarray, key: jax.Array
 ) -> tuple[np.ndarray, np.ndarray]:
     """Per (level, episode): fell and final travel. hfields: (levels, N)."""
-    args = ctx["args"]
+    cfg = ctx["cfg"]
     layout = ctx["layout"]
-    per_chunk = levels_per_chunk(args, layout)
+    per_chunk = levels_per_chunk(cfg, layout)
     fell, travel = [], []
     for start in range(0, len(hfields), per_chunk):
         levels = jnp.asarray(hfields[start : start + per_chunk])
         arena = ctx["assemble"](levels)
-        tile_xy = layout.tile_xy(levels.shape[0], args.episodes)
+        tile_xy = layout.tile_xy(levels.shape[0], cfg.episodes)
         key, reset_key, act_key = jax.random.split(key, 3)
         reset_keys = jax.random.split(reset_key, tile_xy.shape[0])
         _, state = ctx["reset"](reset_keys, arena, tile_xy)
@@ -145,18 +154,18 @@ def rollout(
             arena,
             None,
             deterministic=True,
-            length=args.level_steps,
+            length=cfg.level_steps,
         )
         log = data.extras["log"]
         fell.append(np.asarray(log["fell"].max(axis=1)))
         travel.append(np.asarray(jnp.linalg.norm(log["xy"][:, -1] - start_xy, axis=-1)))
-    shape = (len(hfields), args.episodes)
+    shape = (len(hfields), cfg.episodes)
     return np.concatenate(fell).reshape(shape), np.concatenate(travel).reshape(shape)
 
 
-def levels_per_chunk(args: argparse.Namespace, layout: TileLayout) -> int:
+def levels_per_chunk(cfg: EvalConfig | Sim2SimConfig, layout: TileLayout) -> int:
     """Levels per batch: `chunk_envs` envs, at most one level per tile."""
-    return min(max(1, args.chunk_envs // args.episodes), layout.n_tiles)
+    return min(max(1, cfg.chunk_envs // cfg.episodes), layout.n_tiles)
 
 
 def cross_fit_cvar(a: np.ndarray, b: np.ndarray, alpha: float) -> float:
@@ -173,11 +182,12 @@ def bootstrap_ci(
 
 
 def summarize(
-    prefix: str, passes: list[tuple[np.ndarray, np.ndarray]], args: argparse.Namespace
+    prefix: str, passes: list[tuple[np.ndarray, np.ndarray]], cfg: EvalConfig
 ) -> dict[str, float]:
     (fell_a, travel_a), (fell_b, travel_b) = passes
-    success_a = ((fell_a == 0) & (travel_a >= min_travel(args))).mean(axis=1)
-    success_b = ((fell_b == 0) & (travel_b >= min_travel(args))).mean(axis=1)
+    threshold = min_travel(cfg.robot.name, cfg.min_travel)
+    success_a = ((fell_a == 0) & (travel_a >= threshold)).mean(axis=1)
+    success_b = ((fell_b == 0) & (travel_b >= threshold)).mean(axis=1)
     rng = np.random.default_rng(0)
     n = len(success_a)
     mean = 0.5 * (success_a + success_b)
@@ -188,7 +198,7 @@ def summarize(
     }
     lo, hi = bootstrap_ci(lambda i: float(mean[i].mean()), n, rng)
     out[f"{prefix}/success_rate_ci_low"], out[f"{prefix}/success_rate_ci_high"] = lo, hi
-    for alpha in args.alphas:
+    for alpha in cfg.alphas:
         tag = f"{prefix}/cvar{alpha}_success"
         out[tag] = float(cross_fit_cvar(success_a, success_b, alpha))
         lo, hi = bootstrap_ci(
@@ -239,12 +249,12 @@ def envelope(values: np.ndarray, success: np.ndarray, threshold: float = 0.5) ->
 def param_space_sets(
     ctx: dict[str, Any], space: ParamSpace, key: jax.Array
 ) -> tuple[dict[str, float], dict[str, Any]]:
-    args = ctx["args"]
-    rng = np.random.default_rng(args.seed + 1)
+    cfg = ctx["cfg"]
+    rng = np.random.default_rng(cfg.seed + 1)
     key, sub = jax.random.split(key)
-    uniform = space.uniform(rng, args.num_levels)
+    uniform = space.uniform(rng, cfg.num_levels)
     passes = two_passes(ctx, space.render(uniform), sub)
-    metrics = summarize("param/uniform", passes, args)
+    metrics = summarize("param/uniform", passes, cfg)
     raw = {
         "param_uniform_fell": np.stack([p[0] for p in passes]),
         "param_uniform_travel": np.stack([p[1] for p in passes]),
@@ -255,12 +265,12 @@ def param_space_sets(
         steps = np.linspace(0.0, 1.0, AXIS_STEPS + 1)[1:]
         physical, success = [], []
         for t in steps:
-            genome = np.tile(space.flat, (args.suite_instances, 1))
+            genome = np.tile(space.flat, (cfg.suite_instances, 1))
             genome[:, index] = space.flat[index] + (end - space.flat[index]) * t
             levels = space.from_generated(genome, rng)
             key, sub = jax.random.split(key)
             summary = summarize(
-                f"axis/{name}", two_passes(ctx, space.render(levels), sub), args
+                f"axis/{name}", two_passes(ctx, space.render(levels), sub), cfg
             )
             physical.append(
                 abs(param.low + genome[0, index] * (param.high - param.low))
@@ -277,29 +287,29 @@ def param_space_sets(
 
 
 def evaluate(ctx: dict[str, Any]) -> tuple[dict[str, float], dict[str, Any]]:
-    args, config = ctx["args"], ctx["config"]
-    rng = np.random.default_rng(args.seed)
-    key = jax.random.key(args.seed)
+    cfg, config = ctx["cfg"], ctx["config"]
+    rng = np.random.default_rng(cfg.seed)
+    key = jax.random.key(cfg.seed)
     metrics, raw = {}, {}
     space = make_level_space(
-        args.level_space,
+        cfg.level_space.kind,
         config,
         n_edits=1,
         edit_scale=0.0,
-        robot_scale=ROBOT_SCALE[args.robot],
+        robot_scale=ROBOT_SCALE[cfg.robot.name],
     )
     raw["random_levels"] = space.scaled(
-        np.random.default_rng(args.seed), args.num_levels, 1.0
+        np.random.default_rng(cfg.seed), cfg.num_levels, 1.0
     )
     for difficulty in DIFFICULTIES:
         # same seed per difficulty: the same base levels, shrunk toward flat
         levels = space.scaled(
-            np.random.default_rng(args.seed), args.num_levels, difficulty
+            np.random.default_rng(cfg.seed), cfg.num_levels, difficulty
         )
         hfields = space.render(levels)
         key, sub = jax.random.split(key)
         passes = two_passes(ctx, hfields, sub)
-        metrics.update(summarize(f"random/d{difficulty}", passes, args))
+        metrics.update(summarize(f"random/d{difficulty}", passes, cfg))
         raw[f"random_d{difficulty}_fell"] = np.stack([p[0] for p in passes])
         raw[f"random_d{difficulty}_travel"] = np.stack([p[1] for p in passes])
         print(
@@ -311,20 +321,20 @@ def evaluate(ctx: dict[str, Any]) -> tuple[dict[str, float], dict[str, Any]]:
         for k in SUITE_STRENGTHS:
             hfields = np.stack(
                 [
-                    suite_hfield(config, terrain, k, rng, ROBOT_SCALE[args.robot])
-                    for _ in range(args.suite_instances)
+                    suite_hfield(config, terrain, k, rng, ROBOT_SCALE[cfg.robot.name])
+                    for _ in range(cfg.suite_instances)
                 ]
             )
             key, sub = jax.random.split(key)
             passes = two_passes(ctx, hfields, sub)
-            summary = summarize(f"suite/{terrain}_{k}", passes, args)
+            summary = summarize(f"suite/{terrain}_{k}", passes, cfg)
             metrics[f"suite/{terrain}_{k}/success_rate"] = summary[
                 f"suite/{terrain}_{k}/success_rate"
             ]
             suite_success.append(summary[f"suite/{terrain}_{k}/success_rate"])
     suite_success = np.asarray(suite_success)
     metrics["suite/success_rate"] = float(suite_success.mean())
-    for alpha in args.alphas:
+    for alpha in cfg.alphas:
         k = max(1, int(np.ceil(alpha * len(suite_success))))
         metrics[f"suite/cvar{alpha}_success"] = float(np.sort(suite_success)[:k].mean())
     raw["suite_success"] = suite_success
@@ -333,29 +343,29 @@ def evaluate(ctx: dict[str, Any]) -> tuple[dict[str, float], dict[str, Any]]:
         metrics.update(param_metrics)
         raw.update(param_raw)
     # own streams, so the sets above keep the levels and keys they had in v8
-    flat = space.scaled(np.random.default_rng(args.seed), args.suite_instances, 0.0)
+    flat = space.scaled(np.random.default_rng(cfg.seed), cfg.suite_instances, 0.0)
     passes = two_passes(ctx, space.render(flat), jax.random.fold_in(key, 1))
-    metrics.update(summarize("flat", passes, args))
+    metrics.update(summarize("flat", passes, cfg))
     return metrics, raw
 
 
-def build(args: argparse.Namespace) -> dict[str, Any]:
-    config = hfield_config(args)
-    check_wojtek_arena(args, config)
+def build(cfg: EvalConfig) -> dict[str, Any]:
+    config = hfield_config(cfg.robot.name, cfg.arena)
+    check_wojtek_arena(cfg.robot.name, config)
     layout = TileLayout(config)
-    num_envs = levels_per_chunk(args, layout) * args.episodes
-    env = make_env(args, config, num_envs, train=False)
+    num_envs = levels_per_chunk(cfg, layout) * cfg.episodes
+    env = make_env(cfg.robot.name, cfg.backend, config, num_envs=num_envs, train=False)
     # scored on the deterministic policy: its own obs and feet, not the critic
-    reach = env.travel.reach(args.level_steps, env.travel.actor_sensing)
-    layout.check_reach(reach, f"--level_steps {args.level_steps}")
+    reach = env.travel.reach(cfg.level_steps, env.travel.actor_sensing)
+    layout.check_reach(reach, f"level_steps={cfg.level_steps}")
     network = make_network(env)
     make_policy = ppo_networks.make_inference_fn(network)
     return {
-        "args": args,
+        "cfg": cfg,
         "config": config,
         "layout": layout,
         "assemble": jax.jit(layout.assemble),
-        "params": brax_model.load_params(args.checkpoint),
+        "params": brax_model.load_params(cfg.checkpoint),
         "reset": jax.jit(
             jax.vmap(lambda k, h, t: env.reset(k, h, tile_xy=t), in_axes=(0, None, 0))
         ),
@@ -363,45 +373,23 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def main() -> None:
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--checkpoint", required=True, help="brax_ued.py .pkl params")
-    p.add_argument("--name", required=True, help="wandb run name")
-    p.add_argument("--entity", default="")
-    p.add_argument("--project", default="wojtyla")
-    p.add_argument("--out_dir", required=True)
-    p.add_argument("--num_levels", type=int, default=2048)
-    p.add_argument("--episodes", type=int, default=4, help="per level per pass")
-    p.add_argument("--suite_instances", type=int, default=64)
-    p.add_argument("--chunk_envs", type=int, default=4096)
-    p.add_argument("--level_steps", type=int, default=300)
-    p.add_argument("--min_travel", type=float, default=1.0)
-    p.add_argument("--alphas", type=float, nargs="+", default=[0.1, 0.25])
-    p.add_argument("--amplitude", type=float, default=0.3)
-    p.add_argument("--level_space", default="grid", choices=["grid", "param"])
-    p.add_argument("--robot", default="wojtek", choices=list(ROBOT_SCALE))
-    add_backend_arg(p)
-    p.add_argument("--tags", nargs="*", default=[], help="extra wandb tags")
-    p.add_argument("--coarse_n", type=int, default=13)
-    p.add_argument("--pad_radius", type=float, default=0.55)
-    p.add_argument("--pad_taper", type=float, default=0.2)
-    p.add_argument("--seed", type=int, default=1234)
-    args = p.parse_args()
-
+@hydra.main(config_path=CONF_DIR, config_name="eval", version_base="1.3")
+def main(dict_cfg: DictConfig) -> None:
+    cfg = to_dataclass(dict_cfg, EvalConfig)
     run = wandb.init(
-        entity=args.entity or None,
-        project=args.project,
-        name=args.name,
-        tags=["brax-ued", "final-eval", args.robot, *args.tags],
-        config=vars(args),
+        entity=cfg.entity or None,
+        project=cfg.project,
+        name=cfg.name,
+        tags=["brax-ued", "final-eval", cfg.robot.name, *cfg.tags],
+        config=as_dict(cfg),
     )
-    metrics, raw = evaluate(build(args))
+    metrics, raw = evaluate(build(cfg))
     run.summary.update(metrics)
     run.finish()
-    out = Path(args.out_dir)
+    out = Path(cfg.out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    (out / f"{args.name}.json").write_text(json.dumps(metrics, indent=2))
-    np.savez_compressed(out / f"{args.name}.npz", **raw)
+    (out / f"{cfg.name}.json").write_text(json.dumps(metrics, indent=2))
+    np.savez_compressed(out / f"{cfg.name}.npz", **raw)
 
 
 if __name__ == "__main__":

@@ -1,17 +1,21 @@
+from collections.abc import Callable
+from typing import Any
+
 import jax.numpy as jnp
 import numpy as np
 import pytest
 
 from config.hfield_config import HFieldConfig
 from hfield.tiles import TileLayout
-from scripts.brax_ued import hfield_config, parse_args
+from scripts.brax_ued import hfield_config
 
 SMALL = HFieldConfig(patch_radius=1.0, tiles=3, reach=1.5)
+Compose = Callable[..., Any]
 
 
-def benchmark_layout(robot: str = "wojtek") -> TileLayout:
-    flags = ["--mode", "dr", "--name", "t", "--robot", robot]
-    return TileLayout(hfield_config(parse_args(flags)))
+def benchmark_layout(compose_cfg: Compose, robot: str) -> TileLayout:
+    cfg = compose_cfg("train", "mode=dr", "name=t", f"robot={robot}")
+    return TileLayout(hfield_config(cfg.robot.name, cfg.arena))
 
 
 def node(layout: TileLayout, xy: np.ndarray) -> tuple[int, int]:
@@ -26,16 +30,16 @@ def distinct_levels(layout: TileLayout, k: int) -> np.ndarray:
     return np.stack([np.roll(ramp, 7 * i) for i in range(k)])
 
 
-def test_benchmark_gap_covers_reach() -> None:
-    layout = benchmark_layout()
+def test_benchmark_gap_covers_reach(compose_cfg: Compose) -> None:
+    layout = benchmark_layout(compose_cfg, "wojtek")
     assert layout.gap == pytest.approx(7.0)
     assert layout.nodes == 4161
     assert layout.leak_radius == pytest.approx(layout.config.reach)
     assert layout.n_tiles == 256
 
 
-def test_go1_gap_scales_with_the_robot() -> None:
-    layout = benchmark_layout("go1")
+def test_go1_gap_scales_with_the_robot(compose_cfg: Compose) -> None:
+    layout = benchmark_layout(compose_cfg, "go1")
     assert layout.config.reach == pytest.approx(25.0)
     assert layout.gap == pytest.approx(17.5)
 
@@ -89,7 +93,7 @@ def test_neighbouring_patches_are_a_gap_apart() -> None:
 def test_assemble_refuses_more_levels_than_tiles() -> None:
     layout = TileLayout(SMALL)
     levels = jnp.zeros((layout.n_tiles + 1, SMALL.grid_size**2))
-    with pytest.raises(ValueError, match="hfield_params.tiles=4"):
+    with pytest.raises(ValueError, match=r"arena\.tiles=4"):
         layout.assemble(levels)
 
 

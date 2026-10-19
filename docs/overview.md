@@ -30,8 +30,8 @@ src/
     tools/           build_model / build_terrain / check_* CLIs
     paths.py         repo-relative asset paths, robot constants
   config/            Hydra structured configs  (see configuration.md)
-    hfield_config.py HFieldConfig (level genome envelope)
-    arena_config.py  ArenaConfig for the arena builder
+    hfield_config.py HFieldConfig (level genome envelope, the `arena` group)
+    schema.py        schema dataclass per entry point, enums, CONF_DIR
   modules/
     generator.py     LevelGenerator (PAIRED adversary)
   robots/
@@ -53,6 +53,8 @@ src/
     profile_brax_ued.py  throughput profile of brax_ued
     check_hfield_batch.py  per-backend shared-arena sanity check
 main.py              random-agent MuJoCo-viewer preview
+conf/                Hydra YAML: one primary per entry point + groups
+                     robot/ mode/ level_space/ arena/  (see configuration.md)
 ```
 
 ## End-to-end data flow
@@ -62,7 +64,7 @@ shared tiled arena → each iteration writes `num_lanes` levels into tiles of on
 `hfield_data` (`TileLayout.assemble`), resets `envs_per_lane` envs per tile with
 a fresh physics DR draw, and steps them in 20-step unrolls with brax's PPO
 (networks, running obs normalizer, `compute_ppo_loss`) → per-lane regret
-(mean positive GAE advantage) → `--mode`:
+(mean positive GAE advantage) → `mode=` (`conf/mode/`):
 - `dr` / `dr_easy` / `dr_mixed` — fresh uniform levels every iteration (full difficulty / easy / mixed).
 - `accel` — replay high-regret buffer levels (training), mutate them, and score
   mutations + fresh easy levels on explore iterations (no training).
@@ -92,5 +94,5 @@ variants; `render_video.py` renders clips. Details in [ued-accel.md](ued-accel.m
 - Get it running → [setup.md](setup.md)
 - The env, tasks, terrain, hfield-swap trick → [environment.md](environment.md)
 - The curriculum, heightfield levels, trainer + eval scripts → [ued-accel.md](ued-accel.md)
-- Arena config fields → [configuration.md](configuration.md)
+- `conf/` groups and every config field → [configuration.md](configuration.md)
 - Tooling, imports, conventions → [development.md](development.md)

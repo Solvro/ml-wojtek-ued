@@ -1,0 +1,276 @@
+from collections.abc import Callable
+from typing import Any
+
+import pytest
+from hydra import compose, initialize_config_dir
+from hydra.errors import ConfigCompositionException, MissingConfigException
+from omegaconf.errors import InterpolationResolutionError, MissingMandatoryValue
+
+from config.hfield_config import HFieldConfig
+from config.schema import (
+    CONF_DIR,
+    Backend,
+    Curriculum,
+    LevelSpaceKind,
+    Mutation,
+    Robot,
+    Score,
+    as_dict,
+)
+
+Compose = Callable[..., Any]
+
+REQUIRED = {
+    "train": ("mode=dr", "name=t"),
+    "profile": (),
+    "eval": ("checkpoint=c.pkl", "name=t", "out_dir=o"),
+    "sim2sim": ("checkpoint=c.pkl", "name=t", "out_dir=o"),
+    "render": ("checkpoint=c.pkl", "levels=[0.75:3]"),
+    "arena": (),
+    "check_hfield": (),
+    "paper_tables": (),
+    "paper_figures": (),
+}
+GROUPS = {
+    "train": ("robot", "mode", "level_space", "arena"),
+    "profile": ("robot", "mode", "level_space", "arena"),
+    "eval": ("robot", "level_space", "arena"),
+    "sim2sim": ("robot", "arena"),
+    "render": ("robot", "level_space", "arena"),
+    "arena": ("arena",),
+    "check_hfield": ("arena",),
+    "paper_figures": ("arena",),
+}
+OPTIONS = {
+    "robot": ("wojtek", "go1"),
+    "mode": (
+        "dr",
+        "dr_easy",
+        "dr_mixed",
+        "accel",
+        "accel_grow",
+        "accel_sfl",
+        "plr",
+        "paired",
+    ),
+    "level_space": ("grid", "param"),
+    "arena": ("v10",),
+}
+V10 = HFieldConfig(amplitude=0.3, coarse_n=13, pad_radius=0.55, pad_taper=0.2)
+
+
+@pytest.mark.parametrize("name", REQUIRED)
+def test_every_primary_composes_with_its_defaults(
+    compose_cfg: Compose, name: str
+) -> None:
+    compose_cfg(name, *REQUIRED[name])
+
+
+@pytest.mark.parametrize(
+    ("name", "group", "option"),
+    [
+        (name, group, option)
+        for name, groups in GROUPS.items()
+        for group in groups
+        for option in OPTIONS[group]
+    ],
+)
+def test_every_group_option_composes(
+    compose_cfg: Compose, name: str, group: str, option: str
+) -> None:
+    overrides = [o for o in REQUIRED[name] if not o.startswith(f"{group}=")]
+    compose_cfg(name, *overrides, f"{group}={option}")
+
+
+def test_train_defaults(compose_cfg: Compose) -> None:
+    cfg = compose_cfg("train", "mode=dr", "name=t")
+    assert cfg.robot.name == Robot.wojtek
+    assert cfg.level_space.kind == LevelSpaceKind.grid
+    assert (cfg.level_space.n_edits, cfg.level_space.edit_scale) == (8, 0.15)
+    assert cfg.arena == V10
+    assert cfg.backend == Backend.auto
+    assert (cfg.seed, cfg.num_timesteps) == (0, 300_000_000)
+    assert (cfg.num_lanes, cfg.envs_per_lane, cfg.level_steps) == (256, 32, 300)
+    assert cfg.checkpoint_dir is None
+    assert cfg.tags == []
+
+
+@pytest.mark.parametrize(
+    ("mode", "curriculum", "mutation", "score"),
+    [
+        ("dr", Curriculum.dr, Mutation.local, Score.pvl),
+        ("dr_easy", Curriculum.dr_easy, Mutation.local, Score.pvl),
+        ("dr_mixed", Curriculum.dr_mixed, Mutation.local, Score.pvl),
+        ("accel", Curriculum.accel, Mutation.local, Score.pvl),
+        ("accel_grow", Curriculum.accel, Mutation.grow, Score.pvl),
+        ("accel_sfl", Curriculum.accel, Mutation.grow, Score.learnability),
+        ("plr", Curriculum.plr, Mutation.local, Score.pvl),
+        ("paired", Curriculum.paired, Mutation.local, Score.pvl),
+    ],
+)
+def test_mode_sets_its_curriculum_switches(
+    compose_cfg: Compose,
+    mode: str,
+    curriculum: Curriculum,
+    mutation: Mutation,
+    score: Score,
+) -> None:
+    cfg = compose_cfg("train", f"mode={mode}", "name=t")
+    assert cfg.mode.curriculum == curriculum
+    assert cfg.mode.mutation == mutation
+    assert cfg.mode.score == score
+    assert cfg.mode.generator_scale == 0.1
+    assert cfg.mode.buffer_size == 4000
+
+
+@pytest.mark.parametrize(
+    ("space", "n_edits", "edit_scale"), [("grid", 8, 0.15), ("param", 2, 0.1)]
+)
+def test_level_space_sets_its_edits(
+    compose_cfg: Compose, space: str, n_edits: int, edit_scale: float
+) -> None:
+    cfg = compose_cfg("train", "mode=accel", "name=t", f"level_space={space}")
+    assert cfg.level_space.kind == LevelSpaceKind(space)
+    assert (cfg.level_space.n_edits, cfg.level_space.edit_scale) == (
+        n_edits,
+        edit_scale,
+    )
+
+
+def test_generator_scale_suffix_is_an_override(compose_cfg: Compose) -> None:
+    cfg = compose_cfg("train", "mode=accel_grow", "name=t", "mode.generator_scale=0.2")
+    assert cfg.mode.generator_scale == 0.2
+    assert cfg.mode.mutation == Mutation.grow
+
+
+def test_arena_builder_and_training_read_the_same_arena(
+    compose_cfg: Compose,
+) -> None:
+    built = compose_cfg("arena").arena
+    for name in ("train", "eval", "sim2sim", "render", "check_hfield"):
+        assert compose_cfg(name, *REQUIRED[name]).arena == built == V10
+    tiles = compose_cfg("arena", "arena.tiles=8").arena
+    assert compose_cfg("train", "mode=dr", "name=t", "arena.tiles=8").arena == tiles
+
+
+def test_profile_is_a_param_dr_run(compose_cfg: Compose) -> None:
+    cfg = compose_cfg("profile", "backend=warp", "robot=go1")
+    assert cfg.mode.curriculum == Curriculum.dr
+    assert cfg.level_space.kind == LevelSpaceKind.param
+    assert (cfg.level_space.n_edits, cfg.level_space.edit_scale) == (2, 0.1)
+    assert cfg.backend == Backend.warp
+    assert cfg.robot.name == Robot.go1
+    assert cfg.name == "profile"
+
+
+def test_per_entry_point_defaults(compose_cfg: Compose) -> None:
+    assert compose_cfg("eval", *REQUIRED["eval"]).level_space.kind == "grid"
+    assert compose_cfg("render", *REQUIRED["render"]).level_space.kind == "param"
+    assert compose_cfg("eval", *REQUIRED["eval"]).alphas == [0.1, 0.25]
+    assert compose_cfg("render", *REQUIRED["render"]).command == [0.3, 0.0, 0.2]
+
+
+def test_lists_from_the_command_line(compose_cfg: Compose) -> None:
+    cfg = compose_cfg("train", "mode=dr", "name=t", "tags=[a,b]")
+    assert cfg.tags == ["a", "b"]
+    render = compose_cfg("render", "checkpoint=c", "levels=[0.5:1,1.0:17]")
+    assert render.levels == ["0.5:1", "1.0:17"]
+
+
+def test_paper_prefixes_per_robot(compose_cfg: Compose) -> None:
+    cfg = compose_cfg("paper_tables", "prefixes.go1=v10_go1")
+    assert cfg.prefixes == {Robot.wojtek: None, Robot.go1: "v10_go1"}
+
+
+def test_as_dict_writes_enums_as_strings(compose_cfg: Compose) -> None:
+    out = as_dict(compose_cfg("train", "mode=accel_sfl", "name=t"))
+    assert out["mode"]["score"] == "learnability"
+    assert type(out["robot"]["name"]) is str
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        ("mode=dr", "nmae=t"),
+        ("mode=dr", "name=t", "mode.scor=pvl"),
+        ("mode=dr", "name=t", "arena.amplitdue=0.3"),
+        ("mode=dr", "name=t", "seed=abc"),
+        ("mode=dr", "name=t", "backend=cuda"),
+        ("mode=dr", "name=t", "mode.score=learnabilty"),
+        ("mode=dr", "name=t", "prefixes.go1=x"),
+    ],
+)
+def test_typos_fail_at_startup(compose_cfg: Compose, overrides: tuple[str]) -> None:
+    with pytest.raises(ConfigCompositionException):
+        compose_cfg("train", *overrides)
+
+
+def test_unknown_group_option_fails(compose_cfg: Compose) -> None:
+    with pytest.raises(MissingConfigException, match="go2"):
+        compose_cfg("train", "mode=dr", "name=t", "robot=go2")
+
+
+def test_mode_is_required(compose_cfg: Compose) -> None:
+    with pytest.raises(ConfigCompositionException, match="mode"):
+        compose_cfg("train", "name=t")
+
+
+@pytest.mark.parametrize(
+    ("name", "missing"),
+    [("train", "name"), ("eval", "checkpoint"), ("render", "levels")],
+)
+def test_required_fields_fail_when_unset(
+    compose_cfg: Compose, name: str, missing: str
+) -> None:
+    overrides = [o for o in REQUIRED[name] if not o.startswith(f"{missing}=")]
+    with pytest.raises(MissingMandatoryValue, match=missing):
+        compose_cfg(name, *overrides)
+
+
+def test_run_dir_without_name_says_what_to_pass() -> None:
+    with initialize_config_dir(config_dir=CONF_DIR, version_base="1.3"):
+        cfg = compose("train", overrides=["mode=dr"], return_hydra_config=True)
+        with pytest.raises(InterpolationResolutionError, match="pass name="):
+            _ = cfg.hydra.run.dir
+
+
+@pytest.mark.parametrize("key", ["n_edits", "edit_scale"])
+def test_edit_strength_is_only_a_level_space_key(
+    compose_cfg: Compose, key: str
+) -> None:
+    with pytest.raises(ConfigCompositionException, match=key):
+        compose_cfg("train", "mode=dr", "name=t", f"arena.{key}=3")
+
+
+@pytest.mark.parametrize(
+    ("space", "mode", "n_edits"),
+    [
+        ("grid", "accel", 8),
+        ("grid", "accel_grow", 16),
+        ("grid", "accel_sfl", 16),
+        ("param", "accel", 2),
+        ("param", "accel_grow", 2),
+        ("param", "accel_sfl", 2),
+    ],
+)
+def test_grow_variants_edit_more_grid_cells(
+    compose_cfg: Compose, space: str, mode: str, n_edits: int
+) -> None:
+    cfg = compose_cfg("train", f"mode={mode}", "name=t", f"level_space={space}")
+    assert cfg.level_space.n_edits == n_edits
+
+
+def test_n_edits_override_wins_over_the_mutation_default(
+    compose_cfg: Compose,
+) -> None:
+    cfg = compose_cfg("train", "mode=accel_grow", "name=t", "level_space.n_edits=4")
+    assert cfg.level_space.n_edits == 4
+
+
+def test_run_dir_records_the_config_beside_the_run() -> None:
+    with initialize_config_dir(config_dir=CONF_DIR, version_base="1.3"):
+        cfg = compose(
+            "train", overrides=["mode=dr", "name=x"], return_hydra_config=True
+        )
+    assert cfg.hydra.run.dir == "artifacts/hydra/x"
+    assert cfg.hydra.job.chdir is False

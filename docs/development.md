@@ -37,8 +37,16 @@ of those pins.
 | `just fmt` | `ruff format` + `ruff check --fix` on `src` |
 | `just lint` | `ruff check` + `ruff format --check` on `src` |
 | `just build` | build the MJX model XMLs |
-| `just build-accel-arena` | write the `accel` terrain arena |
-| `just render-video *args` | mp4 clips of a `brax_ued.py` checkpoint (`scripts/render_video.py`) |
+| `just build-accel-arena *args` | write the `accel` terrain arena (`conf/arena.yaml`) |
+| `just train *args` | `scripts/brax_ued.py` (`conf/train.yaml`) |
+| `just profile *args` | `scripts/profile_brax_ued.py` (`conf/profile.yaml`) |
+| `just eval *args` | `scripts/eval_brax.py` (`conf/eval.yaml`) |
+| `just sim2sim *args` | `scripts/eval_sim2sim.py` (`conf/sim2sim.yaml`) |
+| `just render-video *args` | `scripts/render_video.py` (`conf/render.yaml`) |
+| `just paper-tables *args` | `scripts/paper_tables.py` (`conf/paper_tables.yaml`) |
+| `just paper-figures *args` | `scripts/paper_figures.py` (`conf/paper_figures.yaml`) |
+
+`*args` are Hydra overrides ([configuration.md](configuration.md)).
 
 `just lint` covers ruff only; run `ty check` (static types) manually per the
 global convention. Tests live in `tests/`, mirroring `src/`
@@ -57,17 +65,28 @@ global convention. Tests live in `tests/`, mirroring `src/`
 - New env task → register it in `wojtek_env/envs/registry.py` (that is the one
   library file you edit, since it is the extension point).
 - Changing the level envelope or arena layout
-  (`patch_radius`/`cell_size`/`amplitude`/`base_z`/`tiles`/`reach`)
-  → rebuild the arena with the same override, e.g.
-  `just build-accel-arena hfield_params.amplitude=0.30`; genome-only fields
-  (`coarse_n`/`n_edits`/`edit_scale`) need no rebuild.
+  (`patch_radius`/`cell_size`/`amplitude`/`base_z`/`pad_radius`/`tiles`/`reach`)
+  → rebuild the arena with the same override as the run, e.g.
+  `just build-accel-arena arena.tiles=8` for `just train ... arena.tiles=8`;
+  genome-only fields (`coarse_n`, `level_space.*`) need no rebuild. A new
+  benchmark arena = a new `conf/arena/<name>.yaml`.
+- New config field → add it to the schema dataclass in `config/schema.py`
+  (field `= MISSING`) and its value to the YAML in `conf/`; the composition
+  tests (`tests/config/test_schema.py`) fail on a field left unset.
+- New entry point → a schema dataclass in `SCHEMAS`, a `conf/<name>.yaml`
+  whose defaults list starts with `<name>_schema`, and
+  `@hydra.main(config_path=CONF_DIR, config_name=..., version_base="1.3")`
+  converting with `to_dataclass`.
 
 ## Gotchas
 
 - **Rebuild assets** after cloning or after any envelope change — the MJX model
   and arenas are gitignored and generated ([setup.md](setup.md#build-generated-assets)).
 - **Hydra property gap** — `HFieldConfig.grid_size` is a property; the DictConfig
-  doesn't expose it, so `hfield/arena.py` materialises the config with
-  `OmegaConf.to_object`. Do the same if you read `grid_size` off Hydra config.
+  doesn't expose it, so every entry point converts the composed config to its
+  schema dataclass (`config.schema.to_dataclass`) before use.
+- **Overriding a required value** — merging `???` onto a set value keeps the
+  set value, so a primary that includes another (`profile.yaml` →
+  `train.yaml`) cannot make an inherited field required again.
 - **`FunctionalEnv` obs is split** actor/critic — `utils.env.Obs.actor`
   (`state`) and `Obs.critic` (`privileged_state`) are consumed separately.

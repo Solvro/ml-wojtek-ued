@@ -16,6 +16,7 @@
 set -euo pipefail
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1 JAX_PLATFORMS=cuda
+export HYDRA_FULL_ERROR=1
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 COPY="${COPY:?set COPY=<frozen copy dir>}"
 export PYTHONPATH="$COPY/src"
@@ -33,7 +34,7 @@ RUN="td_sanity_${ROBOT}_${BACKEND}"
 echo "job ${SLURM_JOB_ID} task ${SLURM_ARRAY_TASK_ID} on ${SLURM_JOB_NODELIST}: $RUN ($CKPT)"
 
 uv run --no-sync python "$COPY/src/scripts/eval_brax.py" \
-  --checkpoint "$PDW/artifacts/brax_ued/$CKPT.pkl" --name "$RUN" \
-  --entity dominikgalus9-wroc-aw-university-of-science-and-technology \
-  --project wojtyla --out_dir "$PDW/runs/tiled_draft" --level_space param \
-  --robot "$ROBOT" --backend "$BACKEND" --tags tiled-draft-sanity
+  "checkpoint=$PDW/artifacts/brax_ued/$CKPT.pkl" "name=$RUN" \
+  entity=dominikgalus9-wroc-aw-university-of-science-and-technology \
+  project=wojtyla "out_dir=$PDW/runs/tiled_draft" level_space=param \
+  "robot=$ROBOT" "backend=$BACKEND" "tags=[tiled-draft-sanity]"

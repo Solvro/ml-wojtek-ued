@@ -12,13 +12,15 @@
 set -euo pipefail
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1
+export HYDRA_FULL_ERROR=1
 # fail instead of silently falling back to CPU when CUDA init fails
 # (seen: CUDA_ERROR_MPS_CONNECTION_FAILED on some Lem nodes)
 export JAX_PLATFORMS=cuda
 # warp allocates its collision scratch outside JAX's pool (utils/env.py)
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
-# SRC=<dir>/src, a frozen copy with the built assets/ beside it (wojtek_env
-# resolves assets from src/..), keeps queued jobs on the submitted code
+# SRC=<dir>/src, a frozen copy with the built assets/ and conf/ beside it
+# (wojtek_env and config.schema resolve them from src/..), keeps queued jobs
+# on the submitted code
 SRC="${SRC:-$HOME/workspace/ml-wojtek-ued/src}"
 export PYTHONPATH="$SRC"
 PDW=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued
@@ -32,12 +34,16 @@ PREFIX="${PREFIX:-v7_brax}"
 # ROBOT=go1 runs Playground's Go1 at its size (robots/go1.py)
 ROBOT="${ROBOT:-wojtek}"
 # BACKEND: auto (warp on the GPU) | jax | warp; TAGS: extra wandb tags
-read -ra TAG_ARGS <<<"${TAGS:-}"
+read -ra TAG_LIST <<<"${TAGS:-}"
+TAG_LIST_CSV="$(
+  IFS=,
+  echo "${TAG_LIST[*]}"
+)"
 RUN="${PREFIX}_${MODE}_seed${SEED}"
 echo "job ${SLURM_JOB_ID} task ${SLURM_ARRAY_TASK_ID}: eval $RUN"
 
 uv run --no-sync python "$SRC/scripts/eval_brax.py" \
-  --checkpoint "$PDW/artifacts/brax_ued/$RUN.pkl" --name "${RUN}_final_eval" \
-  --entity dominikgalus9-wroc-aw-university-of-science-and-technology \
-  --project wojtyla --out_dir "$PDW/runs/final_eval" --level_space "${SPACE:-grid}" \
-  --robot "$ROBOT" --backend "${BACKEND:-auto}" --tags "${TAG_ARGS[@]}"
+  "checkpoint=$PDW/artifacts/brax_ued/$RUN.pkl" "name=${RUN}_final_eval" \
+  entity=dominikgalus9-wroc-aw-university-of-science-and-technology \
+  project=wojtyla "out_dir=$PDW/runs/final_eval" "level_space=${SPACE:-grid}" \
+  "robot=$ROBOT" "backend=${BACKEND:-auto}" "tags=[$TAG_LIST_CSV]"

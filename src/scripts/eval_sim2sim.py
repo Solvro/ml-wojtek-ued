@@ -22,9 +22,11 @@ Success = no fall and >= `min_travel` x robot scale from spawn after
 `level_steps`. Per variant and set: success, fall rate and travel with 95%
 bootstrap CIs over levels, and `drop` = `mjx_match` success - variant
 success with a paired bootstrap CI.
+
+Configured by Hydra: `conf/sim2sim.yaml`, typed by
+`config.schema.Sim2SimConfig`.
 """
 
-import argparse
 import contextlib
 import copy
 import functools
@@ -36,6 +38,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, cast
 
+import hydra
 import jax
 import jax.numpy as jnp
 import mujoco
@@ -46,8 +49,17 @@ from brax.training.agents.ppo import networks as ppo_networks
 from mujoco import mjx
 from mujoco_playground._src import mjx_env
 from mujoco_playground._src.locomotion.go1 import base as go1_base
+from omegaconf import DictConfig
 
 from config.hfield_config import HFieldConfig
+from config.schema import (
+    CONF_DIR,
+    Backend,
+    LevelSpaceKind,
+    Sim2SimConfig,
+    as_dict,
+    to_dataclass,
+)
 from hfield.level_space import make_level_space
 from hfield.tiles import TileLayout
 from robots.go1 import Go1Terrain, scene_xml
@@ -70,7 +82,7 @@ from scripts.eval_brax import (
 )
 from wojtek_env.envs.base import WojtekEnv
 
-# eval_brax's default --num_levels; param/uniform is a prefix of its draw
+# eval_brax's default num_levels; param/uniform is a prefix of its draw
 EVAL_BRAX_UNIFORM = 2048
 SIM2SIM_STRENGTHS = SUITE_STRENGTHS[:2]
 
@@ -471,26 +483,26 @@ def cpu_physics(physics: CpuPhysics) -> Iterator[None]:
         modules[0].step, modules[1]._step_with_latency, modules[2].step = saved
 
 
-def level_sets(args: argparse.Namespace, config: HFieldConfig) -> dict[str, Any]:
+def level_sets(cfg: Sim2SimConfig, config: HFieldConfig) -> dict[str, Any]:
     """Rendered hfields per set, the levels eval_brax builds for them."""
-    scale = ROBOT_SCALE[args.robot]
+    scale = ROBOT_SCALE[cfg.robot.name]
     space = make_level_space(
-        args.level_space, config, n_edits=1, edit_scale=0.0, robot_scale=scale
+        LevelSpaceKind.param, config, n_edits=1, edit_scale=0.0, robot_scale=scale
     )
-    flat = space.scaled(np.random.default_rng(args.seed), args.suite_instances, 0.0)
-    uniform = space.uniform(np.random.default_rng(args.seed + 1), EVAL_BRAX_UNIFORM)
+    flat = space.scaled(np.random.default_rng(cfg.seed), cfg.suite_instances, 0.0)
+    uniform = space.uniform(np.random.default_rng(cfg.seed + 1), EVAL_BRAX_UNIFORM)
     sets = {
         "flat": space.render(flat),
-        f"{args.level_space}/uniform": space.render(uniform[: args.num_levels]),
+        "param/uniform": space.render(uniform[: cfg.num_levels]),
     }
     # eval_brax's suite stream: only blocks draws, k = 1..4 in order
-    rng = np.random.default_rng(args.seed)
+    rng = np.random.default_rng(cfg.seed)
     for terrain in SUITE_TERRAINS:
         for k in SIM2SIM_STRENGTHS:
             sets[f"suite/{terrain}_{k}"] = np.stack(
                 [
                     suite_hfield(config, terrain, k, rng, scale)
-                    for _ in range(args.suite_instances)
+                    for _ in range(cfg.suite_instances)
                 ]
             )
     return sets
@@ -562,7 +574,7 @@ def summarize(results: Results, threshold: float) -> dict[str, float]:
 def evaluate(
     ctx: dict[str, Any], sets: dict[str, np.ndarray]
 ) -> tuple[dict[str, float], dict[str, Any]]:
-    args, base, physics = ctx["args"], ctx["base"], ctx["physics"]
+    cfg, base, physics = ctx["cfg"], ctx["base"], ctx["physics"]
     results: Results = {}
     raw: dict[str, Any] = {}
     elapsed: dict[str, float] = {}
@@ -573,27 +585,34 @@ def evaluate(
         results[variant] = {}
         for i, (name, hfields) in enumerate(sets.items()):
             # same reset keys for every variant: paired comparisons
-            key = jax.random.fold_in(jax.random.key(args.seed), i)
+            key = jax.random.fold_in(jax.random.key(cfg.seed), i)
             fell, travel = rollout(ctx, hfields, key)
             results[variant][name] = (fell, travel, physics.take_diverged())
             tag = f"{variant}_{name.replace('/', '_')}"
             raw[f"{tag}_fell"], raw[f"{tag}_travel"] = fell, travel
         elapsed[variant] = time.time() - start
         print(f"{variant}: {elapsed[variant]:.0f} s", flush=True)
-    metrics = summarize(results, min_travel(args))
+    metrics = summarize(results, min_travel(cfg.robot.name, cfg.min_travel))
     for variant, seconds in elapsed.items():
         metrics[f"{variant}/elapsed_s"] = seconds
     return metrics, raw
 
 
-def build(args: argparse.Namespace) -> dict[str, Any]:
-    config = hfield_config(args)
-    check_wojtek_arena(args, config)
+def build(cfg: Sim2SimConfig) -> dict[str, Any]:
+    config = hfield_config(cfg.robot.name, cfg.arena)
+    check_wojtek_arena(cfg.robot.name, config)
     layout = TileLayout(config)
-    env = make_env(args, config, levels_per_chunk(args, layout) * args.episodes, False)
+    # CpuPhysics steps the jax env's data layout on CPU MuJoCo
+    env = make_env(
+        cfg.robot.name,
+        Backend.jax,
+        config,
+        num_envs=levels_per_chunk(cfg, layout) * cfg.episodes,
+        train=False,
+    )
     # scored on the deterministic policy: its own obs and feet, not the critic
-    reach = env.travel.reach(args.level_steps, env.travel.actor_sensing)
-    layout.check_reach(reach, f"--level_steps {args.level_steps}")
+    reach = env.travel.reach(cfg.level_steps, env.travel.actor_sensing)
+    layout.check_reach(reach, f"level_steps={cfg.level_steps}")
     base = cast(Any, env)._env.unwrapped
     physics = CpuPhysics(base.mj_model, worker_count())
     make_policy = ppo_networks.make_inference_fn(make_network(env))
@@ -621,13 +640,13 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
             )
 
     return {
-        "args": args,
+        "cfg": cfg,
         "config": config,
         "layout": layout,
         "assemble": jax.jit(layout.assemble),
         "base": base,
         "physics": physics,
-        "params": brax_model.load_params(args.checkpoint),
+        "params": brax_model.load_params(cfg.checkpoint),
         "reset": jax.jit(
             jax.vmap(lambda k, h, t: env.reset(k, h, tile_xy=t), in_axes=(0, None, 0))
         ),
@@ -635,45 +654,24 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def main() -> None:
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--checkpoint", required=True, help="brax_ued.py .pkl params")
-    p.add_argument("--name", required=True, help="wandb run name")
-    p.add_argument("--entity", default="")
-    p.add_argument("--project", default="wojtyla")
-    p.add_argument("--out_dir", required=True)
-    p.add_argument("--num_levels", type=int, default=256)
-    p.add_argument("--episodes", type=int, default=4, help="per level")
-    p.add_argument("--suite_instances", type=int, default=64)
-    p.add_argument("--chunk_envs", type=int, default=1024)
-    p.add_argument("--level_steps", type=int, default=300)
-    p.add_argument("--min_travel", type=float, default=1.0)
-    p.add_argument("--amplitude", type=float, default=0.3)
-    p.add_argument("--level_space", default="param", choices=["param"])
-    p.add_argument("--robot", default="wojtek", choices=list(ROBOT_SCALE))
-    # CpuPhysics steps the jax env's data layout on CPU MuJoCo
-    p.set_defaults(backend="jax")
-    p.add_argument("--coarse_n", type=int, default=13)
-    p.add_argument("--pad_radius", type=float, default=0.55)
-    p.add_argument("--pad_taper", type=float, default=0.2)
-    p.add_argument("--seed", type=int, default=1234)
-    args = p.parse_args()
-
+@hydra.main(config_path=CONF_DIR, config_name="sim2sim", version_base="1.3")
+def main(dict_cfg: DictConfig) -> None:
+    cfg = to_dataclass(dict_cfg, Sim2SimConfig)
     run = wandb.init(
-        entity=args.entity or None,
-        project=args.project,
-        name=args.name,
-        tags=["sim2sim", args.robot],
-        config=vars(args),
+        entity=cfg.entity or None,
+        project=cfg.project,
+        name=cfg.name,
+        tags=["sim2sim", cfg.robot.name],
+        config=as_dict(cfg),
     )
-    ctx = build(args)
-    metrics, raw = evaluate(ctx, level_sets(args, ctx["config"]))
+    ctx = build(cfg)
+    metrics, raw = evaluate(ctx, level_sets(cfg, ctx["config"]))
     run.summary.update(metrics)
     run.finish()
-    out = Path(args.out_dir)
+    out = Path(cfg.out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    (out / f"{args.name}.json").write_text(json.dumps(metrics, indent=2))
-    np.savez_compressed(out / f"{args.name}.npz", **raw)
+    (out / f"{cfg.name}.json").write_text(json.dumps(metrics, indent=2))
+    np.savez_compressed(out / f"{cfg.name}.npz", **raw)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,24 @@
+defaults:
+  - render_schema
+  - _self_
+  - robot: wojtek
+  - level_space: param
+  - arena: v10
+
+checkpoint: ???
+out_dir: artifacts/videos
+levels: ???
+seconds: 20.0
+fps: 30
+width: 1280
+height: 720
+# the default arc stays on the 3 m arena
+command: [0.3, 0.0, 0.2]
+seed: 0
+backend: auto
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: artifacts/hydra/render/${now:%Y-%m-%d_%H-%M-%S}

@@ -56,8 +56,10 @@ def mean_abs_height(config: HFieldConfig, hfield: np.ndarray) -> np.ndarray:
 
 
 class GridSpace:
-    def __init__(self, config: HFieldConfig):
+    def __init__(self, config: HFieldConfig, n_edits: int, edit_scale: float):
         self.config = config
+        self.n_edits = n_edits
+        self.edit_scale = edit_scale
         self.manager = HFieldManager(config)
         self.shape: tuple[int, ...] = (config.coarse_n, config.coarse_n)
         self.gen_shape: tuple[int, ...] = self.shape
@@ -74,7 +76,7 @@ class GridSpace:
     def mutate(
         self, level: np.ndarray, rng: np.random.Generator, grow_max: float | None
     ) -> np.ndarray:
-        child = self.manager.mutate(level, rng)
+        child = self.manager.mutate(level, rng, self.n_edits, self.edit_scale)
         if grow_max:
             child = 0.5 + (child - 0.5) * rng.uniform(1.0, grow_max)
         return np.clip(child, 0.0, 1.0)
@@ -224,7 +226,7 @@ def make_level_space(
     robot_scale: float = 1.0,
 ) -> LevelSpace:
     if kind == "grid":
-        return GridSpace(config)
+        return GridSpace(config, n_edits=n_edits, edit_scale=edit_scale)
     if kind == "param":
         return ParamSpace(
             config, n_edits=n_edits, edit_scale=edit_scale, robot_scale=robot_scale

@@ -1,0 +1,5 @@
+kind: grid
+# the grow variants (mode.mutation=grow) edit twice as many control points
+n_edits_by_mutation: {local: 8, grow: 16}
+n_edits: ${level_space.n_edits_by_mutation.${oc.select:mode.mutation,local}}
+edit_scale: 0.15

@@ -20,19 +20,20 @@ is required to keep the fixed elevation envelope (below) valid.
 ### `HFieldConfig` — the envelope (`config/hfield_config.py`)
 
 Plain dataclass (not frozen — `frozen=True` marks the Hydra structured-config
-node read-only and blocks CLI overrides like `hfield_params.amplitude=...`);
+node read-only and blocks CLI overrides like `arena.amplitude=...`);
 one place for every knob. `patch_radius`, `cell_size` (fine
 resolution), `coarse_n` (genome size), `amplitude` (peak height off the neutral
 plane), `base_z`, `pad_radius`/`pad_taper` (flat spawn disc + ramp),
-`n_edits`/`edit_scale` (mutation strength). `grid_size` (property) is the fine
-node count. Full field table: [configuration.md](configuration.md#hfield).
+`grid_size` (property) is the fine
+node count. Mutation strength is not here: it lives in `level_space`. The `arena` config group is one (`conf/arena/v10.yaml`). Full
+field table: [configuration.md](configuration.md#hfield).
 
 ### `HFieldManager` (`hfield/manager.py`)
 
 Pure given an rng; no hidden state beyond the config:
 
 - `generate(rng)` — a fresh `coarse_n × coarse_n` uniform level.
-- `mutate(level, rng)` — nudge `n_edits` random cells by `±edit_scale`, clip to
+- `mutate(level, rng, n_edits, edit_scale)` — nudge `n_edits` random cells by `±edit_scale`, clip to
   `[0,1]` (the ACCEL edit).
 - `to_hfield_data(level)` — bilinear upsample to `grid_size`, apply the pad
   taper (flat centre disc), recentre on `0.5`; returns the `float32`
@@ -73,6 +74,9 @@ rollout time; the static asset just fixes the compile-time envelope.
 
 ## DR vs ACCEL on brax PPO — `scripts/brax_ued.py` {#brax-ued}
 
+`just train mode=<option> name=<run> [overrides]` (`conf/train.yaml`;
+every field: [configuration.md](configuration.md)).
+
 History: an earlier in-repo PPO (own loss and model) did not learn to walk on
 this env within ~0.6B steps, while brax's PPO (mujoco_playground recipe) did
 in ~40M. That trainer and its ACCEL variants were deleted; `brax_ued.py` is
@@ -88,38 +92,39 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   every unroll. Lane regret = mean positive GAE advantage over the
   iteration. `tile_leak_frac`: envs that reached a neighbouring tile
   ([tiled arena](environment.md#tiled-arena)).
-- Physics backend: `--backend` (default `auto`: warp on a GPU, jax on
+- Physics backend: `backend` (default `auto`: warp on a GPU, jax on
   CPU), Wojtek and Go1 alike; v10 and earlier runs (the paper draft)
-  trained on jax, so rerun them with `--backend jax` to compare. Throughput, measured
+  trained on jax, so rerun them with `backend=jax` to compare. Throughput, measured
   on an H100: [Throughput](#throughput).
-- `--mode dr`: fresh uniform levels at full difficulty, train every
+- `mode=dr`: fresh uniform levels at full difficulty, train every
   iteration.
-- `--mode dr_easy`: DR over ACCEL's easy generator (control points within
+- `mode=dr_easy`: DR over ACCEL's easy generator (control points within
   `generator_scale` of flat) — isolates the curriculum from "train easy".
-- `--mode dr_mixed`: uniform levels scaled by a per-level difficulty
+- `mode=dr_mixed`: uniform levels scaled by a per-level difficulty
   drawn from `[0, 1]`.
-- `--mode accel`: replay iterations (`replay_prob`, once the buffer holds
+- `mode=accel`: replay iterations (`replay_prob`, once the buffer holds
   `num_lanes` levels) train on rank+staleness-prioritized buffer levels,
   refresh their scores and queue their mutations; explore iterations do not
   train and score the queued children plus fresh easy levels (control points
   within `generator_scale` of flat). The buffer keeps the `buffer_size`
   highest-regret levels.
-- ACCEL curriculum switches (defaults reproduce plain ACCEL):
-  - `--mutation grow` — after the local edits, scale the level's deviation
+- ACCEL curriculum switches (`mode.*`; defaults reproduce plain ACCEL):
+  - `mode.mutation=grow` — after the local edits, scale the level's deviation
     from flat by `U(1, grow_max)` (default 1.3). Plain symmetric edits
     smooth as often as they roughen; plain ACCEL's buffer stayed at the easy
     generator's roughness (~0.03 m) for the whole run.
-  - `--score learnability` — level score `p(1-p)` (SFL), `p` = fraction of
+  - `mode.score=learnability` — level score `p(1-p)` (SFL), `p` = fraction of
     the lane's envs that never fell and ended >= `min_travel` m out,
     instead of positive value loss.
-  - `--generator mixed` — explore iterations draw fresh levels from the
+  - `mode.generator=mixed` — explore iterations draw fresh levels from the
     `dr_mixed` distribution instead of the easy generator.
   - Logged: `buffer_roughness_mean`/`_p90`, `buffer_score_roughness_spearman`
     (rank correlation of level score vs roughness), `children_roughness`,
     `train_success`, `learnability_mean`.
-  - WCSS variants (`brax_ued.sbatch` `MODES`): `accel_grow` = grow + 16
-    edits; `accel_sfl` = grow + 16 edits + learnability.
-- `--mode paired`: PAIRED (port of `feat/paired-implementation`'s design
+  - Mode options `mode=accel_grow` (grow) and `mode=accel_sfl` (grow +
+    learnability). `level_space/grid.yaml` composes 16 edits for both
+    (8 otherwise), locally and via `brax_ued.sbatch` alike.
+- `mode=paired`: PAIRED (port of `feat/paired-implementation`'s design
   onto the brax student). A learned adversary (`modules/generator.py`,
   latent seed -> sigmoid-squashed Gaussian over the genome) proposes
   `num_lanes` levels; protagonist and antagonist (two brax students) both
@@ -128,17 +133,17 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   epochs, HiEnt `gen_entropy_coef=0.1`, no BC distillation yet).
   `env_steps`/`num_timesteps` count protagonist steps only; the antagonist
   doubles the real simulation cost (`sim_steps` counts both).
-- `--mode plr`: robust PLR (PLR⊥) - ACCEL's buffer, rank/staleness replay
+- `mode=plr`: robust PLR (PLR⊥) - ACCEL's buffer, rank/staleness replay
   and score refresh, but no mutation; explore iterations score fresh
   uniform (DR) levels.
-- `--robot go1`: Playground's Go1 instead of Wojtek, see
+- `robot=go1`: Playground's Go1 instead of Wojtek, see
   [Go1](#go1).
 - Eval every `eval_every` iterations: deterministic policy on `eval_levels`
   fresh uniform levels (2 episodes each, in chunks of at most `tiles²`
   levels) at difficulties 0.25/0.5/0.75/1.0 — `eval/d<d>/success_rate` (no
   fall and >= `min_travel` m from spawn), fall rate, travel, forward vs
   commanded speed.
-- Curriculum composition (`--level_space param` only), every iteration over
+- Curriculum composition (`level_space=param` only), every iteration over
   the levels the student ran on (replayed, explored or PAIRED-generated):
   `level/<param>` = mean physical value (`ParamSpace.physical`, robot
   units), `level/slope_deg_abs` / `level/step_height_m_abs` = mean |value|
@@ -150,10 +155,16 @@ running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls, 4 epochs x
   included). The run summary ends with `final/elapsed_h`, `final/sim_steps`,
   `final/student_train_steps` (`paper_tables.py` compute table).
 - WCSS: `brax_ued.sbatch` array (tasks 0-2 dr, 3-5 accel, seeds 0-2); assets
-  must be built beforehand since tasks start together.
-- The arena must match the run's geometry (`hfield.arena.check_arena`:
+  must be built beforehand since tasks start together. The job interface
+  is env vars (`MODES`, `SPACE`, `ROBOT`, `BACKEND`, `TAGS`, `PREFIX`,
+  `NUM_TIMESTEPS`, `NSEEDS`, `SEED0`, `SRC`), turned into Hydra overrides:
+  `MODES` entries are `mode` options with an optional `-s<scale>` suffix
+  (`mode.generator_scale=<scale>`), `SPACE` the `level_space` option,
+  `TAGS="a b"` → `tags=[a,b]`.
+- The arena must match the run's `arena` config (`hfield.arena.check_arena`:
   `pad_radius`, height scale, level grid, tiles, gap); the error names the
-  `just build-accel-arena hfield_params...` command for it.
+  `just build-accel-arena arena...` command for it. Training and the
+  builder read the same `arena` group, so the default needs no override.
 
 ## Throughput {#throughput}
 
@@ -166,7 +177,7 @@ numbers and the old loop's profile in `experiments/tiled-arena/report.md`.
 - Tiled arena on warp: 263k env steps/s; a
   training iteration (2.46M steps, 15 unroll + PPO update pairs) ~10.8 s
   = ~227k steps/s; `evaluate` 17-23 s (jax: 106 s).
-- 32M steps of `--mode accel` in ~5 min wall clock, ~2 min of it
+- 32M steps of `mode=accel` in ~5 min wall clock, ~2 min of it
   compilation (`t7_tiled_wojtek_accel_seed0`).
 - Warp is not jax: a jax-trained v10 policy scores 1.5-3 points higher on
   terrain under warp and stands 7-11 mm higher; compare runs within one
@@ -177,7 +188,8 @@ numbers and the old loop's profile in `experiments/tiled-arena/report.md`.
 
 ## Level spaces — `hfield/level_space.py` {#level-spaces}
 
-`brax_ued.py` and `eval_brax.py` take `--level_space {grid,param}`; every
+`brax_ued.py`, `eval_brax.py` and `render_video.py` take
+`level_space={grid,param}` (`conf/level_space/`); every
 mode samples, mutates and renders levels through it.
 
 - `grid` (default, v7 runs): the original `coarse_n x coarse_n` control-point
@@ -201,16 +213,18 @@ mode samples, mutates and renders levels through it.
   - `flat` = genome of zero slope/step, so it is off 0.5 on asymmetric ranges.
   - DR: uniform genome; `scaled(d)` shrinks it toward `flat` (no features)
     by d; `easy(s)` = `scaled(s)`; DR-mixed draws d per level.
-  - ACCEL: `mutate` edits `--n_edits` (WCSS: 2) parameters by ±`--edit_scale`
-    (0.1); `--mutation grow` also scales the genome away from `flat`.
+  - ACCEL: `mutate` edits `level_space.n_edits` (2) parameters by
+    ±`level_space.edit_scale` (0.1); `mode.mutation=grow` also scales the
+    genome away from `flat`.
   - PAIRED: the generator emits the 8 parameters; a random seed is appended.
 - WCSS: `slurm/brax_ued.sbatch` / `slurm/eval_brax.sbatch` take
   `SPACE=param`, `PREFIX` (run-name prefix, `v10`), `ROBOT`,
   `NUM_TIMESTEPS` (train), `NSEEDS` / `SEED0` (array task = mode x
   NSEEDS + seed offset; default seeds 0-2, extra seeds e.g. `NSEEDS=2
   SEED0=3`) and `SRC` (`<dir>/src` of a frozen copy with the
-  built `assets/` beside it - `wojtek_env.paths` resolves assets from
-  `src/..` - so queued jobs keep the submitted code).
+  built `assets/` and `conf/` beside it - `wojtek_env.paths` and
+  `config.schema.CONF_DIR` resolve them from `src/..` - so queued jobs
+  keep the submitted code and configs).
 - `robot_scale` (`ParamSpace`, eval suite): every length range (amplitude,
   wavelength, stairs, gaps, blocks, gap depth/period) times the robot's size
   relative to Wojtek; slopes unchanged. Envelopes stay in Wojtek units.
@@ -218,11 +232,11 @@ mode samples, mutates and renders levels through it.
 ## Go1 — `robots/go1.py` {#go1}
 
 Second robot for the benchmark: open serial chain (Go1) vs Wojtek's closed
-chain. `--robot go1` in `brax_ued.py` / `eval_brax.py`, `ROBOT=go1` on WCSS
+chain. `robot=go1` in every entry point with a `robot` group, `ROBOT=go1` on WCSS
 (run prefix `v9_go1`).
 
 - Playground `Go1JoystickRoughTerrain` (feet-only collisions, its reward,
-  blind actor), on `--backend` like Wojtek (warp: Playground's own
+  blind actor), on `backend` like Wojtek (warp: Playground's own
   rough-terrain Go1 trains on warp; on this arena not yet compared with
   jax), with:
   - the tiled ACCEL arena, written by `scene_xml` (no asset files): one
@@ -243,11 +257,13 @@ chain. `--robot go1` in `brax_ued.py` / `eval_brax.py`, `ROBOT=go1` on WCSS
 
 ## Final eval — `scripts/eval_brax.py` {#eval-brax}
 
-Loads a `brax_ued.py` checkpoint (`--checkpoint <run>.pkl`), deterministic
+`just eval checkpoint=<run>.pkl name=<run>_final_eval out_dir=<dir>`
+(`conf/eval.yaml`; pass the run's `robot`, `level_space`, `arena`).
+Loads a `brax_ued.py` checkpoint, deterministic
 policy, no physics DR, no `no_progress` cut. Success = no fall and >=
 `min_travel` m from spawn after `level_steps`. Levels run in chunks of
 `min(chunk_envs / episodes, tiles²)` levels, level i of a chunk on tile i;
-`--backend` as in training (score a checkpoint on the backend it trained
+`backend` as in training (score a checkpoint on the backend it trained
 on).
 
 - `random/d<d>`: `num_levels` (2048) genome levels, the same genomes at
@@ -263,7 +279,7 @@ on).
   on the same episodes is biased low by selection noise: with 2000 levels
   of true success 0.5 and 4 episodes each, same-pass CVaR25 reads 0.19,
   cross-fitted 0.49.
-- `--level_space param` adds `param/uniform` (2048 levels drawn from the
+- `level_space=param` adds `param/uniform` (2048 levels drawn from the
   full 8-parameter space: heterogeneous, so CVaR reads a real tail) and
   capability envelopes `axis/<feature>`: one feature (rough, slope up/down,
   stairs up/down, gaps, blocks) ramps to its full range in 6 steps, the rest
@@ -275,7 +291,7 @@ on).
   rng/key, so every other set keeps its v8 levels and keys.
 - 95% bootstrap CIs over levels for mean and CVaR; `level_success_corr`
   between passes; suite CVaR is over the 28 terrain×strength cells.
-- Writes `<name>.json` (metrics) and `<name>.npz` to `--out_dir`, and the
+- Writes `<name>.json` (metrics) and `<name>.npz` to `out_dir`, and the
   metrics to the wandb run summary. npz arrays (pass x level x episode
   unless noted):
   - `random_d<d>_fell`, `random_d<d>_travel`; `random_levels` (levels x
@@ -328,7 +344,7 @@ network and deterministic policy as eval_brax; no physics DR.
 - Metrics per `<variant>/<set>`: `success_rate`, `fall_rate`, `mean_travel`
   (95% bootstrap CIs over levels), `drop` = `mjx_match` - variant success
   (paired bootstrap CI), `diverged_per_episode`; per suite cell
-  `success_rate`; `<variant>/elapsed_s`. One pass (`--episodes` per level),
+  `success_rate`; `<variant>/elapsed_s`. One pass (`episodes` per level),
   no CVaR.
 - Sanity (2026-10-11, `v8_param_accel_seed0`, 16 flat / 64 uniform / 16
   per suite cell, 4 episodes, same levels and keys): `mjx_match` vs MJX
@@ -371,7 +387,9 @@ network and deterministic policy as eval_brax; no physics DR.
   CPU-h for all five variants (160-290 s per variant, `full_collision`
   slowest), Go1 ~7 min / 0.4 CPU-h.
 - Writes `<name>.json` and `<name>.npz` (`<variant>_<set>_fell/_travel`,
-  levels x episodes) to `--out_dir`; wandb tags `sim2sim`, robot.
+  levels x episodes) to `out_dir`; wandb tags `sim2sim`, robot.
+- `just sim2sim checkpoint=<pkl> name=<name> out_dir=<dir>`
+  (`conf/sim2sim.yaml`; always `param` levels on the jax env).
 - WCSS: `slurm/eval_sim2sim.sbatch`, same `MODES`/seed array layout, `SRC`,
   `ROBOT`, `PREFIX` as `eval_brax.sbatch`; `lem-cpu-short`, 16 cores (CPU
   only; Lem CPU nodes share the GPU nodes' AlmaLinux 9, so the venv runs).
@@ -382,31 +400,28 @@ mp4 clips of a `brax_ued.py` checkpoint walking generated levels, for demos
 (not an eval: no metrics beyond a printed fall time and travel per clip).
 
 ```sh
-just render-video --checkpoint artifacts/checkpoints/<run>.pkl \
-  --level 0.5:<seed> --level 0.75:<seed> --level 1.0:<seed>
+just render-video checkpoint=artifacts/checkpoints/<run>.pkl \
+  'levels=[0.5:<seed>,0.75:<seed>,1.0:<seed>]'
 ```
 
-- Env, network and level space are rebuilt from `brax_ued.py`'s flags
-  (`--robot`, `--level_space`, `--amplitude`, `--coarse_n`, `--pad_radius`,
-  `--pad_taper`, `--backend`; defaults = v10: param levels): pass the
-  ones the run trained with.
+- Env, network and level space are rebuilt from the `robot`,
+  `level_space`, `arena` groups and `backend` (`conf/render.yaml`; defaults =
+  v10: `param` levels, `arena=v10`): pass the ones the run trained with.
 - Needs the run's arena built with its geometry (v10: `just
-  build-accel-arena hfield_params.amplitude=0.3 hfield_params.coarse_n=13
-  hfield_params.pad_radius=0.55 hfield_params.pad_taper=0.2`). For Wojtek the script checks the
-  arena's spec (`pad_radius`, height scale, tile layout) first and fails with
+  build-accel-arena`). For Wojtek the script checks the arena's spec (`pad_radius`, height scale, tile layout) first and fails with
   the command filled in; an amplitude mismatch would otherwise run
   silently.
-- `--level D:SEED` (repeatable): `space.scaled(default_rng(SEED), 1, D)`,
+- `levels`: list of `D:SEED`, each `space.scaled(default_rng(SEED), 1, D)`,
   one clip each, named `<checkpoint stem>_d<D>_s<SEED>.mp4`; `demo.mp4` in
-  the same `--out_dir` (default `artifacts/videos`) = all clips in order.
+  the same `out_dir` (default `artifacts/videos`) = all clips in order.
 - Rollout on MJX (eval env: no physics DR, no `no_progress` cut, pushes on),
-  deterministic policy, `--command VX VY WZ` held every step (default
+  deterministic policy, `command=[VX,VY,WZ]` held every step (default
   0.3 m/s forward, 0.2 rad/s yaw: an arc; on 24 screened d=1 levels the
   robot got 1.1-3.2 m from spawn in 20 s, so it stays on the 3 m arena).
   The command's height entry keeps the reset draw; the resample counter
   is pinned every step (Wojtek `steps_since_cmd` = 0, Go1
   `steps_until_next_cmd` = 2^30) so the env never resamples.
-- `--seconds` (default 20) must fit in one episode (1000 steps = 20 s for
+- `seconds` (default 20) must fit in one episode (1000 steps = 20 s for
   Wojtek): a fall or truncation auto-resets the robot to spawn, which the
   clip would show as a jump. Pick levels whose printed fall list is empty;
   screen candidates with this single-env rollout, not a vmapped batch:
@@ -419,7 +434,7 @@ just render-video --checkpoint artifacts/checkpoints/<run>.pkl \
   replays the recorded `qpos`, shifted to the origin, on a one-tile copy
   of the scene (`hfield.arena.single_tile_spec`; Go1: `scene_xml` of
   `single_tile`), through `mujoco.Renderer`
-  (`--width`/`--height`, default 1280x720, `--fps` 30, frames at the
+  (`width`/`height`, default 1280x720, `fps` 30, frames at the
   nearest control step), camera tracking the free-joint body; mp4 via
   `mediapy` (needs `ffmpeg` on `PATH`). `MUJOCO_GL`: `cgl` on macOS,
   `egl` on a GPU node, `osmesa` on a CPU node (recipe defaults to cgl/egl).
@@ -427,7 +442,7 @@ just render-video --checkpoint artifacts/checkpoints/<run>.pkl \
   clip.
 - Team demo (2026-10-15): `v10_wojtek_accel_seed4` (best of the 5 v10
   Wojtek ACCEL seeds by final eval: `random/d1.0` success .423,
-  `param/uniform` .412, suite .584, flat .936), `--level 1.0:17` (rough
+  `param/uniform` .412, suite .584, flat .936), level `1.0:17` (rough
   8.5 cm / 0.33 m wavelength, stairs -3.2 cm, gaps 2.3 cm, slope 1.2°):
   no fall, 2.89 m from spawn after 20 s.
 
@@ -438,15 +453,14 @@ Builds the workshop paper's tables from `eval_brax.py` outputs
 `tabular`s; the paper (on Overleaf) owns float, caption and label.
 
 ```sh
-PYTHONPATH=src uv run python src/scripts/paper_tables.py \
-  --dump_wandb summaries.json --prefix wojtek=v10_wojtek go1=v10_go1
-PYTHONPATH=src uv run python src/scripts/paper_tables.py \
-  --eval_dir <evals> --prefix wojtek=v10_wojtek go1=v10_go1 \
-  --train_summaries summaries.json --out artifacts/paper/tables
+just paper-tables dump_wandb=summaries.json \
+  prefixes.wojtek=v10_wojtek prefixes.go1=v10_go1
+just paper-tables eval_dir=<evals> prefixes.wojtek=v10_wojtek \
+  prefixes.go1=v10_go1 train_summaries=summaries.json
 ```
 
-- `--prefix robot=prefix` (repeatable): one column group / row group per
-  robot. Known methods get paper names (DR, DR-easy, PLR⊥, ACCEL,
+- `prefixes.<robot>=<prefix>` (`conf/paper_tables.yaml`; a robot left
+  `null` is skipped): one column group / row group per robot. Known methods get paper names (DR, DR-easy, PLR⊥, ACCEL,
   ACCEL-SFL, PAIRED) in that order; other methods follow under their own
   name; missing ones are skipped.
 - `main.tex`: success (%) per method x robot: `param/uniform` mean, its
@@ -459,9 +473,9 @@ PYTHONPATH=src uv run python src/scripts/paper_tables.py \
 - `envelopes.tex`: the 7 `axis/<feature>/envelope` per robot x method, in
   Wojtek units (cm, deg).
 - `compute.tex`: GPU-hours (`final/elapsed_h`), sim and student steps per
-  robot x method, from `--train_summaries` (training run name ->
+  robot x method, from `train_summaries` (training run name ->
   wandb summary); not written without it.
-- `--dump_wandb FILE`: fetches the training-run summaries for the prefixes
+- `dump_wandb=FILE`: fetches the training-run summaries for the prefixes
   from `dominikgalus9-wroc-aw-university-of-science-and-technology/wojtyla`
   and writes that JSON.
 - Robot names in headers: `ROBOT_LABEL` (`wojtek` prints as W01-TEK).
@@ -469,15 +483,15 @@ PYTHONPATH=src uv run python src/scripts/paper_tables.py \
 ## Paper figures — `scripts/paper_figures.py` {#paper-figures}
 
 ```sh
-PYTHONPATH=src uv run python src/scripts/paper_figures.py \
-  --dump_history history.json --prefix wojtek=v10_wojtek go1=v10_go1
-PYTHONPATH=src uv run python src/scripts/paper_figures.py \
-  --history history.json --prefix wojtek=v10_wojtek go1=v10_go1 --out artifacts/paper/figs
-MUJOCO_GL=cgl JAX_PLATFORMS=cpu PYTHONPATH=src uv run python \
-  src/scripts/paper_figures.py --terrains --out artifacts/paper/figs
+just paper-figures dump_history=history.json \
+  prefixes.wojtek=v10_wojtek prefixes.go1=v10_go1
+just paper-figures history=history.json \
+  prefixes.wojtek=v10_wojtek prefixes.go1=v10_go1
+JAX_PLATFORMS=cpu just paper-figures terrains=true
 ```
 
-- `--dump_history`: per finished run, `eval/d{0.5,1.0}/success_rate` and the
+- `conf/paper_figures.yaml`; output in `out` (default `artifacts/paper/figs`).
+- `dump_history`: per finished run, `eval/d{0.5,1.0}/success_rate` and the
   `level/*` composition vs `env_steps` from wandb; rows with a NaN are dropped.
 - `curves.pdf`: eval success vs env steps, robot x d panels, seed mean with
   min-max band.
@@ -486,7 +500,8 @@ MUJOCO_GL=cgl JAX_PLATFORMS=cpu PYTHONPATH=src uv run python \
 - `terrains.pdf` / `robots.pdf` (`scripts/paper_terrains.py`): offscreen MuJoCo
   renders of one level per feature at full strength plus uniform samples, and
   both robots on one shared genome. Needs the built assets (`just build`,
-  `just build-accel-arena`); `MUJOCO_GL=cgl` on macOS.
+  `just build-accel-arena`); the recipe sets `MUJOCO_GL` as `render-video`
+  does, and `arena` (default `v10`) is the arena the levels render on.
 - Overleaf: upload the PDFs into a `figs/` folder; `\resultfig` falls back to a
   placeholder while a file is missing.
 - `results.csv`: one row per run, every value the tables use.

@@ -13,8 +13,10 @@
 set -euo pipefail
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1 JAX_PLATFORMS=cpu
-# SRC=<frozen copy of src/> keeps queued jobs on the code they were
-# submitted with (assets built inside it)
+export HYDRA_FULL_ERROR=1
+# SRC=<dir>/src, a frozen copy with the built assets/ and conf/ beside it
+# (wojtek_env and config.schema resolve them from src/..), keeps queued jobs
+# on the submitted code
 SRC="${SRC:-$HOME/workspace/ml-wojtek-ued/src}"
 export PYTHONPATH="$SRC"
 PDW=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued
@@ -30,7 +32,6 @@ RUN="${PREFIX}_${MODE}_seed${SEED}"
 echo "job ${SLURM_JOB_ID} task ${SLURM_ARRAY_TASK_ID}: sim2sim $RUN"
 
 uv run --no-sync python "$SRC/scripts/eval_sim2sim.py" \
-  --checkpoint "$PDW/artifacts/brax_ued/$RUN.pkl" --name "${RUN}_sim2sim" \
-  --entity dominikgalus9-wroc-aw-university-of-science-and-technology \
-  --project wojtyla --out_dir "$PDW/runs/sim2sim" --level_space param \
-  --robot "$ROBOT"
+  "checkpoint=$PDW/artifacts/brax_ued/$RUN.pkl" "name=${RUN}_sim2sim" \
+  entity=dominikgalus9-wroc-aw-university-of-science-and-technology \
+  project=wojtyla "out_dir=$PDW/runs/sim2sim" "robot=$ROBOT"

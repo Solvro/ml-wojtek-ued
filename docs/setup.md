@@ -59,15 +59,14 @@ sync`/`install`.
 ## Run
 
 ```bash
-export PYTHONPATH=src XLA_PYTHON_CLIENT_PREALLOCATE=false
-uv run python src/scripts/brax_ued.py --mode accel --name my_run \
-  --checkpoint_dir artifacts/checkpoints                                  # train (dr | accel | plr | paired)
-uv run python src/scripts/eval_brax.py --checkpoint artifacts/checkpoints/my_run.pkl --name my_eval
-just render-video --checkpoint artifacts/checkpoints/my_run.pkl --level 0.75:3
+just train mode=accel name=my_run checkpoint_dir=artifacts/checkpoints  # mode: conf/mode/
+just eval checkpoint=artifacts/checkpoints/my_run.pkl name=my_eval out_dir=artifacts/evals
+just render-video checkpoint=artifacts/checkpoints/my_run.pkl 'levels=[0.75:3]'
 ```
 
-All scripts take argparse flags (`--help`); the full set, with the cluster
-launchers (`slurm/*.sbatch`), is in [ued-accel.md](ued-accel.md#brax-ued).
+Every script is configured by Hydra from `conf/` (`key=value` overrides,
+`--cfg job` prints the composed config): [configuration.md](configuration.md).
+Cluster launchers (`slurm/*.sbatch`): [ued-accel.md](ued-accel.md#brax-ued).
 
 ## Import root
 
@@ -77,5 +76,7 @@ scripts through `just` (or export `PYTHONPATH=src` yourself) so these resolve.
 
 ## What lands where
 
-Gitignored outputs (`.gitignore`): `artifacts/` (`brax_ued.py` checkpoints),
-`wandb/`, `runs/`, `outputs/` + `multirun/` (Hydra), and the generated `*_mjx.xml` / `terrain*` assets.
+Gitignored outputs (`.gitignore`): `artifacts/` (checkpoints, videos, paper
+outputs, and `artifacts/hydra/` = one dir per run with its composed
+`.hydra/config.yaml`), `wandb/`, `runs/`, `multirun/` (Hydra `-m` sweeps),
+and the generated `*_mjx.xml` / `terrain*` assets.

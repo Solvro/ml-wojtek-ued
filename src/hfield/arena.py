@@ -5,15 +5,15 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import hydra
 import mujoco
 import numpy as np
-from omegaconf import OmegaConf
+from omegaconf import DictConfig
 
-from config.arena_config import ArenaConfig
 from config.hfield_config import HFieldConfig
+from config.schema import CONF_DIR, ArenaBuildConfig, to_dataclass
 from hfield.tiles import TileLayout
 from wojtek_env import paths
 from wojtek_env.terrain import terrain
@@ -158,10 +158,7 @@ def build_accel_arena(config: HFieldConfig, seed: int = 0) -> terrain.Arena:
     return terrain.Arena(spec=spec, boxes=(), hfield_data=hfield_data, lookup=lookup)
 
 
-def write_accel_arena(
-    config: HFieldConfig | None = None, seed: int = 0, kind: str = "accel"
-) -> None:
-    config = config or HFieldConfig()
+def write_accel_arena(config: HFieldConfig, seed: int = 0, kind: str = "accel") -> None:
     arena = build_accel_arena(config, seed=seed)
     out = paths.terrain_paths(kind)
     terrain.write_hfield_bin(out["hfield"], arena.hfield_data)
@@ -201,14 +198,14 @@ def tile_layout(config: HFieldConfig) -> dict[str, float]:
 def check_arena(spec_path: Path, config: HFieldConfig, kind: str) -> None:
     rebuild = (
         f"build it with `just build-accel-arena "
-        f"hfield_params.patch_radius={config.patch_radius} "
-        f"hfield_params.cell_size={config.cell_size} "
-        f"hfield_params.amplitude={config.amplitude} "
-        f"hfield_params.coarse_n={config.coarse_n} "
-        f"hfield_params.pad_radius={config.pad_radius} "
-        f"hfield_params.pad_taper={config.pad_taper} "
-        f"hfield_params.tiles={config.tiles} "
-        f"hfield_params.reach={config.reach}`"
+        f"arena.patch_radius={config.patch_radius} "
+        f"arena.cell_size={config.cell_size} "
+        f"arena.amplitude={config.amplitude} "
+        f"arena.coarse_n={config.coarse_n} "
+        f"arena.pad_radius={config.pad_radius} "
+        f"arena.pad_taper={config.pad_taper} "
+        f"arena.tiles={config.tiles} "
+        f"arena.reach={config.reach}` (the run's `arena` overrides)"
     )
     if not spec_path.exists():
         raise FileNotFoundError(f"no {kind} arena at {spec_path}; {rebuild}")
@@ -235,10 +232,10 @@ def check_arena(spec_path: Path, config: HFieldConfig, kind: str) -> None:
         )
 
 
-@hydra.main(version_base=None, config_name="arena_config")
-def main(cfg: ArenaConfig) -> None:
-    hfield_config = cast(HFieldConfig, OmegaConf.to_object(cfg.hfield_params))
-    write_accel_arena(hfield_config, seed=cfg.seed)
+@hydra.main(config_path=CONF_DIR, config_name="arena", version_base="1.3")
+def main(dict_cfg: DictConfig) -> None:
+    cfg = to_dataclass(dict_cfg, ArenaBuildConfig)
+    write_accel_arena(cfg.arena, seed=cfg.seed)
 
 
 if __name__ == "__main__":
