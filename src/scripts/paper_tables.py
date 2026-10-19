@@ -39,9 +39,9 @@ import wandb
 from omegaconf import DictConfig
 
 from config.schema import CONF_DIR, PaperTablesConfig, Robot, to_dataclass
+from evaluation.final_eval import AXES
 from hfield.level_space import PARAMS
 from robots.scale import ROBOT_SCALE
-from scripts.eval_brax import AXES
 
 ENTITY = "dominikgalus9-wroc-aw-university-of-science-and-technology"
 PROJECT = "wojtyla"

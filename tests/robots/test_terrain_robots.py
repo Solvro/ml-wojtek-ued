@@ -18,12 +18,12 @@ from mujoco import mjx
 
 from config.hfield_config import HFieldConfig
 from env.functional import FunctionalEnv
+from evaluation.physics_variants import full_collision
 from hfield.tiles import TileLayout
 from robots.registry import TERRAIN_ROBOTS
 from robots.scale import hfield_config
 from robots.spot import SpotTerrain
 from robots.terrain import FALL_HEIGHT_RATIO, WOJTEK_HEIGHT, contact_budget
-from scripts.eval_sim2sim import full_collision
 
 ARENA = HFieldConfig(
     patch_radius=1.5,

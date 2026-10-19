@@ -52,9 +52,7 @@ class LevelGenerator(eqx.Module):
         bijector = distrax.Block(distrax.Sigmoid(), ndims=1)
         return distrax.Transformed(distribution=base, bijector=bijector)
 
-    def __call__(
-        self, z: jax.Array, key: jax.Array
-    ) -> tuple[Any, Any, Any]:
+    def __call__(self, z: jax.Array, key: jax.Array) -> tuple[Any, Any, Any]:
         """A sampled level: (theta, log_prob, entropy estimate)."""
         pi = self.distribution(z)
         flat = pi.sample(seed=key)
