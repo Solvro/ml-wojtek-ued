@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from scripts.render_video import frame_steps, hold_command, parse_level, render
+from rendering.video import frame_steps, hold_command, parse_level, render
 
 
 def test_parse_level_reads_difficulty_and_seed() -> None:
