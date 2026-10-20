@@ -114,7 +114,7 @@ render-video *args:
 
 # --- export ---
 
-# Export a checkpoint to artifacts/export/<name>/ (conf/export.yaml); the training config from policy=<name>, config=<yaml> mode=<mode>, or overrides, e.g. `just export checkpoint=run.pkl policy=my_policy`
+# Export a checkpoint to artifacts/export/<name>/ (conf/export.yaml); the training config from policy=<name>, config=<yaml>, or overrides (mode=<name>); export always builds the env on jax, e.g. `just export checkpoint=run.pkl policy=my_policy`
 [group('export')]
 export *args:
     uv run python src/scripts/export_policy.py {{ args }}

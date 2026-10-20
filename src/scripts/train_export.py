@@ -6,20 +6,27 @@ import hydra
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig
 
-from config.schema import CONF_DIR, TrainConfig, to_dataclass
+from config.schema import (
+    CONF_DIR,
+    TrainConfig,
+    check_group_options,
+    to_dataclass,
+)
 from export.run import export_policy
 from training.train import train
 
 
 @hydra.main(config_path=CONF_DIR, config_name="train", version_base="1.3")
 def main(dict_cfg: DictConfig) -> None:
+    choices = HydraConfig.get().runtime.choices
+    check_group_options(dict_cfg, choices)
     cfg = to_dataclass(dict_cfg, TrainConfig)
     if not cfg.checkpoint_dir:
         raise ValueError(
             "train-export needs checkpoint_dir: set it in the policy file "
             "or pass checkpoint_dir=<dir>"
         )
-    train(cfg, HydraConfig.get().runtime.choices["mode"])
+    train(cfg, choices["mode"])
     checkpoint = Path(cfg.checkpoint_dir) / f"{cfg.name}.pkl"
     out_dir, _ = export_policy(cfg, checkpoint, Path(cfg.export_dir))
     print(f"exported {checkpoint} to {out_dir}")

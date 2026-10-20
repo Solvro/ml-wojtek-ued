@@ -1,9 +1,11 @@
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
 from hydra import compose, initialize_config_dir
 from hydra.errors import ConfigCompositionException, MissingConfigException
+from omegaconf import OmegaConf
 from omegaconf.errors import InterpolationResolutionError, MissingMandatoryValue
 
 from config.hfield_config import HFieldConfig
@@ -17,7 +19,10 @@ from config.schema import (
     Mutation,
     Robot,
     Score,
+    TrainConfig,
     as_dict,
+    check_group_options,
+    to_dataclass,
 )
 
 Compose = Callable[..., Any]
@@ -420,17 +425,69 @@ def test_template_matches_the_benchmark_accel_config(
     assert template == bench
 
 
-@pytest.mark.parametrize("robot", OPTIONS["robot"])
-@pytest.mark.parametrize(
-    "mode", [m for m in OPTIONS["mode"] if isinstance(m, str)]
-)
-def test_template_takes_any_robot_and_mode(
-    compose_cfg: Compose, robot: str, mode: str
-) -> None:
-    cfg = compose_cfg(
-        "train", "policy=template", f"robot={robot}", f"mode={mode}"
+def leaves(node: Any, prefix: str = "") -> set[str]:
+    if not isinstance(node, dict):
+        return {prefix}
+    return {
+        leaf
+        for key, value in node.items()
+        for leaf in leaves(value, f"{prefix}{key}.")
+    }
+
+
+def test_template_lists_every_value_of_the_train_config() -> None:
+    raw = OmegaConf.to_container(
+        OmegaConf.load(Path(CONF_DIR) / "policy/template.yaml")
     )
-    assert cfg.robot.name == Robot(robot)
+    assert isinstance(raw, dict)
+    with initialize_config_dir(config_dir=CONF_DIR, version_base="1.3"):
+        composed = compose("train", overrides=["mode=accel", "name=t"])
+    wanted = leaves(as_dict(to_dataclass(composed, TrainConfig)))
+    # `defaults` is the template's choice list, the rest are values
+    listed = leaves({k: v for k, v in raw.items() if k != "defaults"})
+    assert wanted - listed == set()
+
+
+def template_choices(**changed: str) -> dict[str, str]:
+    return {
+        "robot": "wojtek",
+        "mode": "accel",
+        "level_space": "param",
+        "arena": "benchmark",
+        "network": "default",
+    } | changed
+
+
+def test_template_matches_its_group_options(compose_cfg: Compose) -> None:
+    cfg = OmegaConf.structured(compose_cfg("train", "policy=template"))
+    check_group_options(cfg, template_choices())
+
+
+@pytest.mark.parametrize(
+    ("group", "option", "key"),
+    [
+        ("robot", "go1", "robot.name"),
+        ("mode", "sfl", "mode.curriculum"),
+        ("level_space", "grid", "level_space.kind"),
+    ],
+)
+def test_group_choice_the_template_overrides_is_refused(
+    compose_cfg: Compose, group: str, option: str, key: str
+) -> None:
+    cfg = OmegaConf.structured(
+        compose_cfg("train", "policy=template", f"{group}={option}")
+    )
+    with pytest.raises(ValueError, match=f"{group}={option} sets {key}"):
+        check_group_options(cfg, template_choices(**{group: option}))
+
+
+def test_value_override_of_the_template_passes_the_group_check(
+    compose_cfg: Compose,
+) -> None:
+    cfg = OmegaConf.structured(
+        compose_cfg("train", "policy=template", "mode.score=learnability")
+    )
+    check_group_options(cfg, template_choices())
 
 
 def test_cli_overrides_win_over_the_template(compose_cfg: Compose) -> None:

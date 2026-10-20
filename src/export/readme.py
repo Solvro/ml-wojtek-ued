@@ -184,7 +184,7 @@ def stance_text(contract: Contract) -> str:
         "- `stance(height) = clip(default + OFFSETS * dsecond(height), "
         "stance_min, stance_max)` with `OFFSETS = "
         f"{array(stance.offsets)}` and `dsecond` the linear interpolation "
-        "(flat beyond the ends) of the table below;\n"
+        "(flat beyond the ends) of the table below.\n"
         f"  `height` is `command[3]` (obs index {stance.height_index}).\n"
         f"  `stance_min = {array(stance.stance_min)}`,\n"
         f"  `stance_max = {array(stance.stance_max)}`.\n\n" + knots + "\n\n"
@@ -205,8 +205,8 @@ def control_section(contract: Contract) -> str:
     else:
         text += (
             "- `joint_targets = clip(stance(height) + action_scale * "
-            "action, target_min, target_max)`, where a zero action stands "
-            "at the commanded height:\n"
+            "action, target_min, target_max)`; a zero action stands at the "
+            "commanded height.\n"
         )
         text += stance_text(contract)
     if contract.action_filter:
@@ -457,11 +457,9 @@ def reproduce_section(name: str) -> str:
         "`config.yaml` is the full composed training config: every value "
         "this policy was trained with. Re-export a checkpoint with it:\n\n"
         "```bash\n"
-        f"just export checkpoint=<{name}.pkl> mode=<mode> "
+        f"just export checkpoint=<{name}.pkl> "
         f"config=artifacts/export/{name}/config.yaml\n"
-        "```\n\n"
-        "`mode=` only satisfies the config composition; the file's values "
-        "win."
+        "```"
     )
 
 

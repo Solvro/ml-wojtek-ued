@@ -196,7 +196,7 @@ A deployable model for the real robot, next to the benchmark: define the
 run in one YAML, train one policy, export it to ONNX.
 
 ```bash
-cp conf/policy/template.yaml conf/policy/my_robot.yaml   # robot, mode, terrain, PPO, network
+cp conf/policy/template.yaml conf/policy/my_robot.yaml   # every value: robot, mode switches, terrain, PPO, network
 just train-export policy=my_robot                        # train, then export
 just export checkpoint=<run>.pkl policy=my_robot         # export an existing checkpoint
 ```

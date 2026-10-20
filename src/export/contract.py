@@ -5,12 +5,13 @@ import dataclasses
 import math
 from typing import Any
 
+import jax
 import numpy as np
 
 from config.schema import Robot
 from env.functional import FunctionalEnv
+from export import playground_obs
 from wojtek_env.envs import env as wojtek_joystick
-from wojtek_env.envs.symmetry import COMPONENT_SIZES
 
 LEG_OFFSETS = (0.0, 1.0, 2.0)  # dsecond multiplier of a leg's three joints
 GAIT_STAND_SPEED = 0.05  # m/s: below this the Wojtek gait clock is frozen
@@ -224,10 +225,12 @@ def _wojtek_contract(env: FunctionalEnv) -> Contract:
             f"supported: {sorted(WOJTEK_OBS)}. Add them to "
             "export/contract.py WOJTEK_OBS"
         )
+    state = base.reset(jax.random.key(0))
+    catalog = base._obs_catalog(state.data, state.info)
     obs = tuple(
         ObsComponent(
             name=n,
-            size=COMPONENT_SIZES[n],
+            size=int(catalog[n].shape[0]),
             units=WOJTEK_OBS[n][0],
             source=WOJTEK_OBS[n][1],
             noise=_noise(cfg.obs_noise.get(n, 0.0)),
@@ -419,157 +422,31 @@ def _wojtek_conditions(cfg: Any, sim_dt: float) -> tuple[str, ...]:
 # robots whose step clips the targets to explicit bounds on the env
 EXPLICIT_CLIP = {Robot.barkour, Robot.spot}
 
-GRAVITY_BODY = (
-    "gravity direction in the IMU frame: rotate (0, 0, -1) by the inverse "
-    "of the IMU orientation; upright = (0, 0, -1)"
-)
-UP_WORLD = (
-    "the IMU frame's z axis in the world frame (third column of the IMU "
-    "rotation matrix); upright = (0, 0, 1)"
-)
-
-
-def _go1_obs(cfg: Any) -> tuple[ObsComponent, ...]:
-    noise = cfg.noise_config
-    level = float(noise.level)
-
-    def n(name: str) -> float | None:
-        return _noise(level * float(noise.scales[name]))
-
-    return (
-        ObsComponent(
-            "linvel",
-            3,
-            "m/s",
-            "base linear velocity in the IMU frame; not an IMU output: "
-            "needs a state estimator (leg odometry / Kalman filter)",
-            n("linvel"),
-        ),
-        ObsComponent("gyro", 3, "rad/s", "IMU angular velocity", n("gyro")),
-        ObsComponent("gravity", 3, "unit vector", GRAVITY_BODY, n("gravity")),
-        ObsComponent(
-            "joint_pos",
-            12,
-            "rad",
-            "joint encoder angle minus `default` of the joint table",
-            n("joint_pos"),
-        ),
-        ObsComponent(
-            "joint_vel", 12, "rad/s", "joint encoder velocity", n("joint_vel")
-        ),
-        ObsComponent(
-            "last_act", 12, "[-1, 1]", "previous `action` (zeros at start)"
-        ),
-        ObsComponent(
-            "command",
-            3,
-            "m/s, m/s, rad/s",
-            "operator setpoint [vx, vy, wz] in the base frame",
-        ),
-    )
-
-
-def _spot_obs(cfg: Any) -> tuple[ObsComponent, ...]:
-    scales = cfg.obs_noise.scales
-    history = int(cfg.history_len)
-    return (
-        ObsComponent(
-            "gyro", 3, "rad/s", "IMU angular velocity", _noise(scales.gyro)
-        ),
-        ObsComponent(
-            "gravity", 3, "unit vector", UP_WORLD, _noise(scales.gravity)
-        ),
-        ObsComponent(
-            "joint_pos",
-            12,
-            "rad",
-            "joint encoder angle minus `default` of the joint table",
-            _noise(scales.joint_pos),
-        ),
-        ObsComponent(
-            "qpos_error_history",
-            12 * history,
-            "rad",
-            f"last {history} control steps of (encoder angle - the "
-            "`joint_targets` sent at that step), newest first, 12 per step",
-            _noise(scales.joint_pos),
-        ),
-        ObsComponent(
-            "feet_pos",
-            12,
-            "m",
-            "foot positions (x, y, z per foot) relative to the trunk, from "
-            "forward kinematics",
-            _noise(max(scales.feet_pos)),
-        ),
-        ObsComponent(
-            "last_act", 12, "[-1, 1]", "previous `action` (zeros at start)"
-        ),
-        ObsComponent(
-            "command",
-            3,
-            "m/s, m/s, rad/s",
-            "operator setpoint [vx, vy, wz] in the base frame",
-        ),
-    )
-
-
-def _barkour_obs(cfg: Any) -> tuple[ObsComponent, ...]:
-    noise = _noise(cfg.obs_noise)
-    return (
-        ObsComponent(
-            "gyro_z",
-            1,
-            "0.25 rad/s",
-            "IMU yaw rate times 0.25",
-            noise,
-        ),
-        ObsComponent("gravity", 3, "unit vector", UP_WORLD, noise),
-        ObsComponent(
-            "command",
-            3,
-            "2 m/s, 2 m/s, 0.25 rad/s",
-            "operator setpoint [vx, vy, wz] scaled by [2, 2, 0.25]",
-            noise,
-        ),
-        ObsComponent(
-            "joint_pos",
-            12,
-            "rad",
-            "joint encoder angle minus `default` of the joint table",
-            noise,
-        ),
-        ObsComponent(
-            "last_act",
-            12,
-            "[-1, 1]",
-            "previous `action` (zeros at start)",
-            noise,
-        ),
-    )
-
 
 def _playground_obs(
-    robot: Robot, cfg: Any
+    robot: Robot, base: Any
 ) -> tuple[tuple[ObsComponent, ...], int]:
-    if robot in (Robot.go1, Robot.go2):
-        return _go1_obs(cfg), 1
-    if robot == Robot.spot:
-        return _spot_obs(cfg), 1
-    if robot == Robot.barkour:
-        return _barkour_obs(cfg), BARKOUR_HISTORY
-    raise ValueError(f"no export description for robot {robot!r}")
-
-
-# barkour/joystick.py keeps 15 frames of its 31-value observation
-BARKOUR_HISTORY = 15
+    layout = playground_obs.measure(
+        base, playground_obs.channels(robot, base._config)
+    )
+    obs = tuple(
+        ObsComponent(
+            name=p.channel.name,
+            size=p.stop - p.start,
+            units=playground_obs.scaled_units(p.channel.units, p.gains),
+            source=p.channel.source,
+            noise=_noise(p.channel.noise),
+        )
+        for p in layout.placements
+    )
+    return obs, layout.frames
 
 
 def _playground_contract(robot: Robot, env: FunctionalEnv) -> Contract:
     base = env.base
     m = base.mj_model
     cfg = base._config
-    obs, frames = _playground_obs(robot, cfg)
+    obs, frames = _playground_obs(robot, base)
     default = np.asarray(base._default_pose, dtype=np.float64)
     lo, hi = _target_bounds(robot, base)
     scale = _scale_vector(cfg.action_scale, m.nu)

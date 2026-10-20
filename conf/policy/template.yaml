@@ -1,17 +1,18 @@
 # @package _global_
 #
-# One policy, fully defined. Copy to conf/policy/<name>.yaml, edit, then
+# One policy, fully defined: every value of a training run is listed below,
+# switches included. Copy to conf/policy/<name>.yaml, edit, then
 #   just train-export policy=<name>
-# Anything in conf/train.yaml can be set here; CLI overrides still win.
+# CLI value overrides win (`seed=1`, `mode.score=learnability`). A group
+# choice on the CLI (`robot=go1`, `mode=sfl`) does not change the values
+# below and is refused: edit them here and the `defaults` to match.
 # Docs: docs/export.md
 defaults:
-  # robot: wojtek | go1 | barkour | spot | go2
+  # the option names must match the values below: robot -> `robot.name`,
+  # mode -> the `mode` switches (it also tags the wandb run), level_space ->
+  # `level_space.kind`
   - override /robot: wojtek
-  # UED algorithm: dr | dr_easy | dr_mixed | accel | accel_grow | accel_sfl |
-  # plr | sfl | paired | paired_uni | paired_bi | paired_evo. The option sets
-  # the curriculum switches; its numeric parameters are under `mode:` below.
   - override /mode: accel
-  # level space (genome): param | grid
   - override /level_space: param
   - _self_
 
@@ -23,13 +24,17 @@ entity: ""
 project: wojtek-policies
 tags: [policy-export]
 seed: 0
-# physics: auto (warp on a GPU, jax on CPU) | jax | warp. The Playground
-# robots run on jax only.
+# physics of training: auto (warp on a GPU, jax on CPU) | jax | warp. The
+# Playground robots run on jax only. The export always runs on jax.
 backend: auto
 # env steps; the benchmark trains 300000000
 num_timesteps: 300000000
 checkpoint_dir: artifacts/checkpoints
 export_dir: artifacts/export
+
+# --- robot -----------------------------------------------------------------
+robot:
+  name: wojtek # wojtek | go1 | barkour | spot | go2
 
 # --- training levels -------------------------------------------------------
 # levels per iteration (<= arena.tiles^2) and envs per level
@@ -42,24 +47,38 @@ min_travel: 1.0
 eval_every: 10
 eval_levels: 512
 
-# --- terrain: difficulty, level space, arena (Wojtek units) -------------------
+# --- terrain: arena and level space (Wojtek units) ----------------------------
 # Wojtek: the arena assets must be built with the same values
 # (`just build-accel-arena arena.amplitude=...`)
 arena:
-  amplitude: 0.3 # m, peak height / depth of a level
+  patch_radius: 3.0 # m, half-width of a level's square patch
+  cell_size: 0.05 # m, fine hfield resolution
   coarse_n: 13 # control points per axis of the level genome
+  amplitude: 0.3 # m, peak height / depth of a level
+  difficulty: 1.0 # terrain-intensity scale in [0, 1]
+  base_z: 1.0 # m, solid base under the hfield
   pad_radius: 0.55 # m, flat spawn disc
   pad_taper: 0.2 # m, ramp from the pad to full terrain
   tiles: 16 # tiles per side, one level each
+  reach: 10.0 # m readable from a tile centre; sets the tile gap
 level_space:
+  kind: param # param | grid
   # ACCEL mutation strength: edits per mutation (local / grow) and size
   n_edits_by_mutation: {local: 2, grow: 2}
+  # the entry of the line above for mode.mutation
+  n_edits: ${level_space.n_edits_by_mutation.${oc.select:mode.mutation,local}}
   edit_scale: 0.1
 
-# --- UED algorithm parameters ---------------------------------------------
-# The switches (curriculum, mutation, score, generator, bc) come from the
-# mode option above; override them as `mode.score: learnability` if needed.
+# --- UED algorithm ----------------------------------------------------------
+# The 12 named algorithms are combinations of the switches
+# (docs/configuration.md, `mode/`).
 mode:
+  # dr | dr_easy | dr_mixed | accel | plr | paired | paired_evo
+  curriculum: accel
+  mutation: local # ACCEL mutation of a replayed level: local | grow
+  score: pvl # level score: pvl | learnability
+  generator: easy # ACCEL explore levels: easy | mixed
+  bc: none # PAIRED distillation: none | uni | bi
   replay_prob: 0.8 # replay probability once the buffer holds num_lanes levels
   buffer_size: 4000 # levels kept, highest score first
   generator_scale: 0.1 # easy generator: control points within this of flat

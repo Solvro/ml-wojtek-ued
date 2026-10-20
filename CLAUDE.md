@@ -33,7 +33,7 @@ when the code changes.** Page map: [docs/index.md](docs/index.md).
 - `src/robots/` — Playground quadrupeds on the tiled arena.
 - `src/hfield/` — levels, level spaces, tiled arena.
 - `src/training/` — brax-PPO student, curricula, PAIRED, train loop.
-- `src/export/` — checkpoint + config → ONNX policy and its README.
+- `src/export/` — checkpoint + config → ONNX policy and its README; the contract is built from the env (Playground obs layout measured by shifting input signals, `playground_obs.py`), export env always on jax.
 - `src/evaluation/` — final eval, sim2sim, domination.
 - `src/rendering/` — mp4 clips.
 - `src/paper/` — tables, figures, labels.

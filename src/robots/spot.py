@@ -4,6 +4,7 @@ from typing import Any
 
 import jax
 from mujoco import mjx
+from mujoco_playground._src import mjx_env
 from mujoco_playground._src.locomotion.spot import base as spot_base
 from mujoco_playground._src.locomotion.spot import joystick
 
@@ -54,6 +55,10 @@ class SpotTerrain(TerrainRobot, joystick.Joystick):
             if config.pert_config.enable
             else lambda state, _: state
         )
+
+    def actor_obs(self, state: mjx_env.State) -> jax.Array:
+        obs = self._get_obs(state.data, dict(state.info), state.info["rng"])
+        return obs["state"]
 
     def _gravity_z(self, data: mjx.Data) -> jax.Array:
         # Playground's Spot "gravity" is the trunk's up vector: +1 upright

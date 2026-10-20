@@ -111,6 +111,12 @@ class TerrainRobot(abc.ABC):
     def _build_env(self, config: Any, hfield: HFieldConfig) -> None: ...
 
     @abc.abstractmethod
+    def actor_obs(self, state: mjx_env.State) -> jax.Array:
+        """The actor observation of `state`'s data and info as `step` builds
+        it, without advancing the env; export/playground_obs.py shifts the
+        inputs to measure the layout."""
+
+    @abc.abstractmethod
     def _gravity_z(self, data: mjx.Data) -> jax.Array:
         """z of gravity in the trunk frame: -1 upright, > -0.4 is a fall."""
 

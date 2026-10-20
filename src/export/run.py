@@ -14,6 +14,7 @@ from brax.training.agents.ppo import networks as ppo_networks
 from omegaconf import DictConfig, OmegaConf
 
 from config.schema import (
+    Backend,
     ExportConfig,
     Robot,
     TrainConfig,
@@ -38,9 +39,9 @@ ENV_PER_LEVEL = 2
 ENV_STEPS = 50
 ENV_DIFFICULTY = 0.5
 OUTPUT_FILES = ("policy.onnx", "config.yaml", "README.md")
-# where / on what this machine runs: a `config=` file from another machine
+# where this machine reads and writes: a `config=` file from another machine
 # must not override these
-LOCAL_FIELDS = ("backend", "checkpoint_dir", "export_dir")
+LOCAL_FIELDS = ("checkpoint_dir", "export_dir")
 
 
 def training_config(dict_cfg: DictConfig) -> TrainConfig:
@@ -58,6 +59,11 @@ def training_config(dict_cfg: DictConfig) -> TrainConfig:
         local = {k: dict_cfg[k] for k in LOCAL_FIELDS}
         dict_cfg = OmegaConf.merge(  # ty: ignore[invalid-assignment]
             dict_cfg, OmegaConf.load(path), local
+        )
+    if OmegaConf.is_missing(dict_cfg.mode, "curriculum"):
+        raise ValueError(
+            "no training mode: pass config=<run dir>/.hydra/config.yaml, a "
+            "policy=<name> file that sets the mode values, or mode=<name>"
         )
     full = to_dataclass(dict_cfg, ExportConfig)
     return TrainConfig(
@@ -80,6 +86,7 @@ def checkpoint_params(checkpoint: Path) -> Any:
 def make_export_env(
     cfg: TrainConfig,
 ) -> tuple[FunctionalEnv, TileLayout, Any]:
+    # the inference graph has no physics: jax runs wherever warp is absent
     robot = cfg.robot.name
     config = hfield_config(robot, cfg.arena)
     check_wojtek_arena(robot, config)
@@ -91,7 +98,7 @@ def make_export_env(
         robot_scale=ROBOT_SCALE[robot],
     )
     num_envs = ENV_LEVELS * ENV_PER_LEVEL
-    env = make_env(robot, cfg.backend, config, num_envs=num_envs, train=True)
+    env = make_env(robot, Backend.jax, config, num_envs=num_envs, train=True)
     return env, TileLayout(config), space
 
 

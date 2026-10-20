@@ -72,6 +72,11 @@ class BarkourTerrain(TerrainRobot, joystick.Joystick):
         self._feet_floor_found_sensor = [f"{foot}_floor_found" for foot in FEET]
         self._post_init()
 
+    def actor_obs(self, state: mjx_env.State) -> jax.Array:
+        return self._get_obs(
+            state.data, dict(state.info), state.obs["state"], state.info["rng"]
+        )
+
     def _gravity_z(self, data: mjx.Data) -> jax.Array:
         # Playground's Barkour "gravity" is the trunk's up vector: +1 upright
         return -self._get_gravity(data)[-1]

@@ -23,16 +23,18 @@ cp conf/policy/template.yaml conf/policy/my_robot.yaml
 ```
 
 `conf/policy/template.yaml` is a Hydra experiment config
-(`# @package _global_`): every field of `conf/train.yaml` can be set in it,
-CLI overrides still win. It gathers, in one file:
+(`# @package _global_`) that lists every value of `conf/train.yaml`
+literally, the switches included; CLI value overrides still win. It gathers,
+in one file:
 
 | section | fields | notes |
 |---|---|---|
-| `defaults` | `override /robot`, `/mode`, `/level_space` | `robot`: wojtek, go1, barkour, spot, go2. `mode`: any of the 12 curricula ([overview](overview.md#methods)) |
+| `defaults` | `override /robot`, `/mode`, `/level_space` | the option names; they must match the values below (`robot.name`, the `mode` switches, `level_space.kind`). A group choice on the CLI (`robot=go1`, `mode=sfl`) is refused by `train-export`: the file's values win over the option, so edit them (`mode.score=learnability` as a value override works) |
+| robot | `robot.name` | wojtek, go1, barkour, spot, go2 |
 | run | `name`, `seed`, `backend`, `num_timesteps`, `checkpoint_dir`, `export_dir`, wandb `entity` / `project` / `tags` | `name` names the wandb run, the checkpoint and `artifacts/export/<name>/` |
 | training levels | `num_lanes`, `envs_per_lane`, `level_steps`, `min_travel`, `eval_*` | `level_steps` is a multiple of `ppo.unroll_length` |
-| terrain | `arena.*`, `level_space.*` | difficulty envelope: `arena.amplitude`, `coarse_n`, `pad_*`, ACCEL edit strength |
-| UED algorithm | `mode.*` | numeric parameters (`replay_prob`, `buffer_size`, `generator_scale`, `grow_max`, PAIRED / BC settings); the switches (`curriculum`, `mutation`, `score`, `generator`, `bc`) come from the `/mode` option |
+| terrain | `arena.*`, `level_space.*` | difficulty envelope: `arena.amplitude`, `coarse_n`, `pad_*`, ..., `level_space.kind`, ACCEL edit strength |
+| UED algorithm | `mode.*` | the switches `curriculum`, `mutation`, `score`, `generator`, `bc` (allowed options in the comments), then the numeric parameters (`replay_prob`, `buffer_size`, `generator_scale`, `grow_max`, PAIRED / BC settings) |
 | PPO | `ppo.*` | `unroll_length`, `num_minibatches`, `num_updates_per_batch`, `discounting`, `gae_lambda`, `learning_rate`, `clipping_epsilon`, `max_grad_norm` |
 | network | `network.*` | `policy_hidden`, `value_hidden`, `activation` (`elu`, `relu`, `tanh`, `swish`); the exported actor is the policy MLP |
 
@@ -82,13 +84,17 @@ just export checkpoint=<run>.pkl policy=my_robot
 | how | example |
 |---|---|
 | a policy file | `policy=my_robot` (the file the checkpoint was trained from) |
-| a config file | `config=<run dir>/.hydra/config.yaml mode=<mode>` — the composed config Hydra wrote beside the run, or an export's `config.yaml`; its values replace the composed ones, except `backend`, `checkpoint_dir` and `export_dir`, which stay those of this machine's command line; fields it lacks (runs older than `ppo` / `network`) keep the `conf/train.yaml` values; `mode=` only satisfies the composition |
+| a config file | `config=<run dir>/.hydra/config.yaml` — the composed config Hydra wrote beside the run, or an export's `config.yaml`; it holds the mode, so no `mode=`; its values replace the composed ones, except `checkpoint_dir` and `export_dir`, which stay those of this machine's command line; fields it lacks (runs older than `ppo` / `network`) keep the `conf/train.yaml` values |
 | overrides | `mode=accel robot=go1 seed=0 name=<run>`: benchmark runs are the `conf/train.yaml` defaults plus their overrides (`.hydra/overrides.yaml` beside the run lists them) |
 
 - Benchmark checkpoint from the cluster: copy `artifacts/brax_ued/<run>.pkl`
   (and `<run>.train.yaml` if present, for the README's training metrics) and
   `artifacts/hydra/<run>/` to the laptop, then
-  `just export checkpoint=<run>.pkl mode=<mode> config=artifacts/hydra/<run>/.hydra/config.yaml`.
+  `just export checkpoint=<run>.pkl config=artifacts/hydra/<run>/.hydra/config.yaml`.
+- The export builds its env on jax whatever `backend` the run trained on:
+  the inference graph has no physics, and warp may be absent here.
+- Without `config=` and `policy=` the mode must be given (`mode=<name>`);
+  the export fails with the three options otherwise.
 - The checkpoint must match the config: a different robot, observation
   layout or network fails with the sizes that disagree, before anything is
   written. Pass the `network.*` the run trained with.
@@ -191,8 +197,14 @@ in. Sections:
 | `spot` | 81 | gyro 3, gravity 3, joint_pos 12, qpos_error_history 36, feet_pos 12, last_act 12, command 3 | `feet_pos` from forward kinematics |
 | `barkour` | 465 | 15 frames x (gyro_z 1, gravity 3, command 3, joint_pos 12, last_act 12), newest first | frame history kept by the control loop |
 
-The order and sizes are checked against the env's own observation size at
-export (a mismatch fails: update `export/contract.py`).
+Wojtek's components are the env's `obs.state` list with the sizes of its
+observation catalog. The Playground robots' layout is measured on the env
+(`export/playground_obs.py`): each input signal (a sensor getter, the joint
+angles, an `info` entry) is shifted in turn, and the observation entries
+that move are that component's slice, their change its scale (Barkour's
+`0.25 rad/s`). A swap of same-size components in the env therefore changes
+the contract; entries no channel explains fail the export (update the
+channels in `export/playground_obs.py`).
 
 ## 6. Use it on the robot
 
@@ -224,6 +236,7 @@ At every export, before writing:
 | path | role |
 |---|---|
 | `src/export/contract.py` | `Contract` of a robot, built from the env |
+| `src/export/playground_obs.py` | Playground robots: actor observation layout measured on the env |
 | `src/export/onnx_graph.py` | ONNX graph from the checkpoint params |
 | `src/export/verify.py` | onnxruntime vs JAX |
 | `src/export/readme.py` | README text |

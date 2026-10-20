@@ -73,7 +73,7 @@ def test_config_file_replaces_the_composed_values(tmp_path: Path) -> None:
             )
         )
     )
-    cfg = training_config(composed("mode=dr", f"config={path}"))
+    cfg = training_config(composed(f"config={path}"))
     assert (cfg.name, cfg.seed, cfg.mode.curriculum) == ("run", 3, "plr")
     # fields the file lacks (an older run) keep the conf/train.yaml values
     assert cfg.ppo.unroll_length == 20
@@ -86,27 +86,30 @@ def test_config_file_keeps_the_local_run_location(tmp_path: Path) -> None:
         OmegaConf.to_yaml(
             OmegaConf.create(
                 {
-                    "backend": "warp",
                     "checkpoint_dir": "/cluster/ck",
                     "export_dir": "/cluster/export",
                     "name": "run",
                     "seed": 3,
+                    "mode": {"curriculum": "dr"},
                 }
             )
         )
     )
-    cfg = training_config(
-        composed("mode=dr", f"config={path}", "export_dir=out", "backend=jax")
-    )
-    assert (cfg.backend, cfg.export_dir) == ("jax", "out")
+    cfg = training_config(composed(f"config={path}", "export_dir=out"))
+    assert cfg.export_dir == "out"
     assert cfg.checkpoint_dir is None
     assert cfg.seed == 3
+
+
+def test_export_without_a_mode_source_names_the_options() -> None:
+    with pytest.raises(ValueError, match="no training mode"):
+        training_config(composed("name=t"))
 
 
 def test_missing_config_file_is_named(tmp_path: Path) -> None:
     missing = tmp_path / "missing.yaml"
     with pytest.raises(FileNotFoundError, match="no such file"):
-        training_config(composed("mode=dr", "name=t", f"config={missing}"))
+        training_config(composed("name=t", f"config={missing}"))
 
 
 def test_missing_checkpoint_is_named(tmp_path: Path) -> None:
@@ -143,6 +146,21 @@ def test_go1_export_writes_three_files_and_matches_jax(
     assert "`linvel`" in readme and "reward per step" in readme
     saved = OmegaConf.load(out_dir / "config.yaml")
     assert saved.name == "tiny" and saved.robot.name == "go1"
+
+
+def test_export_env_ignores_the_training_backend(
+    compose_cfg: Compose,
+) -> None:
+    cfg = compose_cfg(
+        "train",
+        "mode=dr",
+        "name=tiny",
+        "robot=go1",
+        "backend=warp",
+        *SMALL_ARENA,
+    )
+    env, _, _ = make_export_env(cfg)
+    assert env.base._backend == "jax"
 
 
 def test_export_refuses_a_checkpoint_of_another_robot(
