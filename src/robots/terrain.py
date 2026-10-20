@@ -185,6 +185,11 @@ class TerrainRobot(abc.ABC):
         level = top * (1 - fy) + bottom * fy
         return (2 * level - 1) * c.amplitude
 
+    def command_frame_velocity(self, data: mjx.Data) -> jax.Array:
+        """Linear velocity in the frame the reward tracks commands in: the
+        `local_linvel` velocimeter's site (Barkour's faces the torso's -x)."""
+        return mjx_env.get_sensor_data(self.mj_model, data, "local_linvel")
+
     def _forward_command(self, rng: jax.Array) -> jax.Array:
         return jax.random.uniform(
             rng, (3,), minval=self._cmd_low, maxval=self._cmd_high

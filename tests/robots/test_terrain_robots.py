@@ -20,6 +20,7 @@ from config.hfield_config import HFieldConfig
 from env.functional import FunctionalEnv
 from evaluation.physics_variants import full_collision
 from hfield.tiles import TileLayout
+from robots.barkour import BarkourTerrain
 from robots.go1 import Go1Terrain
 from robots.registry import TERRAIN_ROBOTS
 from robots.scale import hfield_config
@@ -236,6 +237,18 @@ def posed(setup: Setup, qpos: jax.Array) -> mjx.Data:
     base = setup.base
     data = mjx.make_data(base.mj_model, impl="jax")
     return mjx.forward(base.mjx_model, data.replace(qpos=qpos))
+
+
+def test_forward_velocity_is_along_the_command_frame(setup: Setup) -> None:
+    base = setup.base
+    # Barkour's imu frame, where its commands and reward live, faces the
+    # torso's -x
+    sign = -1.0 if isinstance(base, BarkourTerrain) else 1.0
+    home = jnp.asarray(base.mj_model.key("home").qpos)
+    data = mjx.make_data(base.mj_model, impl="jax")
+    qvel = data.qvel.at[0].set(sign * 1.0)
+    data = mjx.forward(base.mjx_model, data.replace(qpos=home, qvel=qvel))
+    assert float(setup.env.forward_velocity(data)) == pytest.approx(1.0)
 
 
 def test_fall_rule_fires_when_toppled_not_at_home(setup: Setup) -> None:
