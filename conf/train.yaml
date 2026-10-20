@@ -8,7 +8,7 @@ defaults:
 
 name: ???
 entity: ""
-project: wojtyla
+project: wojtek-benchmark-iclr
 backend: auto
 seed: 0
 num_timesteps: 300000000

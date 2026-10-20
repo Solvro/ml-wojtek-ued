@@ -8,7 +8,7 @@ defaults:
 checkpoint: ???
 name: ???
 entity: ""
-project: wojtyla
+project: wojtek-benchmark-iclr
 out_dir: ???
 backend: auto
 num_levels: 2048

@@ -307,15 +307,8 @@ a robot file keeps its constants, scene and what differs):
 - Playground's own reward, obs and PD gains (Go2: menagerie's), feet-only
   collisions, blind actor.
 - jax backend only (`playground_backend`): `backend=auto` resolves to jax,
-  `backend=warp` is refused. On warp, foot contacts with the tiled arena's
-  hfield blow up more often the farther the tile is from the arena origin
-  (random actions on the 16 x 16 benchmark arena: Go1 1.5 % of steps on the
-  inner tiles to 5 % on the outer ones, Go2 to 3.4 %, Barkour to 0.5 %;
-  0 % on a 2 x 2 arena and on jax; ccd iterations/tolerance, `base_z` and
-  amplitude do not change it). Every blow-up ends the episode, so the
-  policy learns to stand still. On jax: 0 % for all four. Go1 on jax runs
-  at ~410k env steps/s on flat levels on an H100 (warp: ~490k), ~335k
-  under `mode=accel`.
+  `backend=warp` is refused because foot contacts with the tiled arena's
+  hfield diverge on warp far from the origin.
 - The tiled ACCEL arena written by `arena_scene` (no asset files): one
   `hfield` geom `floor` (geom 0, so a friction DR keyed on geom 0 hits it),
   sized by `HFieldConfig`; `reset` spawns on `spawn_xy`, the tile centre
@@ -331,12 +324,7 @@ a robot file keeps its constants, scene and what differs):
   | Barkour | 0-1.5 | +-0.8 | +-0.7 | `barkour/joystick.py` `lin_vel_x/y`, `ang_vel_yaw` |
   | Spot | 0-1.0 | +-0.8 | +-1.0 | `spot/joystick.py` `command_config` |
 
-  vx starts at 0: with only fast commands (Wojtek's vx 0.2-0.6 x `SCALE`,
-  Go1 0.5-1.5 m/s) Go1 still stands still at 200M steps on flat levels.
-  On these ranges (`mode=accel`, jax, seed 0) the deterministic eval on
-  d0.25 levels reaches half the commanded vx at ~100M steps (Go1), ~76M
-  (Go2), ~51M (Barkour, Spot).
-- Eval commands (`make_env(..., eval_travel=)`, used by brax_ued's eval,
+  vx starts at 0. Eval commands (`make_env(..., eval_travel=)`, used by brax_ued's eval,
   eval_brax and eval_sim2sim): vx only from `EVAL_SPEED_MARGIN` (1.2) x
   threshold / episode time up to the max, so every eval command can reach
   the success threshold (`min_travel` x `SCALE` in `level_steps`): Go1, Go2

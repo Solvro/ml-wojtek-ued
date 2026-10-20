@@ -7,7 +7,7 @@ defaults:
 checkpoint: ???
 name: ???
 entity: ""
-project: wojtyla
+project: wojtek-benchmark-iclr
 out_dir: ???
 num_levels: 256
 episodes: 4
