@@ -17,7 +17,7 @@ set -euo pipefail
 REPO="$HOME/workspace/ml-wojtek-ued"
 PDW=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued
 WB_ENTITY=dominikgalus9-wroc-aw-university-of-science-and-technology
-WB_PROJECT=wojtyla
+WB_PROJECT=wojtek-benchmark-iclr
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1 JAX_PLATFORMS=cpu
 export HYDRA_FULL_ERROR=1
