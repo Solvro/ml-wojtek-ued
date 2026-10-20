@@ -249,7 +249,9 @@ measures it.
   level rendering together < 5 %.
 - 32M steps of `mode=accel` on warp: ~5 min wall clock, ~2 min of it
   compilation. A 300M-step run: ~0.5 GPU-h (PAIRED variants simulate two
-  students: ~1 GPU-h). Playground robots: not profiled.
+  students: ~1 GPU-h).
+- Playground robots run on jax: Go1 ~410k env steps/s on flat levels and
+  ~335k in `mode=accel` on one H100, so a 1B-step run takes ~1 GPU-h.
 - Whole-device GPU memory on warp: ~16 GB (JAX preallocation off).
 - Warp is not jax: one checkpoint scores 1.5-3 points higher success on
   terrain under warp (flat unchanged) and stands 7-11 mm higher on every
