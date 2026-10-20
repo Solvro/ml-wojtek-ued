@@ -100,16 +100,24 @@ BUILD=$(SRC="$COPY/src" sbatch --parsable slurm/build_assets.sbatch)
 export SRC="$COPY/src" NSEEDS=5 TAGS=paper
 export MODES="dr dr_easy dr_mixed plr sfl accel accel_grow accel_sfl paired paired_uni paired_bi paired_evo"
 
-# Wojtek: 300M steps, warp
-ROBOT=wojtek NUM_TIMESTEPS=300000000 BACKEND=warp \
-  sbatch --dependency="afterok:$BUILD" --array=0-59 slurm/brax_ued.sbatch
+# Wojtek: 300M steps, warp; each robot's eval array starts task by task
+# as its training task finishes (aftercorr)
+T=$(ROBOT=wojtek NUM_TIMESTEPS=300000000 BACKEND=warp sbatch --parsable \
+  --time=04:00:00 --dependency="afterok:$BUILD" --array=0-59 slurm/brax_ued.sbatch)
+ROBOT=wojtek BACKEND=warp sbatch --dependency="aftercorr:$T" --array=0-59 \
+  slurm/eval_brax.sbatch
 
 # Playground robots: 1B steps, jax
 for ROBOT in go1 barkour spot go2; do
-  ROBOT="$ROBOT" NUM_TIMESTEPS=1000000000 BACKEND=jax \
-    sbatch --dependency="afterok:$BUILD" --array=0-59 slurm/brax_ued.sbatch
+  T=$(ROBOT="$ROBOT" NUM_TIMESTEPS=1000000000 BACKEND=jax sbatch --parsable \
+    --time=06:00:00 --dependency="afterok:$BUILD" --array=0-59 slurm/brax_ued.sbatch)
+  ROBOT="$ROBOT" BACKEND=jax sbatch --dependency="aftercorr:$T" --array=0-59 \
+    slurm/eval_brax.sbatch
 done
 ```
+
+- WCSS caps submitted jobs per user (500 array tasks): the full grid is
+  600 tasks, so submit the last robot once the first tasks have finished.
 
 - Task = mode index x 5 + seed; checkpoints:
   `$PDW/artifacts/brax_ued/ued_<robot>_<mode>_seed<N>.pkl`.
@@ -120,7 +128,8 @@ done
 
 ### 4. Final evals
 
-Submit once the training arrays have finished:
+Submitted with the training arrays above (`aftercorr`). To re-run them for
+finished checkpoints:
 
 ```bash
 ROBOT=wojtek BACKEND=warp sbatch --array=0-59 slurm/eval_brax.sbatch

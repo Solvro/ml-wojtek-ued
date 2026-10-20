@@ -56,7 +56,8 @@ its tile by `TileLayout.assemble`.
 
 ### Arena assets
 
-`hfield/arena.py` writes the static **"accel"** MJCF arena every env loads:
+`hfield/arena.py` writes the static **"accel"** MJCF arena that Wojtek loads
+(the Playground robots build the same layout in code, `docs/robots.md`):
 a flat (`data = 0.5`) heightfield with `tiles x tiles` level patches and
 their gaps (`TileLayout`), box "apron" strips around it, plus the
 spec/lookup sidecars — via `terrain.py`'s writers. The spec records the
