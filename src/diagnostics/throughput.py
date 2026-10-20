@@ -13,7 +13,6 @@ from training.build import build
 from training.context import TrainContext
 from training.evaluate import evaluate
 from training.iteration import run_levels
-from training.ppo import PPO
 
 
 def timed(fn: Any, repeats: int) -> float:
@@ -79,7 +78,7 @@ def iteration_parts(ctx: TrainContext, levels: np.ndarray) -> dict[str, float]:
             hfield,
             dr_model,
             deterministic=False,
-            length=PPO["unroll_length"],
+            length=ctx.cfg.ppo.unroll_length,
         )
 
     rec["unroll_s"] = timed(unroll, 3)
@@ -117,7 +116,7 @@ def profile(cfg: TrainConfig) -> None:
     for dr in (False, True):
         rec[f"env_steps_per_s_dr{int(dr)}"] = env_steps_per_s(ctx, hfield, dr)
     rec.update(iteration_parts(ctx, levels))
-    unrolls = cfg.level_steps // PPO["unroll_length"]
+    unrolls = cfg.level_steps // cfg.ppo.unroll_length
     per_unroll = rec["unroll_s"] + rec["update_s"] + rec["regret_s"]
     once = rec["render_assemble_s"] + rec["sample_dr_s"] + rec["reset_s"]
     rec["iteration_est_s"] = once + unrolls * per_unroll

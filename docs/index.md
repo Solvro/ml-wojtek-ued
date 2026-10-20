@@ -14,6 +14,7 @@ locomotion on procedural terrain. Start with the [README](../README.md)
 | [robots.md](robots.md) | Go1, Go2, Barkour vB, Spot on the tiled arena | `src/robots/` |
 | [evaluation.md](evaluation.md) | final eval, sim2sim, demo videos | `src/evaluation/`, `src/rendering/` |
 | [results.md](results.md) | paper tables, figures, domination comparison | `src/paper/`, `src/evaluation/domination.py` |
+| [export.md](export.md) | train from one YAML, export to ONNX, the generated deployment README | `src/export/`, `conf/policy/` |
 | [configuration.md](configuration.md) | every Hydra config group and field | `conf/`, `src/config/` |
 | [slurm.md](slurm.md) | job variables, per-robot budgets, cluster values | `slurm/` |
 | [development.md](development.md) | layout rules, recipes, tests, adding features, gotchas | — |
@@ -31,5 +32,7 @@ locomotion on procedural terrain. Start with the [README](../README.md)
   [robots.md](robots.md)
 - What does each eval metric mean? [overview.md](overview.md#metrics),
   [evaluation.md](evaluation.md#final-eval)
+- How do I get a policy onto the real robot?
+  [export.md](export.md)
 - How do I add a robot / curriculum / config field?
   [development.md](development.md#adding-features)

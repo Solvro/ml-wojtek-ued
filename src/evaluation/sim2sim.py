@@ -192,7 +192,7 @@ def build(cfg: Sim2SimConfig) -> Sim2SimContext:
     config, layout, env = make_eval_env(cfg, Backend.jax)
     base = cast(Any, env)._env.unwrapped
     physics = CpuPhysics(base.mj_model, worker_count())
-    make_policy = ppo_networks.make_inference_fn(make_network(env))
+    make_policy = ppo_networks.make_inference_fn(make_network(env, cfg.network))
     unroll = make_unroll(env, make_policy, None)
     return Sim2SimContext(
         cfg=cfg,

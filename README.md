@@ -192,7 +192,23 @@ paper's Overleaf project; the paper owns floats, captions and labels.
 
 ## Train and export a policy
 
-See [docs/export.md](docs/export.md).
+A deployable model for the real robot, next to the benchmark: define the
+run in one YAML, train one policy, export it to ONNX.
+
+```bash
+cp conf/policy/template.yaml conf/policy/my_robot.yaml   # every value: robot, mode switches, terrain, PPO, network
+just train-export policy=my_robot                        # train, then export
+just export checkpoint=<run>.pkl policy=my_robot         # export an existing checkpoint
+```
+
+- Output `artifacts/export/<name>/`: `policy.onnx` (deterministic actor,
+  observation normalizer inside, outputs `action` and `joint_targets`),
+  `config.yaml` (the full training config), `README.md` (the generated
+  contract: observation layout, joints, gains, commands, `onnxruntime`
+  example, training metrics).
+- Every robot is supported; the example and the README focus on Wojtek.
+- Details, cluster `sbatch` example and the verification:
+  [docs/export.md](docs/export.md).
 
 ## Documentation
 
@@ -204,4 +220,5 @@ Map of all pages: [docs/index.md](docs/index.md).
 | [setup](docs/setup.md) | install, dependency pins, assets, outputs |
 | [slurm](docs/slurm.md) | job variables, per-robot budgets, cluster values |
 | [configuration](docs/configuration.md) | every Hydra config and field |
+| [export](docs/export.md) | train from one YAML, export to ONNX, the deployment README |
 | [development](docs/development.md) | layout rules, recipes, tests, adding features |

@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -63,6 +64,13 @@ class LevelSpaceKind(StrEnum):
     param = "param"
 
 
+class Activation(StrEnum):
+    elu = "elu"
+    relu = "relu"
+    tanh = "tanh"
+    swish = "swish"
+
+
 @dataclass
 class RobotConfig:
     name: Robot = MISSING
@@ -96,6 +104,25 @@ class ModeConfig:
 
 
 @dataclass
+class PPOConfig:
+    unroll_length: int = MISSING
+    num_minibatches: int = MISSING
+    num_updates_per_batch: int = MISSING
+    discounting: float = MISSING
+    gae_lambda: float = MISSING
+    learning_rate: float = MISSING
+    clipping_epsilon: float = MISSING
+    max_grad_norm: float = MISSING
+
+
+@dataclass
+class NetworkConfig:
+    policy_hidden: list[int] = MISSING
+    value_hidden: list[int] = MISSING
+    activation: Activation = MISSING
+
+
+@dataclass
 class WandbConfig:
     name: str = MISSING
     entity: str = MISSING
@@ -108,6 +135,8 @@ class TrainConfig(WandbConfig):
     mode: ModeConfig = field(default_factory=ModeConfig)
     level_space: LevelSpaceConfig = field(default_factory=LevelSpaceConfig)
     arena: HFieldConfig = field(default_factory=HFieldConfig)
+    network: NetworkConfig = field(default_factory=NetworkConfig)
+    ppo: PPOConfig = field(default_factory=PPOConfig)
     backend: Backend = MISSING
     seed: int = MISSING
     num_timesteps: int = MISSING
@@ -118,6 +147,7 @@ class TrainConfig(WandbConfig):
     eval_levels: int = MISSING
     min_travel: float = MISSING
     checkpoint_dir: str | None = MISSING
+    export_dir: str = MISSING
     tags: list[str] = MISSING
 
 
@@ -126,6 +156,7 @@ class EvalConfig(WandbConfig):
     robot: RobotConfig = field(default_factory=RobotConfig)
     level_space: LevelSpaceConfig = field(default_factory=LevelSpaceConfig)
     arena: HFieldConfig = field(default_factory=HFieldConfig)
+    network: NetworkConfig = field(default_factory=NetworkConfig)
     backend: Backend = MISSING
     checkpoint: str = MISSING
     out_dir: str = MISSING
@@ -144,6 +175,7 @@ class EvalConfig(WandbConfig):
 class Sim2SimConfig(WandbConfig):
     robot: RobotConfig = field(default_factory=RobotConfig)
     arena: HFieldConfig = field(default_factory=HFieldConfig)
+    network: NetworkConfig = field(default_factory=NetworkConfig)
     checkpoint: str = MISSING
     out_dir: str = MISSING
     num_levels: int = MISSING
@@ -160,6 +192,7 @@ class RenderConfig:
     robot: RobotConfig = field(default_factory=RobotConfig)
     level_space: LevelSpaceConfig = field(default_factory=LevelSpaceConfig)
     arena: HFieldConfig = field(default_factory=HFieldConfig)
+    network: NetworkConfig = field(default_factory=NetworkConfig)
     backend: Backend = MISSING
     checkpoint: str = MISSING
     out_dir: str = MISSING
@@ -170,6 +203,12 @@ class RenderConfig:
     height: int = MISSING
     command: list[float] = MISSING
     seed: int = MISSING
+
+
+@dataclass
+class ExportConfig(TrainConfig):
+    checkpoint: str = MISSING
+    config: str | None = MISSING
 
 
 @dataclass
@@ -227,6 +266,7 @@ SCHEMAS: dict[str, type] = {
     "eval": EvalConfig,
     "sim2sim": Sim2SimConfig,
     "render": RenderConfig,
+    "export": ExportConfig,
     "arena": ArenaBuildConfig,
     "check_hfield": CheckHFieldConfig,
     "paper_tables": PaperTablesConfig,
@@ -261,6 +301,37 @@ def to_dataclass(cfg: DictConfig, schema: type[T]) -> T:
             f"composed config is {type(obj).__name__}, not {schema}"
         )
     return obj
+
+
+OPTION_GROUPS = ("robot", "mode", "level_space", "arena", "network")
+
+
+def check_group_options(cfg: DictConfig, choices: Mapping[str, Any]) -> None:
+    """A policy file's values win over the group options, so a CLI choice
+    (`robot=go1`) that the file's values do not match would be ignored
+    silently: fail on it."""
+    clashes = []
+    for group in OPTION_GROUPS:
+        option = choices.get(group)
+        if option is None:
+            continue
+        probe = OmegaConf.create(
+            {g: OmegaConf.to_container(cfg[g]) for g in ("mode", "level_space")}
+        )
+        probe[group] = OmegaConf.load(Path(CONF_DIR) / group / f"{option}.yaml")
+        want = OmegaConf.to_container(probe[group], resolve=True)
+        assert isinstance(want, dict)
+        clashes += [
+            f"{group}={option} sets {group}.{key}={value!r}, the config "
+            f"has {getattr(cfg[group][key], 'value', cfg[group][key])!r}"
+            for key, value in want.items()
+            if cfg[group][key] != value
+        ]
+    if clashes:
+        raise ValueError(
+            "; ".join(clashes) + ". The policy file's values win over the "
+            "option: change the file's values and its `defaults` together"
+        )
 
 
 def as_dict(cfg: Any) -> dict[str, Any]:

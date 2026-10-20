@@ -19,6 +19,7 @@ when the code changes.** Page map: [docs/index.md](docs/index.md).
 | `robots/`: Go1, Go2, Barkour vB, Spot | [docs/robots.md](docs/robots.md) |
 | `evaluation/`, `rendering/`: final eval, sim2sim, videos | [docs/evaluation.md](docs/evaluation.md) |
 | `paper/`: tables, figures, domination | [docs/results.md](docs/results.md) |
+| `export/`, `conf/policy/`: train-from-template, ONNX export, the deployment README | [docs/export.md](docs/export.md) |
 | `conf/`, `config/schema.py`, any CLI argument | [docs/configuration.md](docs/configuration.md) |
 | `slurm/`: job variables, per-robot budgets, cluster values | [docs/slurm.md](docs/slurm.md) |
 | Layout rules, recipes, tests, adding features, gotchas | [docs/development.md](docs/development.md) |
@@ -32,11 +33,13 @@ when the code changes.** Page map: [docs/index.md](docs/index.md).
 - `src/robots/` — Playground quadrupeds on the tiled arena.
 - `src/hfield/` — levels, level spaces, tiled arena.
 - `src/training/` — brax-PPO student, curricula, PAIRED, train loop.
+- `src/export/` — checkpoint + config → ONNX policy and its README; the contract is built from the env (Playground obs layout measured by shifting input signals, `playground_obs.py`), export env always on jax.
 - `src/evaluation/` — final eval, sim2sim, domination.
 - `src/rendering/` — mp4 clips.
 - `src/paper/` — tables, figures, labels.
 - `src/diagnostics/` — arena check, throughput profile.
-- `conf/` — Hydra YAML; `slurm/` — job arrays; `tests/` mirrors `src/`.
+- `conf/` — Hydra YAML (groups `robot`, `mode`, `level_space`, `arena`,
+  `network`, optional `policy`); `slurm/` — job arrays; `tests/` mirrors `src/`.
 
 ## Hard rules
 

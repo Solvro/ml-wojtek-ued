@@ -1,0 +1,108 @@
+# @package _global_
+#
+# One policy, fully defined: every value of a training run is listed below,
+# switches included. Copy to conf/policy/<name>.yaml, edit, then
+#   just train-export policy=<name>
+# CLI value overrides win (`seed=1`, `mode.score=learnability`). A group
+# choice on the CLI (`robot=go1`, `mode=sfl`) does not change the values
+# below and is refused: edit them here and the `defaults` to match.
+# Docs: docs/export.md
+defaults:
+  # the option names must match the values below: robot -> `robot.name`,
+  # mode -> the `mode` switches (it also tags the wandb run), level_space ->
+  # `level_space.kind`
+  - override /robot: wojtek
+  - override /mode: accel
+  - override /level_space: param
+  - _self_
+
+# --- run -------------------------------------------------------------------
+# names the wandb run, the checkpoint and the export directory
+name: my_policy
+# wandb: set WANDB_MODE=offline to keep the run local
+entity: ""
+project: wojtek-policies
+tags: [policy-export]
+seed: 0
+# physics of training: auto (warp on a GPU, jax on CPU) | jax | warp. The
+# Playground robots run on jax only. The export always runs on jax.
+backend: auto
+# env steps; the benchmark trains 300000000
+num_timesteps: 300000000
+checkpoint_dir: artifacts/checkpoints
+export_dir: artifacts/export
+
+# --- robot -----------------------------------------------------------------
+robot:
+  name: wojtek # wojtek | go1 | barkour | spot | go2
+
+# --- training levels -------------------------------------------------------
+# levels per iteration (<= arena.tiles^2) and envs per level
+num_lanes: 256
+envs_per_lane: 32
+# control steps per level: a multiple of ppo.unroll_length
+level_steps: 300
+# a success travels min_travel metres (Wojtek units, scaled by the robot)
+min_travel: 1.0
+eval_every: 10
+eval_levels: 512
+
+# --- terrain: arena and level space (Wojtek units) ----------------------------
+# Wojtek: the arena assets must be built with the same values
+# (`just build-accel-arena arena.amplitude=...`)
+arena:
+  patch_radius: 3.0 # m, half-width of a level's square patch
+  cell_size: 0.05 # m, fine hfield resolution
+  coarse_n: 13 # control points per axis of the level genome
+  amplitude: 0.3 # m, peak height / depth of a level
+  difficulty: 1.0 # terrain-intensity scale in [0, 1]
+  base_z: 1.0 # m, solid base under the hfield
+  pad_radius: 0.55 # m, flat spawn disc
+  pad_taper: 0.2 # m, ramp from the pad to full terrain
+  tiles: 16 # tiles per side, one level each
+  reach: 10.0 # m readable from a tile centre; sets the tile gap
+level_space:
+  kind: param # param | grid
+  # ACCEL mutation strength: edits per mutation (local / grow) and size
+  n_edits_by_mutation: {local: 2, grow: 2}
+  # the entry of the line above for mode.mutation
+  n_edits: ${level_space.n_edits_by_mutation.${oc.select:mode.mutation,local}}
+  edit_scale: 0.1
+
+# --- UED algorithm ----------------------------------------------------------
+# The 12 named algorithms are combinations of the switches
+# (docs/configuration.md, `mode/`).
+mode:
+  # dr | dr_easy | dr_mixed | accel | plr | paired | paired_evo
+  curriculum: accel
+  mutation: local # ACCEL mutation of a replayed level: local | grow
+  score: pvl # level score: pvl | learnability
+  generator: easy # ACCEL explore levels: easy | mixed
+  bc: none # PAIRED distillation: none | uni | bi
+  replay_prob: 0.8 # replay probability once the buffer holds num_lanes levels
+  buffer_size: 4000 # levels kept, highest score first
+  generator_scale: 0.1 # easy generator: control points within this of flat
+  grow_max: 1.3 # `grow` mutation: scale away from flat by U(1, grow_max)
+  latent_dim: 16 # PAIRED adversary latent size
+  gen_learning_rate: 1.0e-4 # PAIRED adversary
+  gen_entropy_coef: 0.1 # PAIRED adversary
+  student_entropy_coef: 0.01 # PPO entropy bonus of the student
+  bc_coef: 0.5 # PAIRED + BC distillation weight
+  bc_every: 1 # distil every n-th iteration
+
+# --- PPO ---------------------------------------------------------------------
+ppo:
+  unroll_length: 20
+  num_minibatches: 32
+  num_updates_per_batch: 4
+  discounting: 0.97
+  gae_lambda: 0.95
+  learning_rate: 3.0e-4
+  clipping_epsilon: 0.2
+  max_grad_norm: 1.0
+
+# --- network: the exported actor is the policy MLP ------------------------------
+network:
+  policy_hidden: [512, 256, 128]
+  value_hidden: [512, 256, 128]
+  activation: elu # elu | relu | tanh | swish

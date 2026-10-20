@@ -1,0 +1,3 @@
+policy_hidden: [512, 256, 128]
+value_hidden: [512, 256, 128]
+activation: elu

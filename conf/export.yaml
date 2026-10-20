@@ -1,0 +1,14 @@
+defaults:
+  - train
+  - export_schema
+  # no mode option: it comes from config=, the policy file's mode values or
+  # mode=<name>
+  - override /mode: null
+  - _self_
+
+checkpoint: ???
+config: null
+
+hydra:
+  run:
+    dir: artifacts/hydra/export

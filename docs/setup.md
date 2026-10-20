@@ -27,6 +27,11 @@ carry the reasons:
 - `warp-lang == 1.13.0` — mjx 3.10.0 vendors MJWarp and requires exactly this;
   1.14 removed `warp._src.jax_experimental` and breaks `put_model(impl="warp")`.
 
+`onnx == 1.23.2` and `onnxruntime == 1.31.0` (policy export,
+[export.md](export.md)) are pinned exactly: `onnx` builds and checks the
+graph against opset 17, `onnxruntime` runs the export-time check and is
+what the robot runs, so a drifting pair would change the shipped contract.
+
 Everything else (`brax`, `playground`, `equinox`, `distrax`, `optax`,
 `hydra-core`, `wandb`, `gymnasium`, `ml-collections`, `matplotlib`,
 `mediapy`) floats on `>=` in `pyproject.toml`; the lockfile fixes the

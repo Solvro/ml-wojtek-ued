@@ -4,6 +4,7 @@ defaults:
   - robot: wojtek
   - level_space: param
   - arena: benchmark
+  - network: default
 
 checkpoint: ???
 name: ???

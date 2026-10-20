@@ -3,6 +3,7 @@ defaults:
   - _self_
   - robot: wojtek
   - arena: benchmark
+  - network: default
 
 checkpoint: ???
 name: ???

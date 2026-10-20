@@ -52,6 +52,9 @@ class Go1Terrain(TerrainRobot, joystick.Joystick):
         go1_base.Go1Env.__init__(self, xml_path=xml_path, config=config)
         self._post_init()
 
+    def actor_obs(self, state: mjx_env.State) -> jax.Array:
+        return self._get_obs(state.data, dict(state.info))["state"]
+
     def _gravity_z(self, data: mjx.Data) -> jax.Array:
         return self.get_gravity(data)[-1]
 

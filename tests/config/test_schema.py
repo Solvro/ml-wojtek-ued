@@ -1,22 +1,28 @@
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
 from hydra import compose, initialize_config_dir
 from hydra.errors import ConfigCompositionException, MissingConfigException
+from omegaconf import OmegaConf
 from omegaconf.errors import InterpolationResolutionError, MissingMandatoryValue
 
 from config.hfield_config import HFieldConfig
 from config.schema import (
     BC,
     CONF_DIR,
+    Activation,
     Backend,
     Curriculum,
     LevelSpaceKind,
     Mutation,
     Robot,
     Score,
+    TrainConfig,
     as_dict,
+    check_group_options,
+    to_dataclass,
 )
 
 Compose = Callable[..., Any]
@@ -27,6 +33,7 @@ REQUIRED = {
     "eval": ("checkpoint=c.pkl", "name=t", "out_dir=o"),
     "sim2sim": ("checkpoint=c.pkl", "name=t", "out_dir=o"),
     "render": ("checkpoint=c.pkl", "levels=[0.75:3]"),
+    "export": ("checkpoint=c.pkl", "mode=dr", "name=t"),
     "arena": (),
     "check_hfield": (),
     "paper_tables": (),
@@ -34,11 +41,12 @@ REQUIRED = {
     "domination": ("eval_dir=e",),
 }
 GROUPS = {
-    "train": ("robot", "mode", "level_space", "arena"),
-    "profile": ("robot", "mode", "level_space", "arena"),
-    "eval": ("robot", "level_space", "arena"),
-    "sim2sim": ("robot", "arena"),
-    "render": ("robot", "level_space", "arena"),
+    "train": ("robot", "mode", "level_space", "arena", "network"),
+    "profile": ("robot", "mode", "level_space", "arena", "network"),
+    "eval": ("robot", "level_space", "arena", "network"),
+    "sim2sim": ("robot", "arena", "network"),
+    "render": ("robot", "level_space", "arena", "network"),
+    "export": ("robot", "mode", "level_space", "arena", "network"),
     "arena": ("arena",),
     "check_hfield": ("arena",),
     "paper_figures": ("arena",),
@@ -61,6 +69,7 @@ OPTIONS = {
     ),
     "level_space": ("grid", "param"),
     "arena": ("benchmark",),
+    "network": ("default",),
 }
 BENCHMARK = HFieldConfig(
     amplitude=0.3, coarse_n=13, pad_radius=0.55, pad_taper=0.2
@@ -339,3 +348,155 @@ def test_run_dir_records_the_config_beside_the_run() -> None:
         )
     assert cfg.hydra.run.dir == "artifacts/hydra/x"
     assert cfg.hydra.job.chdir is False
+
+
+# mujoco_playground's locomotion recipe, the constants training/ppo.py held
+OLD_PPO = {
+    "unroll_length": 20,
+    "num_minibatches": 32,
+    "num_updates_per_batch": 4,
+    "discounting": 0.97,
+    "gae_lambda": 0.95,
+    "learning_rate": 3e-4,
+    "clipping_epsilon": 0.2,
+    "max_grad_norm": 1.0,
+}
+
+
+def test_ppo_defaults_are_the_old_constants(compose_cfg: Compose) -> None:
+    cfg = compose_cfg("train", "mode=dr", "name=t")
+    assert as_dict(cfg.ppo) == OLD_PPO
+
+
+@pytest.mark.parametrize("name", ["train", "eval", "sim2sim", "render"])
+def test_network_defaults_are_the_old_constants(
+    compose_cfg: Compose, name: str
+) -> None:
+    net = compose_cfg(name, *REQUIRED[name]).network
+    assert net.policy_hidden == [512, 256, 128]
+    assert net.value_hidden == [512, 256, 128]
+    assert net.activation == Activation.elu
+
+
+def test_ppo_and_network_are_overridable(compose_cfg: Compose) -> None:
+    cfg = compose_cfg(
+        "train",
+        "mode=dr",
+        "name=t",
+        "ppo.learning_rate=1e-3",
+        "network.policy_hidden=[64,64]",
+        "network.activation=swish",
+    )
+    assert cfg.ppo.learning_rate == 1e-3
+    assert cfg.network.policy_hidden == [64, 64]
+    assert cfg.network.activation == Activation.swish
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [("ppo.learning=1e-3",), ("network.activation=gelu",)],
+)
+def test_ppo_and_network_typos_fail_at_startup(
+    compose_cfg: Compose, overrides: tuple[str]
+) -> None:
+    with pytest.raises(ConfigCompositionException):
+        compose_cfg("train", "mode=dr", "name=t", *overrides)
+
+
+# --- conf/policy/template.yaml ---------------------------------------------
+
+
+def test_template_composes_without_a_mode(compose_cfg: Compose) -> None:
+    cfg = compose_cfg("train", "policy=template")
+    assert cfg.name == "my_policy"
+    assert cfg.robot.name == Robot.wojtek
+    assert cfg.mode.curriculum == Curriculum.accel
+
+
+def test_template_matches_the_benchmark_accel_config(
+    compose_cfg: Compose,
+) -> None:
+    template = as_dict(compose_cfg("train", "policy=template"))
+    bench = as_dict(compose_cfg("train", "mode=accel", "name=my_policy"))
+    # the run bookkeeping the template sets for local policy runs
+    for key in ("project", "tags", "checkpoint_dir"):
+        template.pop(key)
+        bench.pop(key)
+    assert template == bench
+
+
+def leaves(node: Any, prefix: str = "") -> set[str]:
+    if not isinstance(node, dict):
+        return {prefix}
+    return {
+        leaf
+        for key, value in node.items()
+        for leaf in leaves(value, f"{prefix}{key}.")
+    }
+
+
+def test_template_lists_every_value_of_the_train_config() -> None:
+    raw = OmegaConf.to_container(
+        OmegaConf.load(Path(CONF_DIR) / "policy/template.yaml")
+    )
+    assert isinstance(raw, dict)
+    with initialize_config_dir(config_dir=CONF_DIR, version_base="1.3"):
+        composed = compose("train", overrides=["mode=accel", "name=t"])
+    wanted = leaves(as_dict(to_dataclass(composed, TrainConfig)))
+    # `defaults` is the template's choice list, the rest are values
+    listed = leaves({k: v for k, v in raw.items() if k != "defaults"})
+    assert wanted - listed == set()
+
+
+def template_choices(**changed: str) -> dict[str, str]:
+    return {
+        "robot": "wojtek",
+        "mode": "accel",
+        "level_space": "param",
+        "arena": "benchmark",
+        "network": "default",
+    } | changed
+
+
+def test_template_matches_its_group_options(compose_cfg: Compose) -> None:
+    cfg = OmegaConf.structured(compose_cfg("train", "policy=template"))
+    check_group_options(cfg, template_choices())
+
+
+@pytest.mark.parametrize(
+    ("group", "option", "key"),
+    [
+        ("robot", "go1", "robot.name"),
+        ("mode", "sfl", "mode.curriculum"),
+        ("level_space", "grid", "level_space.kind"),
+    ],
+)
+def test_group_choice_the_template_overrides_is_refused(
+    compose_cfg: Compose, group: str, option: str, key: str
+) -> None:
+    cfg = OmegaConf.structured(
+        compose_cfg("train", "policy=template", f"{group}={option}")
+    )
+    with pytest.raises(ValueError, match=f"{group}={option} sets {key}"):
+        check_group_options(cfg, template_choices(**{group: option}))
+
+
+def test_value_override_of_the_template_passes_the_group_check(
+    compose_cfg: Compose,
+) -> None:
+    cfg = OmegaConf.structured(
+        compose_cfg("train", "policy=template", "mode.score=learnability")
+    )
+    check_group_options(cfg, template_choices())
+
+
+def test_cli_overrides_win_over_the_template(compose_cfg: Compose) -> None:
+    cfg = compose_cfg(
+        "train", "policy=template", "seed=7", "ppo.max_grad_norm=0.5"
+    )
+    assert (cfg.seed, cfg.ppo.max_grad_norm) == (7, 0.5)
+
+
+def test_unknown_policy_fails(compose_cfg: Compose) -> None:
+    with pytest.raises(MissingConfigException, match="nothing"):
+        compose_cfg("train", "policy=nothing")

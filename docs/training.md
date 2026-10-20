@@ -14,7 +14,8 @@ every field: [configuration.md](configuration.md)).
 
 `brax_ued.py` uses brax's PPO pieces with the mujoco_playground recipe
 (networks, running obs normalizer, `compute_ppo_loss`, GAE, 20-step unrolls,
-4 epochs x 32 minibatches, discount 0.97) and drives `FunctionalEnv` itself,
+4 epochs x 32 minibatches, discount 0.97; the `ppo` and `network` config
+fields, defaults = this recipe) and drives `FunctionalEnv` itself,
 because `ppo.train` fixes each env's model for the whole run and cannot swap
 levels.
 

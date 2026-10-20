@@ -9,7 +9,6 @@ from config.schema import Score
 from hfield.level_space import mean_abs_height
 from robots.scale import min_travel
 from training.context import TrainContext
-from training.ppo import PPO
 from training.student import Student
 
 
@@ -67,7 +66,7 @@ def run_levels(
     _, state = ctx.reset(jax.random.split(key, n), hfield, dr_model, tile_xy)
     start_xy = state.data.qpos[:, :2]
     totals = LaneTotals(n)
-    unrolls = cfg.level_steps // PPO["unroll_length"]
+    unrolls = cfg.level_steps // cfg.ppo.unroll_length
     for _ in range(unrolls):
         state, data = ctx.unroll(
             student.inference_params(),
@@ -76,7 +75,7 @@ def run_levels(
             hfield,
             dr_model,
             deterministic=False,
-            length=PPO["unroll_length"],
+            length=cfg.ppo.unroll_length,
         )
         if train:
             student.train_step(data, ctx.next_key(), loss_ref, bc_coef)
