@@ -313,8 +313,9 @@ a robot file keeps its constants, scene and what differs):
   inner tiles to 5 % on the outer ones, Go2 to 3.4 %, Barkour to 0.5 %;
   0 % on a 2 x 2 arena and on jax; ccd iterations/tolerance, `base_z` and
   amplitude do not change it). Every blow-up ends the episode, so the
-  policy learns to stand still. Go1 on jax runs at ~410k env steps/s on an
-  H100 (warp: ~490k).
+  policy learns to stand still. On jax: 0 % for all four. Go1 on jax runs
+  at ~410k env steps/s on flat levels on an H100 (warp: ~490k), ~335k
+  under `mode=accel`.
 - The tiled ACCEL arena written by `arena_scene` (no asset files): one
   `hfield` geom `floor` (geom 0, so a friction DR keyed on geom 0 hits it),
   sized by `HFieldConfig`; `reset` spawns on `spawn_xy`, the tile centre
@@ -331,8 +332,10 @@ a robot file keeps its constants, scene and what differs):
   | Spot | 0-1.0 | +-0.8 | +-1.0 | `spot/joystick.py` `command_config` |
 
   vx starts at 0: with only fast commands (Wojtek's vx 0.2-0.6 x `SCALE`,
-  Go1 0.5-1.5 m/s) Go1 still stands still at 200M steps on flat levels;
-  from 0 it tracks the command by ~170M.
+  Go1 0.5-1.5 m/s) Go1 still stands still at 200M steps on flat levels.
+  On these ranges (`mode=accel`, jax, seed 0) the deterministic eval on
+  d0.25 levels reaches half the commanded vx at ~100M steps (Go1), ~76M
+  (Go2), ~51M (Spot).
 - Eval commands (`make_env(..., eval_travel=)`, used by brax_ued's eval,
   eval_brax and eval_sim2sim): vx only from `EVAL_SPEED_MARGIN` (1.2) x
   threshold / episode time up to the max, so every eval command can reach
@@ -340,6 +343,11 @@ a robot file keeps its constants, scene and what differs):
   0.5-1.5, Barkour 0.48-1.5, Spot 0.86-1.0 m/s at the benchmark's 1 m and
   300 steps. Training draws the full forward slice, so train success tops
   out below 1.
+- `forward_vel` (train and eval logs) is measured along the commands' x
+  axis: `FunctionalEnv.forward_velocity`, for these robots the
+  `local_linvel` velocimeter the reward tracks (`command_frame_velocity`).
+  Barkour's velocimeter site `imu_frame` faces the torso's -x, so the root
+  body frame would log its forward walking as negative.
 - Wojtek's fall rule at the robot's size: trunk below 0.6 x `STANDING_HEIGHT`
   above the terrain under it (`terrain_height`, read off `hfield_data`), or
   gravity z > -0.4 in the trunk frame.
