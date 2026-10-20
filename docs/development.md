@@ -1,8 +1,8 @@
 # Development
 
-Repo-specific workflow. Global stack conventions (uv, ruff, ty, pytest, comment
-style, structure rules) live in the user's global `CLAUDE.md` and are not
-repeated here.
+Repo-specific workflow: layout rules, the justfile recipes, tests, how to add
+a feature, gotchas. Global stack conventions (uv, ruff, ty, pytest, comment
+style) are not repeated here.
 
 ## Layout rules
 
@@ -29,21 +29,22 @@ repeated here.
 
 ## Python version
 
-This project pins **3.11–3.12** (`requires-python = ">=3.11,<3.13"`), a
-deliberate deviation from the global "3.13 only" rule — forced by the
-`jax==0.9.2` / `mujoco-mjx==3.10.0` / `warp-lang==1.13.0` set. See
-[setup.md](setup.md#pinned-dependencies-do-not-bump-blindly) before touching any
-of those pins.
+**3.11–3.12** (`requires-python = ">=3.11,<3.13"`, `.python-version` 3.12),
+forced by the `jax==0.9.2` / `mujoco-mjx==3.10.0` / `warp-lang==1.13.0` set.
+See [setup.md](setup.md#pinned-dependencies-do-not-bump-blindly) before
+touching any of those pins.
 
 ## Tooling
 
-`justfile` recipes:
+`justfile` recipes (every recipe exports `PYTHONPATH=src` and
+`XLA_PYTHON_CLIENT_PREALLOCATE=false`):
 
 | recipe | does |
 |---|---|
 | `just` | list all recipes |
 | `just sync` | `uv sync --extra dev` |
 | `just install` | `uv lock && uv sync --extra dev` |
+| `just fix-mjpython-macos` | macOS only: symlink `libpython` for `mjpython` ([setup.md](setup.md#mjpython-on-macos)); run by `sync` / `install` |
 | `just fmt` | `ruff format` + `ruff check --fix` on `src` |
 | `just lint` | `ruff check` + `ruff format --check` on `src` |
 | `just build` | build the MJX model XMLs |
@@ -61,10 +62,11 @@ of those pins.
 
 `*args` are Hydra overrides ([configuration.md](configuration.md)).
 
-`just lint` covers ruff only; run `ty check` (static types) manually per the
-global convention. Tests live in `tests/`, mirroring `src/`
-(`tests/evaluation/test_sim2sim.py` for `evaluation/sim2sim.py`);
-`uv run pytest -q` (pyproject sets `pythonpath = ["src"]`).
+`just lint` covers ruff only; run `ty check` (static types) manually. Tests
+live in `tests/`, mirroring `src/` (`tests/evaluation/test_sim2sim.py` for
+`evaluation/sim2sim.py`); `uv run pytest -q` (pyproject sets
+`pythonpath = ["src"]`). Robot tests need the built assets
+([setup.md](setup.md#build-generated-assets)).
 - `@pytest.mark.slow` = end-to-end CPU training runs (the PAIRED variant
   smoke runs in `tests/training/test_train.py`, ~3-6 min each, sharing a
   jax compile cache), deselected by default;
@@ -76,7 +78,18 @@ global convention. Tests live in `tests/`, mirroring `src/`
   entry treats `mujoco` as `Any` for the files it lists (add new files that
   use the bindings heavily there instead of per-line ignores).
 
-## Adding to the training loop
+## Docs
+
+- Page map: [index.md](index.md). Current state only: no version names, job
+  IDs or history; results live in wandb and the paper.
+- Headings are plain text (GitHub slugs, no `{#id}`); link as
+  `page.md#heading-slug`. A topic that moves updates `index.md` and the
+  table in `CLAUDE.md`.
+- A changed `justfile` recipe updates the recipe table above; a changed
+  `conf/` field updates [configuration.md](configuration.md); a changed
+  `slurm/` variable updates [slurm.md](slurm.md).
+
+## Adding features
 
 - New per-iteration metric → return it from `run_levels`
   (`training/iteration.py`) or a curriculum iteration
@@ -92,8 +105,14 @@ global convention. Tests live in `tests/`, mirroring `src/`
   `just build-accel-arena arena.tiles=8` for `just train ... arena.tiles=8`;
   genome-only fields (`coarse_n`, `level_space.*`) need no rebuild. A new
   benchmark arena = a new `conf/arena/<name>.yaml`.
-- New curriculum → a `conf/mode/<name>.yaml` and a paper label in
+- New curriculum → a `conf/mode/<name>.yaml` and a `METHODS` label in
   `paper/labels.py` (`tests/paper/test_labels.py` fails without it).
+- New robot → a file in `src/robots/` with its constants (`SCALE`, scene,
+  differences from `TerrainRobot`), a `conf/robot/<name>.yaml`, a `Robot`
+  enum value (`config/schema.py`), a `TERRAIN_ROBOTS` entry
+  (`robots/registry.py`), a `ROBOT_LABEL` entry (`paper/labels.py`) and
+  `prefixes.<robot>` entries in `conf/paper_*.yaml` / `conf/domination.yaml`
+  (default `ued_<robot>`). See [robots.md](robots.md).
 - New config field → add it to the schema dataclass in `config/schema.py`
   (field `= MISSING`) and its value to the YAML in `conf/`; the composition
   tests (`tests/config/test_schema.py`) fail on a field left unset.

@@ -28,7 +28,7 @@ CLI overrides still win. It gathers, in one file:
 
 | section | fields | notes |
 |---|---|---|
-| `defaults` | `override /robot`, `/mode`, `/level_space` | `robot`: wojtek, go1, barkour, spot, go2. `mode`: any of the 12 curricula ([overview](overview.md#methods--mode-confmode)) |
+| `defaults` | `override /robot`, `/mode`, `/level_space` | `robot`: wojtek, go1, barkour, spot, go2. `mode`: any of the 12 curricula ([overview](overview.md#methods)) |
 | run | `name`, `seed`, `backend`, `num_timesteps`, `checkpoint_dir`, `export_dir`, wandb `entity` / `project` / `tags` | `name` names the wandb run, the checkpoint and `artifacts/export/<name>/` |
 | training levels | `num_lanes`, `envs_per_lane`, `level_steps`, `min_travel`, `eval_*` | `level_steps` is a multiple of `ppo.unroll_length` |
 | terrain | `arena.*`, `level_space.*` | difficulty envelope: `arena.amplitude`, `coarse_n`, `pad_*`, ACCEL edit strength |
@@ -98,7 +98,7 @@ just export checkpoint=<run>.pkl policy=my_robot
 ## 4. Train on the cluster
 
 Cluster-specific values (`#SBATCH` lines, `REPO`, `PDW`, `WB_*`) as in
-[README](../README.md#cluster-specific-values); the repo, `.venv` and the built
+[slurm.md](slurm.md#cluster-specific-values); the repo, `.venv` and the built
 assets must already be on the cluster.
 
 ```bash
@@ -203,7 +203,7 @@ export (a mismatch fails: update `export/contract.py`).
    Joints table.
 3. Command inside the trained ranges of the Commands table.
 4. Wojtek: run the gait clock and the action filter from the README.
-5. Compare against the simulation first: sim2sim ([ued-accel.md](ued-accel.md))
+5. Compare against the simulation first: sim2sim ([evaluation.md](evaluation.md))
    scores a benchmark checkpoint on CPU MuJoCo variants.
 
 ## Verification

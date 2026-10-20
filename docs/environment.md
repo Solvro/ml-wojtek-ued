@@ -15,6 +15,7 @@ not edit it.
 
 ```python
 from wojtek_env.envs import registry
+
 env = registry.make_env("joystick", env_overrides={...})
 ```
 
@@ -24,13 +25,13 @@ tuple/float coercion — e.g. yaml `vx: [-0.8, 1.8]` lands on a tuple field, and
 a scalar default like `action_scale` can be overridden with a per-element
 vector.
 
-## Task config knobs off by default {#task-config-knobs-off-by-default}
+## Task config knobs off by default
 
 `WojtekJoystick.default_config()` (`envs/env.py`) defines several
 locomotion-quality and sim2real-robustness features that ship
 `enable=False`/`scale=0.0`; the config value itself already documents each
 one inline. `env/overrides.py`'s `movement_overrides()`
-([below](#env-overrides)) turns on the task-independent ones:
+([below](#shared-env-overrides)) turns on the task-independent ones:
 
 - `latency`, `encoder` — substep control latency and joint-encoder
   miscalibration randomization (sim2real robustness; `action_delay=1` is a
@@ -69,7 +70,7 @@ one inline. `env/overrides.py`'s `movement_overrides()`
   `torque_limit`/`toggle_flat` — see the inline comments in `env.py` for
   what exploit or dead-gradient region each one closes.
 
-## Terrain-only knobs {#terrain-only-knobs}
+## Terrain-only knobs
 
 These read zero / never fire on the flat scene (`terrain.enable=False`), so
 they only make sense once terrain is on. `terrain_overrides()` turns them on
@@ -113,7 +114,7 @@ Key facts that matter downstream:
 Companion modules: `terrain_env.py`, `terrain_wrapper.py` (curriculum wrapper),
 `terrain_suite.py` (fixed measurement course). ACCEL does **not** use this
 tile-type parametrization for its levels — see
-[ued-accel.md](ued-accel.md#level-representation).
+[levels.md](levels.md#level-representation).
 
 ## Gymnasium wrapper
 
@@ -122,6 +123,7 @@ brax's `EpisodeWrapper` with jitted reset/step for a standard Gymnasium loop:
 
 ```python
 from wojtek_env.gymnasium import WojtekGymEnv
+
 env = WojtekGymEnv(task="joystick")
 obs, info = env.reset(seed=0)
 ```
@@ -160,7 +162,7 @@ wraps `registry.make_env` + brax `EpisodeWrapper` and exposes pure `reset`/`step
 usable under `jit`/`vmap`.
 
 - `robot=<TerrainRobot>` runs a Playground quadruped (`robots/`, see
-  [ued-accel.md](ued-accel.md#robots)) on the arena instead of Wojtek; the
+  [robots.md](robots.md)) on the arena instead of Wojtek; the
   arena and DR work the same, but it reads terrain heights straight from
   `hfield_data` (no lookup) and spawns on `spawn_xy`. DR is the robot's
   `domain_randomize` (none for Barkour, Spot).
@@ -198,7 +200,9 @@ usable under `jit`/`vmap`.
   `dr_model` in first, then `tree_replace`s `hfield_data` on top
   (`brax_ued.py`).
 
-## Shared env overrides — `env/overrides.py` {#env-overrides}
+## Shared env overrides
+
+`src/env/overrides.py`.
 
 `registry.py`'s task defaults leave most locomotion-quality and sim2real
 robustness features off (`enable=False`/`scale=0.0`) — see
@@ -233,7 +237,7 @@ dict:
   `gait.air_time_cap`) are **untuned estimates** set by analogy to sibling
   terms in `registry.py`.
 
-## Why the arena swap is free {#hfield-mutability}
+## Why the arena swap is free
 
 `mjx.Model` registers a field as a dynamic pytree leaf iff it is a `jax.Array`.
 
@@ -267,8 +271,8 @@ Two things must follow the swap, or the level only exists on paper:
   pool (`naconmax_per_env` 116, over the 84-contact floor of 21
   ground-colliding geoms; `njmax` 1024). The Playground robots run on jax
   only: on warp their foot contacts with this arena diverge far from the
-  arena origin ([ued-accel.md](ued-accel.md#robots)). Never vmap `hfield_data` with `in_axes=0`: nothing can detect it
-  inside the vmap. `src/scripts/check_hfield_batch.py` (`diagnostics/arena_check.py`) checks it per
+  arena origin ([robots.md](robots.md)). Never vmap `hfield_data` with `in_axes=0`: nothing
+  can detect it inside the vmap. `src/scripts/check_hfield_batch.py` (`diagnostics/arena_check.py`) checks it per
   backend (flat/pit tiles; `compare=true` = jax vs warp; `bench_envs=N`
   times it).
 - **Warp memory** — warp allocates its collision scratch (EPA buffers,
@@ -286,7 +290,7 @@ Two things must follow the swap, or the level only exists on paper:
   (`configure_warp`) when it builds a warp env; with both settings a
   training run uses ~16 GB.
 
-## Tiled arena {#tiled-arena}
+## Tiled arena
 
 `hfield/tiles.py` `TileLayout(HFieldConfig)`; the `accel` assets are built
 with it (`hfield/arena.py`).
@@ -324,7 +328,7 @@ with it (`hfield/arena.py`).
   level at the origin; the renderer meshes the whole hfield, which for the
   full arena is millions of cells.
 
-## Assets {#assets}
+## Assets
 
 `wojtek_env/paths.py` centralises repo-relative paths. Generated arena file sets
 (`terrain_paths(kind)`) are `scene` XML, `hfield` binary, `spec` JSON, `lookup`
@@ -345,4 +349,4 @@ built by the tools below.
 - `check_gym`, `check_model_mjx`, `check_terrain` — sanity-check CLIs.
 
 The ACCEL arena is written by `hfield/arena.py` instead
-(`just build-accel-arena`), documented in [ued-accel.md](ued-accel.md#arena).
+(`just build-accel-arena`), documented in [levels.md](levels.md#arena-assets).

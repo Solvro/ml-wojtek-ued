@@ -4,10 +4,17 @@
 
 - Python **3.11–3.12** (`requires-python = ">=3.11,<3.13"`). Not 3.13 — the
   jax/mjx pins below do not resolve there yet.
-- `uv` for the environment. CUDA extra (`jax[cuda12]`) installs only on Linux;
-  macOS gets CPU jax.
+- [uv](https://docs.astral.sh/uv/) for the environment, [just](https://just.systems/)
+  for the recipes, `ffmpeg` on `PATH` for `render-video`. `.python-version`
+  pins 3.12.
+- Training and evals run on Linux x86_64 with one NVIDIA GPU per run and a
+  CUDA 12 driver (the `jax[cuda12]` extra installs only on Linux; H100 used).
+  macOS gets CPU jax: tests, CPU smoke runs, rendering, tables and figures.
 - `uv.lock` pins every version; `uv sync --locked --extra dev` reproduces it
-  exactly (the paper's environment).
+  exactly (the paper's environment): jax/jaxlib 0.9.2, mujoco 3.11.0,
+  mujoco-mjx 3.10.0, warp-lang 1.13.0, brax 0.14.2, playground 0.2.0.
+- A wandb account: training, eval and the paper dumps log to / read from
+  `entity` / `project` ([configuration.md](configuration.md#trainyaml--trainconfig)).
 
 ## Pinned dependencies (do not bump blindly)
 
@@ -62,7 +69,7 @@ ensure_menagerie_exists; ensure_menagerie_exists()"
 ```
 
 On SLURM, `slurm/build_assets.sbatch` does all three in a frozen copy
-([README](../README.md#3-training-grid-slurm)).
+([slurm.md](slurm.md#frozen-copy)).
 
 ## mjpython on macOS
 
@@ -88,8 +95,8 @@ just render-video checkpoint=artifacts/checkpoints/my_run.pkl 'levels=[0.75:3]'
 
 Every script is configured by Hydra from `conf/` (`key=value` overrides,
 `--cfg job` prints the composed config): [configuration.md](configuration.md).
-Cluster launchers (`slurm/*.sbatch`) and the full paper grid:
-[README](../README.md#reproduce-the-paper).
+Cluster launchers (`slurm/*.sbatch`): [slurm.md](slurm.md); the full paper
+grid: [README](../README.md#reproduce-the-paper).
 
 ## Import root
 

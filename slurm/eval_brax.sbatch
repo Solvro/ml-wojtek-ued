@@ -9,7 +9,7 @@
 #SBATCH --output=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued/logs/%x_%A_%a.out
 #SBATCH --error=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued/logs/%x_%A_%a.out
 # Cluster-specific: the #SBATCH account, partition, gres and log paths above
-# and the variables below (README "Cluster-specific values").
+# and the variables below (docs/slurm.md).
 # Same task layout and variables as brax_ued.sbatch (MODES, NSEEDS, SEED0,
 # SPACE, PREFIX, ROBOT, BACKEND, TAGS, SRC).
 set -euo pipefail

@@ -1,4 +1,4 @@
-"""Level spaces (docs/ued-accel.md#level-spaces): `flat` is a featureless
+"""Level spaces (docs/levels.md#level-spaces): `flat` is a featureless
 genome, `scaled(d)` shrinks a uniform draw toward it by d (0 = flat)."""
 
 from typing import NamedTuple, Protocol
@@ -100,7 +100,7 @@ class Param(NamedTuple):
 
 
 # ranges for a 0.10 m robot: uphill, step-up, gap and block maxima sit at the
-# 50%-success envelope of policies trained on a wider box (docs/ued-accel.md)
+# 50%-success envelope of policies trained on a wider box (docs/levels.md)
 PARAMS = (
     Param("rough_amp_m", 0.0, 0.10, 0.0),
     Param("rough_wavelength_m", 0.2, 1.0, 0.5),
