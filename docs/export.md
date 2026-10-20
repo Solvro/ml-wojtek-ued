@@ -82,7 +82,7 @@ just export checkpoint=<run>.pkl policy=my_robot
 | how | example |
 |---|---|
 | a policy file | `policy=my_robot` (the file the checkpoint was trained from) |
-| a config file | `config=<run dir>/.hydra/config.yaml mode=<mode>` — the composed config Hydra wrote beside the run, or an export's `config.yaml`; its values replace the composed ones, fields it lacks (runs older than `ppo` / `network`) keep the `conf/train.yaml` values; `mode=` only satisfies the composition |
+| a config file | `config=<run dir>/.hydra/config.yaml mode=<mode>` — the composed config Hydra wrote beside the run, or an export's `config.yaml`; its values replace the composed ones, except `backend`, `checkpoint_dir` and `export_dir`, which stay those of this machine's command line; fields it lacks (runs older than `ppo` / `network`) keep the `conf/train.yaml` values; `mode=` only satisfies the composition |
 | overrides | `mode=accel robot=go1 seed=0 name=<run>`: benchmark runs are the `conf/train.yaml` defaults plus their overrides (`.hydra/overrides.yaml` beside the run lists them) |
 
 - Benchmark checkpoint from the cluster: copy `artifacts/brax_ued/<run>.pkl`
@@ -175,7 +175,7 @@ in. Sections:
 | Outputs | `action`, `joint_targets` |
 | Joints and gains | joint order, default pose, target limits, kp / kd, torque limit, `action_scale` |
 | Joint targets | the mapping above, Wojtek stance table and action filter |
-| Commands | command order, units, trained ranges, the draw mixture (stand, arc, slow, fast, ...) and resample period |
+| Commands | command order, units, trained ranges (`vx`: the envelope of every draw), the draw mixture (stand, arc, slow, fast, ...) and resample period |
 | Gait clock | Wojtek: the phase clock as code, with the env's constants |
 | Usage | `onnxruntime` control-loop sketch |
 | Training conditions | noise, action filter / delay, latency, encoder offset, pushes |

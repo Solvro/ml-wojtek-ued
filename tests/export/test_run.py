@@ -80,6 +80,29 @@ def test_config_file_replaces_the_composed_values(tmp_path: Path) -> None:
     assert cfg.network.policy_hidden == [512, 256, 128]
 
 
+def test_config_file_keeps_the_local_run_location(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        OmegaConf.to_yaml(
+            OmegaConf.create(
+                {
+                    "backend": "warp",
+                    "checkpoint_dir": "/cluster/ck",
+                    "export_dir": "/cluster/export",
+                    "name": "run",
+                    "seed": 3,
+                }
+            )
+        )
+    )
+    cfg = training_config(
+        composed("mode=dr", f"config={path}", "export_dir=out", "backend=jax")
+    )
+    assert (cfg.backend, cfg.export_dir) == ("jax", "out")
+    assert cfg.checkpoint_dir is None
+    assert cfg.seed == 3
+
+
 def test_missing_config_file_is_named(tmp_path: Path) -> None:
     missing = tmp_path / "missing.yaml"
     with pytest.raises(FileNotFoundError, match="no such file"):

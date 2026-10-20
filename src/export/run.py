@@ -38,13 +38,16 @@ ENV_PER_LEVEL = 2
 ENV_STEPS = 50
 ENV_DIFFICULTY = 0.5
 OUTPUT_FILES = ("policy.onnx", "config.yaml", "README.md")
+# where / on what this machine runs: a `config=` file from another machine
+# must not override these
+LOCAL_FIELDS = ("backend", "checkpoint_dir", "export_dir")
 
 
 def training_config(dict_cfg: DictConfig) -> TrainConfig:
     """The composed export config as the training config. `config` names a
     YAML (a run's `.hydra/config.yaml`, an export's `config.yaml`) whose
-    values replace the composed ones; fields it lacks (older runs) keep the
-    composed conf/train.yaml values."""
+    values replace the composed ones, except `LOCAL_FIELDS`; fields it lacks
+    (older runs) keep the composed conf/train.yaml values."""
     path = dict_cfg.get("config")
     if path:
         if not Path(path).is_file():
@@ -52,7 +55,10 @@ def training_config(dict_cfg: DictConfig) -> TrainConfig:
                 f"config={path}: no such file; pass the run's "
                 "<run dir>/.hydra/config.yaml or an export's config.yaml"
             )
-        dict_cfg = OmegaConf.merge(dict_cfg, OmegaConf.load(path))  # ty: ignore[invalid-assignment]
+        local = {k: dict_cfg[k] for k in LOCAL_FIELDS}
+        dict_cfg = OmegaConf.merge(  # ty: ignore[invalid-assignment]
+            dict_cfg, OmegaConf.load(path), local
+        )
     full = to_dataclass(dict_cfg, ExportConfig)
     return TrainConfig(
         **{

@@ -235,7 +235,7 @@ iterations (the export README reads it).
 | field | default | meaning |
 |---|---|---|
 | `checkpoint` | `???` | the `.pkl` of a run |
-| `config` | `null` | a composed config YAML (a run's `.hydra/config.yaml`, an export's `config.yaml`) whose values replace the composed ones; `mode=` is still required to compose |
+| `config` | `null` | a composed config YAML (a run's `.hydra/config.yaml`, an export's `config.yaml`) whose values replace the composed ones, except `backend`, `checkpoint_dir`, `export_dir`; `mode=` is still required to compose |
 
 The training config comes from `policy=<name>`, from `config=`, or from
 overrides ([export.md](export.md#3-export-an-existing-checkpoint)).
