@@ -10,7 +10,7 @@
 #SBATCH --output=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued/logs/%x_%A_%a.out
 #SBATCH --error=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued/logs/%x_%A_%a.out
 # Cluster-specific: the #SBATCH account, partition, gres and log paths above
-# and the variables below (README "Cluster-specific values").
+# and the variables below (docs/slurm.md).
 # task = mode_index * NSEEDS + seed offset over MODES (default "dr accel");
 # seed = SEED0 + offset (NSEEDS 3, SEED0 0: seeds 0-2). Size the array as
 # NSEEDS * number of modes. Assets (robot + accel arena) must already be

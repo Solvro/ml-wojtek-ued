@@ -1,7 +1,7 @@
 [project]
-name = "wojtek-env"
+name = "quadruped-ued-benchmark"
 version = "0.1.0"
-description = "Wojtek quadruped MJX env + procedural terrain + Gymnasium interface, for UED (PAIRED/ACCEL) research"
+description = "Unsupervised Environment Design for quadruped locomotion on procedural terrain: 12 UED/DR curricula x 5 quadrupeds"
 license = "Apache-2.0"
 requires-python = ">=3.11,<3.13"
 dependencies = [

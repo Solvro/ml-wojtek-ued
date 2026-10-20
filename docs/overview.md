@@ -1,10 +1,11 @@
 # Overview
 
-Unsupervised Environment Design (UED) for quadruped locomotion on procedural
-heightfields: a brax-PPO student trains against a curriculum that generates,
-replays or edits terrain levels. 12 curricula (`conf/mode/`) x 5 robots
-(`conf/robot/`), every level of an iteration on its own tile of one shared
-MJX heightfield.
+Quadruped UED Benchmark: Unsupervised Environment Design (UED) for quadruped
+locomotion on procedural terrain. A brax-PPO student trains against a
+curriculum that generates, replays or edits heightfield levels. 12 curricula
+(`conf/mode/`) x 5 robots (`conf/robot/`), every level of an iteration on its
+own tile of one shared MJX heightfield. Commands to reproduce the paper:
+[README](../README.md#reproduce-the-paper).
 
 ## Pipeline
 
@@ -24,7 +25,9 @@ flowchart LR
   `<run>_final_eval`. The paper scripts read `prefixes.<robot>`
   (default `ued_<robot>`). Commands: [README](../README.md#reproduce-the-paper).
 
-## Methods — `mode=` (`conf/mode/`)
+## Methods
+
+`mode=<option>` selects a curriculum (`conf/mode/`).
 
 | `mode=` | curriculum | citation |
 |---|---|---|
@@ -44,9 +47,11 @@ flowchart LR
 - Level score: positive value loss = mean positive GAE advantage of a lane
   (`plr`, `accel`, `accel_grow`); learnability (`sfl`, `accel_sfl`); PAIRED
   regret (`paired*`). The `dr*` modes score nothing.
-- Details and switches: [ued-accel.md](ued-accel.md#brax-ued).
+- Details and switches: [training.md](training.md#trainer), [PAIRED](training.md#paired).
 
-## Robots — `robot=` (`conf/robot/`)
+## Robots
+
+`robot=<option>` (`conf/robot/`).
 
 | `robot=` | model | `SCALE` | physics DR |
 |---|---|---|---|
@@ -58,9 +63,11 @@ flowchart LR
 
 - `SCALE` = standing trunk height / Wojtek's 0.10 m; scales arena lengths,
   level lengths, commands and `min_travel` (slopes do not scale).
-- Details: [ued-accel.md](ued-accel.md#robots).
+- Details: [robots.md](robots.md).
 
-## Level space — `level_space=param` (default)
+## Level space
+
+`level_space=param` (default; `conf/level_space/`).
 
 - 8 parameters in `[0, 1]` + a never-mutated noise seed; ranges in Wojtek
   units: rough amplitude 0–0.10 m / wavelength 0.2–1.0 m, radial slope
@@ -69,9 +76,11 @@ flowchart LR
 - Rendered onto a 6 m x 6 m patch (`arena=benchmark`, amplitude ±0.3 m,
   flat spawn pad 0.55 m), one level per tile of a 16 x 16 arena.
 - `level_space=grid` (13 x 13 control-point genome) is the other option.
-- Details: [ued-accel.md](ued-accel.md#level-spaces).
+- Details: [levels.md](levels.md#level-spaces).
 
-## Metrics (`eval_brax.py`)
+## Metrics
+
+Computed by `eval_brax.py`.
 
 - **Success**: no fall and >= `min_travel` (1 m x `SCALE`) from spawn after
   300 steps (6 s); deterministic policy, no physics DR.
@@ -87,7 +96,7 @@ flowchart LR
   methods, `a_better` / `b_better` / ties, mean difference with bootstrap
   CI, binomial noise reference, method x method matrix.
 - 95 % bootstrap CIs over levels. Details:
-  [ued-accel.md](ued-accel.md#eval-brax).
+  [evaluation.md](evaluation.md#final-eval).
 
 ## Two layers
 
@@ -125,7 +134,7 @@ src/
     go1.py barkour.py spot.py go2.py   one file per Playground robot
     registry.py      TERRAIN_ROBOTS: robot name -> class
     scale.py         ROBOT_SCALE, hfield_config, min_travel (robot size)
-  hfield/            heightfield levels  (see ued-accel.md)
+  hfield/            heightfield levels  (see levels.md)
     manager.py       HFieldManager: generate / mutate / upsample a grid level
     level_space.py   level spaces (`param`, `grid`)
     arena.py         write the static tiled "accel" MJCF arena assets
@@ -178,6 +187,9 @@ src/
 conf/                Hydra YAML: one primary per entry point + groups
                      robot/ mode/ level_space/ arena/  (see configuration.md)
 slurm/               SLURM job arrays: train, final eval, sim2sim, assets
+                     (see slurm.md)
+tests/               pytest, mirrors src/
+docs/                this documentation (see index.md)
 ```
 
 ## Glossary
@@ -188,11 +200,3 @@ slurm/               SLURM job arrays: train, final eval, sim2sim, assets
 - **Regret** — positive value loss: how much the critic under-estimated the
   return on a level. PAIRED: antagonist max return − protagonist mean.
 - **Student** — the brax PPO policy; the protagonist under PAIRED.
-
-## Where to read next
-
-- Install and run → [setup.md](setup.md)
-- The env, tasks, terrain, tiled arena → [environment.md](environment.md)
-- Curricula, levels, trainer, eval and paper scripts → [ued-accel.md](ued-accel.md)
-- `conf/` groups and every config field → [configuration.md](configuration.md)
-- Tooling, conventions, gotchas → [development.md](development.md)
