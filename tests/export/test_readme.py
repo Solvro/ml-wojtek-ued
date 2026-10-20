@@ -138,3 +138,16 @@ def test_wojtek_readme_has_the_gait_clock_and_the_action_filter(
     assert "Not recorded" in readme
     assert contract.stance is not None
     assert contract.stance.height_index == 3 + 3 + 12 + 12 + 12 + 3
+
+
+def test_wojtek_command_range_covers_every_training_draw(
+    built: tuple[Robot, Contract, FunctionalEnv],
+) -> None:
+    robot, contract, env = built
+    if robot != Robot.wojtek:
+        pytest.skip("Wojtek only")
+    c = env.base._config.command
+    ranges = [c.vx, c.arc_vx, c.slow_vx, c.fast_vx]
+    assert contract.command.high[0] == max(r[1] for r in ranges)
+    assert contract.command.high[0] > c.vx[1]
+    assert contract.command.low[0] <= 0.0

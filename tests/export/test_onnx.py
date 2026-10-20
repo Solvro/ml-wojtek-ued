@@ -9,6 +9,7 @@ import onnx
 import pytest
 from brax.training.acme import running_statistics, specs
 from brax.training.agents.ppo import networks as ppo_networks
+from onnx import numpy_helper
 
 from config.schema import Activation, NetworkConfig
 from export.contract import (
@@ -19,7 +20,7 @@ from export.contract import (
     ObsComponent,
 )
 from export.onnx_graph import OPSET, build_model
-from export.verify import TOLERANCE, session
+from export.verify import TOLERANCE, session, verify
 from training.ppo import make_network
 
 OBS_DIM = 10
@@ -220,3 +221,22 @@ def test_refuses_a_checkpoint_with_another_network() -> None:
     )
     with pytest.raises(ValueError, match="policy_hidden"):
         build_model(params, other, contract())
+
+
+def test_verify_passes_a_correct_graph_and_rejects_a_perturbed_one() -> None:
+    config = network_config(Activation.elu)
+    params, policy = make_params(config)
+    c = contract()
+    model = build_model(params, config, c)
+
+    def targets(obs: jax.Array, action: jax.Array) -> jax.Array:
+        return reference_targets(c, obs, action)
+
+    env_obs = observations(params)
+    ver = verify(model, params, c, policy, targets, env_obs)
+    assert max(ver.random_error, ver.env_error) <= TOLERANCE
+    bias = next(i for i in model.graph.initializer if i.name == "b_out")
+    shifted = numpy_helper.to_array(bias) + 10 * TOLERANCE
+    bias.CopyFrom(numpy_helper.from_array(shifted.astype(np.float32), "b_out"))
+    with pytest.raises(ValueError, match="disagrees with the JAX policy"):
+        verify(model, params, c, policy, targets, env_obs)

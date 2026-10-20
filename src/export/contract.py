@@ -348,23 +348,34 @@ def _wojtek_command(cfg: Any) -> Command:
         "`height` is always live, also for a stand command: the robot "
         "stands at that trunk height"
     )
+    vx_low, vx_high = _vx_envelope(c, draws)
+    if (vx_low, vx_high) != (float(c.vx[0]), float(c.vx[1])):
+        notes.insert(
+            0,
+            f"`vx` is the envelope of every draw below; the uniform box "
+            f"alone is [{c.vx[0]:g}, {c.vx[1]:g}]",
+        )
     return Command(
         names=("vx", "vy", "wz", "height"),
         units=("m/s", "m/s", "rad/s", "m"),
-        low=(
-            float(c.vx[0]),
-            float(c.vy[0]),
-            float(c.wz[0]),
-            float(c.height[0]),
-        ),
-        high=(
-            float(c.vx[1]),
-            float(c.vy[1]),
-            float(c.wz[1]),
-            float(c.height[1]),
-        ),
+        low=(vx_low, float(c.vy[0]), float(c.wz[0]), float(c.height[0])),
+        high=(vx_high, float(c.vy[1]), float(c.wz[1]), float(c.height[1])),
         notes=tuple(notes),
     )
+
+
+def _vx_envelope(c: Any, draws: list[Any]) -> tuple[float, float]:
+    """vx range over the uniform box and every enabled draw (a draw with no
+    vx range of its own zeroes vx or keeps the box)."""
+    low, high = float(c.vx[0]), float(c.vx[1])
+    for _, p, vx in draws:
+        if not p:
+            continue
+        if vx is None:
+            low, high = min(low, 0.0), max(high, 0.0)
+        else:
+            low, high = min(low, vx[1][0]), max(high, vx[1][1])
+    return float(low), float(high)
 
 
 def _wojtek_conditions(cfg: Any, sim_dt: float) -> tuple[str, ...]:
