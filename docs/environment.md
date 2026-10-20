@@ -178,8 +178,10 @@ usable under `jit`/`vmap`.
   diverged env scores a fall). MJX blows up now and then on one env; its
   obs would reach brax's running obs normalizer and never wash out (seen:
   joint-velocity stds 100-640000x, then policy collapse; a nan one turns
-  every env nan). `info` is not reset, so an env whose `info` went nan
-  stays ended until the next `reset`.
+  every env nan). `info` is not reset, so the guard zeroes a diverged
+  env's non-finite float `info` entries (e.g. Playground's `swing_peak`);
+  left nan, they would end every later episode of that env at its first
+  step until the next `reset`.
 - **Shared tiled arena.** `reset(key, hfield_data, dr_model, tile_xy)` and
   `step(..., hfield_data, dr_model)` take the arena's `hfield_data`
   (`hfield.tiles.TileLayout.assemble`: every level of the iteration on its
@@ -263,10 +265,9 @@ Two things must follow the swap, or the level only exists on paper:
   `accel_arena_overrides` takes the backend (`brax_ued.py backend=`,
   default `auto`: warp on a GPU, jax on CPU) with a terrain-sized contact
   pool (`naconmax_per_env` 116, over the 84-contact floor of 21
-  ground-colliding geoms; `njmax` 1024). The Playground robots follow the same flag
-  (`backend=`) with a budget sized from the model
-  (`robots.terrain.contact_budget`; four feet: Go1's Playground
-  rough-terrain 8 contacts per env, `njmax` 60). Never vmap `hfield_data` with `in_axes=0`: nothing can detect it
+  ground-colliding geoms; `njmax` 1024). The Playground robots run on jax
+  only: on warp their foot contacts with this arena diverge far from the
+  arena origin ([ued-accel.md](ued-accel.md#robots)). Never vmap `hfield_data` with `in_axes=0`: nothing can detect it
   inside the vmap. `src/scripts/check_hfield_batch.py` (`diagnostics/arena_check.py`) checks it per
   backend (flat/pit tiles; `compare=true` = jax vs warp; `bench_envs=N`
   times it).

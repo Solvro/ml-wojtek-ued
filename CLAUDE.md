@@ -71,7 +71,8 @@ it when the code changes.**
 - **Shared tiled arena** — every level of an iteration sits on its own tile
   of one `hfield_data`; never vmap `hfield_data` per env (warp collides every
   env with the first one's). Warp needs `XLA_PYTHON_CLIENT_PREALLOCATE=false`
-  (the justfile and `slurm/` export it).
+  (the justfile and `slurm/` export it). The Playground robots run on jax
+  only: their foot contacts diverge on warp far from the arena origin.
 
 - **Paper state** — docs and comments describe the code as it is: no
   version names, job IDs or history; results live in wandb and the paper.
