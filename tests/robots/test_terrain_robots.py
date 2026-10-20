@@ -261,3 +261,18 @@ def test_full_collision_variant_only_where_a_model_exists(setup: Setup) -> None:
         return
     full = full_collision(base.mj_model, base)
     assert colliding(full) > colliding(base.mj_model)
+
+
+def test_a_diverged_step_does_not_end_the_next_episode(setup: Setup) -> None:
+    env, arena = setup.env, setup.flat()
+    key = jax.random.key(0)
+    tile = setup.layout.tile_xy(1, 1)[0]
+    _, state = env.reset(key, arena, tile_xy=tile)
+    nan_action = jnp.full(env.action_size, jnp.nan)
+    _, state, _, _, info = env.step(key, state, nan_action, arena)
+    assert float(info["diverged"]) == 1.0
+    zero = jnp.zeros(env.action_size)
+    for _ in range(3):
+        _, state, reward, _, info = env.step(key, state, zero, arena)
+        assert float(info["diverged"]) == 0.0
+        assert np.isfinite(float(reward))
