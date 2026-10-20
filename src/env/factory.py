@@ -32,10 +32,14 @@ def make_env(
     *,
     num_envs: int,
     train: bool,
+    eval_travel: tuple[float, int] | None = None,
 ) -> FunctionalEnv:
+    """`eval_travel`: (success threshold in m, `level_steps`) of an eval
+    env; a Playground robot draws only vx commands that can reach it
+    (Wojtek's commands already do)."""
     if robot in TERRAIN_ROBOTS:
         terrain_robot = TERRAIN_ROBOTS[robot](
-            config, backend=backend, num_envs=num_envs
+            config, backend=backend, eval_travel=eval_travel
         )
         return FunctionalEnv(domain_randomize=train, robot=terrain_robot)
     overrides = wojtek_overrides(config, backend, num_envs, train)

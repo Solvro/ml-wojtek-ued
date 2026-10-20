@@ -50,6 +50,12 @@ class BarkourTerrain(TerrainRobot, joystick.Joystick):
     def default_config() -> Any:
         return joystick.default_config()
 
+    def native_command_range(self) -> tuple[list[float], list[float]]:
+        # barkour/joystick.py: lin_vel_x, lin_vel_y, ang_vel_yaw
+        c = self._config
+        ranges = (c.lin_vel_x, c.lin_vel_y, c.ang_vel_yaw)
+        return [float(r[0]) for r in ranges], [float(r[1]) for r in ranges]
+
     def _build_env(self, config: Any, hfield: HFieldConfig) -> None:
         mjx_env.MjxEnv.__init__(self, config, None)
         self._xml_path = self._write_scene(hfield)

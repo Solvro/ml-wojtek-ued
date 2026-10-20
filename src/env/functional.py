@@ -6,6 +6,7 @@ from typing import Any, NamedTuple, cast
 
 import jax
 import jax.numpy as jnp
+from brax import math as brax_math
 from brax.envs.wrappers import training as brax_training
 from mujoco import mjx
 
@@ -77,6 +78,7 @@ class FunctionalEnv:
         # Playground robots read heights straight from hfield_data; Wojtek
         # keeps a lookup
         self._has_lookup = robot is None
+        self._robot = robot
         self._hfield_geometry = (
             hfield_geometry(base) if self._has_lookup else None
         )
@@ -199,6 +201,14 @@ class FunctionalEnv:
         obs = reset_done_obs(done, state.info["first_obs"], state.obs)
         state = state.replace(data=data, obs=obs)
         return self._obs(state), state, state.reward, state.done, state.info
+
+    def forward_velocity(self, data: Any) -> jax.Array:
+        """m/s along the x axis the commands are given in: Wojtek's base
+        frame, a Playground robot's command frame."""
+        if self._robot is not None:
+            return self._robot.command_frame_velocity(data)[0]
+        # free-joint linear qvel is world-frame
+        return brax_math.inv_rotate(data.qvel[:3], data.qpos[3:7])[0]
 
     @staticmethod
     def _obs(state: Any) -> Obs:

@@ -42,6 +42,11 @@ class Go1Terrain(TerrainRobot, joystick.Joystick):
     def default_config() -> Any:
         return joystick.default_config()
 
+    def native_command_range(self) -> tuple[list[float], list[float]]:
+        # go1/joystick.py: each component uniform in +-command_config.a
+        a = [float(x) for x in self._config.command_config.a]
+        return [-x for x in a], a
+
     def _build_env(self, config: Any, hfield: HFieldConfig) -> None:
         xml_path = self._write_scene(hfield)
         go1_base.Go1Env.__init__(self, xml_path=xml_path, config=config)

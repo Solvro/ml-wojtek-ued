@@ -12,7 +12,7 @@ from config.schema import Robot
 from robots.scale import ROBOT_SCALE
 
 ENTITY = "dominikgalus9-wroc-aw-university-of-science-and-technology"
-PROJECT = "wojtyla"
+PROJECT = "wojtek-benchmark-iclr"
 MIN_TRAVEL_M = 1.0  # eval_brax.py min_travel, at Wojtek's size
 SOLVABLE = "param/uniform_solvable/success_rate"
 

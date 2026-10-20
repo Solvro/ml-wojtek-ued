@@ -93,8 +93,9 @@ levels.
   every unroll. Lane regret = mean positive GAE advantage over the
   iteration. `tile_leak_frac`: envs that reached a neighbouring tile
   ([tiled arena](environment.md#tiled-arena)).
-- Physics backend: `backend` (default `auto`: warp on a GPU, jax on
-  CPU), every robot alike. Compare runs within one backend
+- Physics backend: `backend` (default `auto`: Wojtek warp on a GPU, jax on
+  CPU; the Playground robots always jax, [robots](#robots)). Compare runs
+  within one backend
   ([Throughput](#throughput)).
 - `mode=dr`: fresh uniform levels at full difficulty, train every
   iteration.
@@ -304,17 +305,49 @@ Shared (`robots/terrain.py` `TerrainRobot`, a mixin over the Playground env;
 a robot file keeps its constants, scene and what differs):
 
 - Playground's own reward, obs and PD gains (Go2: menagerie's), feet-only
-  collisions, blind actor; on `backend` like Wojtek (warp: each env gets
-  `contact_budget` - 2 contacts per geom colliding with the hfield, `njmax` =
-  `nu` + 6 rows per contact: 8 and 60 for four feet, Go1's Playground
-  rough-terrain budget).
+  collisions, blind actor.
+- jax backend only (`playground_backend`): `backend=auto` resolves to jax,
+  `backend=warp` is refused. On warp, foot contacts with the tiled arena's
+  hfield blow up more often the farther the tile is from the arena origin
+  (random actions on the 16 x 16 benchmark arena: Go1 1.5 % of steps on the
+  inner tiles to 5 % on the outer ones, Go2 to 3.4 %, Barkour to 0.5 %;
+  0 % on a 2 x 2 arena and on jax; ccd iterations/tolerance, `base_z` and
+  amplitude do not change it). Every blow-up ends the episode, so the
+  policy learns to stand still. On jax: 0 % for all four. Go1 on jax runs
+  at ~410k env steps/s on flat levels on an H100 (warp: ~490k), ~335k
+  under `mode=accel`.
 - The tiled ACCEL arena written by `arena_scene` (no asset files): one
   `hfield` geom `floor` (geom 0, so a friction DR keyed on geom 0 hits it),
   sized by `HFieldConfig`; `reset` spawns on `spawn_xy`, the tile centre
   `FunctionalEnv` sets.
-- Forward commands: Wojtek's `vx (0.2, 0.6)`, `vy (-0.2, 0.2)` times `SCALE`,
-  `wz (-0.4, 0.4)`; `sample_command` redraws from the same box. Spot's box
-  is capped at Playground's Spot command range.
+- Commands: the forward slice of each robot's own Playground command box
+  (`native_command_range`): vx uniform from 0 to the robot's max, vy and
+  wz uniform over their native ranges, no standing commands;
+  `sample_command` redraws from the same box on the env's own schedule.
+
+  | robot | vx (m/s) | vy (m/s) | wz (rad/s) | source |
+  |---|---|---|---|---|
+  | Go1, Go2 | 0-1.5 | +-0.8 | +-1.2 | `go1/joystick.py` `command_config.a` |
+  | Barkour | 0-1.5 | +-0.8 | +-0.7 | `barkour/joystick.py` `lin_vel_x/y`, `ang_vel_yaw` |
+  | Spot | 0-1.0 | +-0.8 | +-1.0 | `spot/joystick.py` `command_config` |
+
+  vx starts at 0: with only fast commands (Wojtek's vx 0.2-0.6 x `SCALE`,
+  Go1 0.5-1.5 m/s) Go1 still stands still at 200M steps on flat levels.
+  On these ranges (`mode=accel`, jax, seed 0) the deterministic eval on
+  d0.25 levels reaches half the commanded vx at ~100M steps (Go1), ~76M
+  (Go2), ~51M (Barkour, Spot).
+- Eval commands (`make_env(..., eval_travel=)`, used by brax_ued's eval,
+  eval_brax and eval_sim2sim): vx only from `EVAL_SPEED_MARGIN` (1.2) x
+  threshold / episode time up to the max, so every eval command can reach
+  the success threshold (`min_travel` x `SCALE` in `level_steps`): Go1, Go2
+  0.5-1.5, Barkour 0.48-1.5, Spot 0.86-1.0 m/s at the benchmark's 1 m and
+  300 steps. Training draws the full forward slice, so train success tops
+  out below 1.
+- `forward_vel` (train and eval logs) is measured along the commands' x
+  axis: `FunctionalEnv.forward_velocity`, for these robots the
+  `local_linvel` velocimeter the reward tracks (`command_frame_velocity`).
+  Barkour's velocimeter site `imu_frame` faces the torso's -x, so the root
+  body frame would log its forward walking as negative.
 - Wojtek's fall rule at the robot's size: trunk below 0.6 x `STANDING_HEIGHT`
   above the terrain under it (`terrain_height`, read off `hfield_data`), or
   gravity z > -0.4 in the trunk frame.
@@ -324,8 +357,8 @@ a robot file keeps its constants, scene and what differs):
   trunk height is measured: the settled `qpos[2]` over flat ground under zero
   action (the PD pose), which sags below the kinematic height.
   `tests/robots/test_terrain_robots.py` re-measures it per robot. `SCALE`
-  scales the arena (`hfield_config`, `reach` included), level lengths,
-  commands and `min_travel`; slopes do not scale.
+  scales the arena (`hfield_config`, `reach` included), level lengths and
+  `min_travel`; slopes do not scale.
 - Needs `mujoco_menagerie` under Playground's `external_deps` (meshes);
   `ensure_menagerie_exists()` clones it at the pinned commit
   ([README](../README.md#2-assets)); on a cluster whose login node cannot
@@ -337,8 +370,7 @@ a robot file keeps its constants, scene and what differs):
 Per robot:
 
 - **Go1**: Playground `Go1JoystickRoughTerrain`, spawning 0.35 m above the
-  tile. Playground's rough-terrain Go1 trains on warp; on this arena not
-  compared with jax.
+  tile.
 - **Barkour vB**: Playground `barkour.Joystick` (18 dof, `Kp` 35, 12 joints
   clipped to its limits, perturbation kicks always on). Its env builds from a
   fixed menagerie scene and returns one obs vector (a 15-step history, 465
@@ -352,10 +384,7 @@ Per robot:
   history, feet position obs). `get_gravity` there is the up vector, so the
   fall rule negates it. Playground's `early_termination` flag and `gravity z <
   0.85` termination are replaced by the shared rule. Spot's standing trunk is
-  0.433 m, scale 4.3, `reach` 43 m. Wojtek's commands x 4.3 would reach
-  vx 2.6 m/s (real Spot tops out near 1.6 m/s), so `SpotTerrain` caps them
-  at Playground's Spot command range: vx `(0.86, 1.0)`, vy `(-0.8, 0.8)`,
-  wz `(-0.4, 0.4)`.
+  0.433 m, scale 4.3, `reach` 43 m.
 - **Go2**: Playground has no Go2 env: `Go2Terrain` is `Go1Terrain` (Go1's
   joystick reward and obs) on the menagerie model with the model's own PD
   gains (`kp` 50, `kv` 0.5, joint damping 2); Go1's `Kp` 35 sags the 15 kg

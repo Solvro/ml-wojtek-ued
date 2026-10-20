@@ -4,7 +4,6 @@ from typing import Any, Protocol
 
 import jax
 import jax.numpy as jnp
-from brax import math as brax_math
 from brax.training import types
 
 from env.functional import FunctionalEnv
@@ -22,11 +21,6 @@ class Unroll(Protocol):
         deterministic: bool,
         length: int,
     ) -> tuple[Any, types.Transition]: ...
-
-
-def body_velocity(data: Any) -> jax.Array:
-    # free-joint linear qvel is world-frame; commands are body-frame
-    return brax_math.inv_rotate(data.qvel[:3], data.qpos[3:7])
 
 
 def make_unroll(
@@ -68,7 +62,7 @@ def make_unroll(
             next_state, reward, done, truncation, diverged = v_step(
                 state, action, hfield, dr_model
             )
-            forward_vel = jax.vmap(body_velocity)(next_state.data)[:, 0]
+            forward_vel = jax.vmap(env.forward_velocity)(next_state.data)
             transition = types.Transition(
                 observation=state.obs,
                 action=action,
