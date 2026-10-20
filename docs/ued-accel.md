@@ -335,7 +335,7 @@ a robot file keeps its constants, scene and what differs):
   Go1 0.5-1.5 m/s) Go1 still stands still at 200M steps on flat levels.
   On these ranges (`mode=accel`, jax, seed 0) the deterministic eval on
   d0.25 levels reaches half the commanded vx at ~100M steps (Go1), ~76M
-  (Go2), ~51M (Spot).
+  (Go2), ~51M (Barkour, Spot).
 - Eval commands (`make_env(..., eval_travel=)`, used by brax_ued's eval,
   eval_brax and eval_sim2sim): vx only from `EVAL_SPEED_MARGIN` (1.2) x
   threshold / episode time up to the max, so every eval command can reach
