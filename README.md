@@ -1,110 +1,145 @@
-# Wojtek UED Research
+# Quadruped UED Benchmark
 
-Unsupervised Environment Design for quadruped locomotion: a brax-PPO student
-trained against 12 curricula (DR, PLR⊥, SFL, ACCEL, PAIRED and variants) of
-procedurally generated heightfield levels, on the W01-TEK quadruped and four
-MuJoCo Playground robots. Built on `wojtek_env`, an extracted MJX env +
-procedural terrain generator + Gymnasium interface.
+**Unsupervised Environment Design for quadruped locomotion on procedural terrain**
 
-## Documentation
+A benchmark of Unsupervised Environment Design (UED) and domain-randomization
+curricula for legged locomotion. A brax-PPO student walks on procedurally
+generated heightfield levels; the curriculum decides which levels it sees.
+12 curricula x 5 quadrupeds, trained, evaluated and compared with one
+pipeline. Physics runs on MJX (jax or warp backend).
 
-| Doc | Read it for |
-|---|---|
-| [overview.md](docs/overview.md) | methods, robots, level space, metrics, pipeline, repo map |
-| [setup.md](docs/setup.md) | install, dependency pins, building assets, outputs |
-| [environment.md](docs/environment.md) | `wojtek_env` tasks/terrain/gym, `FunctionalEnv`, the shared tiled arena |
-| [ued-accel.md](docs/ued-accel.md) | levels, the trainer + curricula, eval, sim2sim, render, paper scripts |
-| [configuration.md](docs/configuration.md) | Hydra configs in `conf/`: every entry point, group and field |
-| [development.md](docs/development.md) | layout rules, tooling, conventions, gotchas |
+**Methods** (`mode=`, [details](docs/overview.md#methods)):
+DR, DR-easy, DR-mixed, PLR⊥, SFL, ACCEL, ACCEL-grow, ACCEL-SFL, PAIRED,
+PAIRED+UniBC, PAIRED+BiBC, PAIRED+Evo.
+
+**Robots** (`robot=`, [details](docs/robots.md)): Wojtek (W01-TEK), Unitree
+Go1, Unitree Go2, Google Barkour vB, Boston Dynamics Spot.
+
+## Quickstart
+
+Needs [uv](https://docs.astral.sh/uv/) and [just](https://just.systems/).
+Python 3.12 is pinned (`.python-version`). macOS and Linux work; training at
+scale needs a Linux x86_64 box with an NVIDIA GPU (CUDA 12).
+
+```bash
+git clone https://github.com/Solvro/ml-wojtek-ued.git
+cd ml-wojtek-ued
+just sync                # uv sync --extra dev
+```
+
+Build the generated assets (gitignored; once per checkout):
+
+```bash
+just build               # Wojtek MJX model
+just build-accel-arena   # tiled terrain arena
+uv run python -c "from mujoco_playground._src.mjx_env import \
+ensure_menagerie_exists; ensure_menagerie_exists()"   # Go1/Go2/Barkour/Spot meshes
+```
+
+CPU smoke run (~4 min, no GPU, wandb offline):
+
+```bash
+WANDB_MODE=offline JAX_PLATFORMS=cpu just train mode=accel name=smoke \
+  backend=jax num_lanes=2 envs_per_lane=16 level_steps=20 eval_levels=2 \
+  eval_every=1 num_timesteps=1500 mode.buffer_size=8 \
+  checkpoint_dir=artifacts/checkpoints
+```
+
+Print any composed config instead of running it:
+
+```bash
+just train --cfg job mode=paired robot=go1 name=x
+```
+
+`just --list` shows all recipes. Tests: `uv run pytest -q`.
 
 ## Reproduce the paper
 
-The reported numbers: 12 methods (`conf/mode/*`) x 5 robots
-(`conf/robot/*`) x seeds 0-4 = **300 training runs**, each followed by one
-final eval, then the domination comparison, tables and figures.
+12 methods (`conf/mode/*`) x 5 robots (`conf/robot/*`) x seeds 0-4 = **300
+training runs**, each followed by one final eval, then the domination
+comparison, tables and figures.
 
-| setting | value |
-|---|---|
-| training | 300M env steps (`num_timesteps`), 256 levels x 32 envs per iteration, 300-step levels, `level_space=param`, `arena=benchmark`, `backend=auto` (warp on a GPU) |
-| final eval | `conf/eval.yaml` defaults: 2048 levels per random set, 4 episodes x 2 passes, 64 levels per suite cell and flat, 300 steps, success = no fall and >= 1 m x robot scale, CVaR 10 / 25 %, seed 1234, same backend as training |
-| run names | `ued_<robot>_<mode>_seed<N>`, evals `ued_<robot>_<mode>_seed<N>_final_eval` |
+| robot | env steps (`NUM_TIMESTEPS`) | physics backend (`BACKEND`) |
+|---|---|---|
+| `wojtek` | 300M | `warp` |
+| `go1`, `barkour`, `spot`, `go2` | 1B | `jax` (the Playground robots do not run on warp) |
 
-### 1. Environment
+Shared by all runs: 256 levels x 32 envs per iteration, 300-step levels,
+`level_space=param`, `arena=benchmark`. Final eval (`conf/eval.yaml`): 2048
+levels per random set, 4 episodes x 2 passes, 64 levels per suite cell, 300
+steps, success = no fall and >= 1 m x robot scale, CVaR 10 / 25 %, seed
+1234, on the training backend. Run names: `ued_<robot>_<mode>_seed<N>`,
+evals `ued_<robot>_<mode>_seed<N>_final_eval`.
 
-- Linux x86_64, one NVIDIA GPU per run with a CUDA 12 driver (H100 used);
-  macOS installs CPU jax only (tests, CPU smoke runs, figures).
-- Python 3.12, pinned in `.python-version` (`requires-python >=3.11,<3.13`), [uv](https://docs.astral.sh/uv/),
-  [just](https://just.systems/), `ffmpeg` for videos.
-- Exact versions from `uv.lock` (jax/jaxlib 0.9.2 + `jax[cuda12]`,
-  mujoco 3.11.0, mujoco-mjx 3.10.0, warp-lang 1.13.0, brax 0.14.2,
-  playground 0.2.0):
+### 1. Cluster setup
 
-  ```bash
-  uv sync --locked --extra dev
-  ```
+- Linux x86_64, one NVIDIA GPU per run (H100 used), CUDA 12 driver.
+- On the cluster: clone at the paper commit, `uv sync --locked --extra dev`,
+  `wandb login`.
+- Edit the cluster values at the top of `slurm/*.sbatch` (account,
+  partition, log dir, `REPO`, `PDW`, wandb entity / project):
+  [docs/slurm.md](docs/slurm.md#cluster-specific-values).
 
-- `XLA_PYTHON_CLIENT_PREALLOCATE=false` is required by the warp backend; the
-  `justfile` and `slurm/*.sbatch` export it.
-- A wandb account: training, eval and the paper dumps log to / read from
-  `entity` / `project`.
+### 2. Assets and frozen copy
 
-### 2. Assets
-
-Generated and gitignored; build once per checkout (or frozen copy):
+Jobs run from a frozen copy of `src conf assets`, so later edits do not
+reach queued jobs. The build job creates the robot model, the arena and the
+menagerie meshes inside it:
 
 ```bash
-just build               # wojtek.xml -> wojtek_mjx.xml + scene_mjx.xml
-just build-accel-arena   # tiled "accel" arena, conf/arena.yaml (arena=benchmark)
-# Playground robots (go1, barkour, spot, go2): mujoco_menagerie at
-# Playground's pinned commit, cloned into the venv
-uv run python -c "from mujoco_playground._src.mjx_env import \
-ensure_menagerie_exists; ensure_menagerie_exists()"
+PDW=/path/to/work/dir                  # as PDW in slurm/*.sbatch
+COPY="$PDW/copies/$(git rev-parse --short HEAD)"
+mkdir -p "$PDW/logs" "$COPY"            # SLURM does not create the log dir
+git archive HEAD src conf assets | tar -x -C "$COPY"
+BUILD=$(SRC="$COPY/src" sbatch --parsable slurm/build_assets.sbatch)
 ```
 
-### 3. Training grid (SLURM)
-
-On the cluster, in a clone at the paper commit with the venv synced
-(`REPO` in the sbatch files). Jobs run from a frozen copy so later edits do
-not reach queued jobs:
+### 3. Train (60 tasks per robot)
 
 ```bash
-PDW=<your PD dir>                     # as in slurm/*.sbatch
-COPY="$PDW/copies/$(git rev-parse --short HEAD)"
-mkdir -p "$PDW/logs"                  # #SBATCH --output dir; SLURM does not create it
-mkdir -p "$COPY" && git archive HEAD src conf assets | tar -x -C "$COPY"
-BUILD=$(SRC="$COPY/src" sbatch --parsable slurm/build_assets.sbatch)
+export SRC="$COPY/src" NSEEDS=5 TAGS=paper
+export MODES="dr dr_easy dr_mixed plr sfl accel accel_grow accel_sfl paired paired_uni paired_bi paired_evo"
 
-MODES="dr dr_easy dr_mixed plr sfl accel accel_grow accel_sfl paired paired_uni paired_bi paired_evo"
-for ROBOT in wojtek go1 barkour spot go2; do
-  SRC="$COPY/src" MODES="$MODES" NSEEDS=5 ROBOT="$ROBOT" TAGS=paper \
+# Wojtek: 300M steps, warp
+ROBOT=wojtek NUM_TIMESTEPS=300000000 BACKEND=warp \
+  sbatch --dependency="afterok:$BUILD" --array=0-59 slurm/brax_ued.sbatch
+
+# Playground robots: 1B steps, jax
+for ROBOT in go1 barkour spot go2; do
+  ROBOT="$ROBOT" NUM_TIMESTEPS=1000000000 BACKEND=jax \
     sbatch --dependency="afterok:$BUILD" --array=0-59 slurm/brax_ued.sbatch
 done
 ```
 
-- One array per robot: task = mode index x 5 + seed, 60 tasks.
-- Checkpoints: `$PDW/artifacts/brax_ued/ued_<robot>_<mode>_seed<N>.pkl`.
-- Cost, from Wojtek's measured warp throughput on an H100
-  ([ued-accel.md](docs/ued-accel.md#throughput)): ~0.5 GPU-h per run, ~1 GPU-h
-  for the 4 PAIRED variants (two students) → ~8 GPU-h per robot x seed,
-  ~200 GPU-h for the grid. Playground robots are not profiled.
+- Task = mode index x 5 + seed; checkpoints:
+  `$PDW/artifacts/brax_ued/ued_<robot>_<mode>_seed<N>.pkl`.
+- Variables and defaults: [docs/slurm.md](docs/slurm.md#job-variables).
+- Cost: Wojtek ~8 GPU-h per seed over the 12 methods (warp, H100); a
+  Playground run is ~1 GPU-h per 1B steps, PAIRED variants ~2x (two
+  students). Throughput: [docs/training.md](docs/training.md#throughput).
 
 ### 4. Final evals
 
+Submit once the training arrays have finished:
+
 ```bash
-for ROBOT in wojtek go1 barkour spot go2; do
-  SRC="$COPY/src" MODES="$MODES" NSEEDS=5 ROBOT="$ROBOT" TAGS=paper \
-    sbatch --array=0-59 slurm/eval_brax.sbatch
+ROBOT=wojtek BACKEND=warp sbatch --array=0-59 slurm/eval_brax.sbatch
+for ROBOT in go1 barkour spot go2; do
+  ROBOT="$ROBOT" BACKEND=jax sbatch --array=0-59 slurm/eval_brax.sbatch
 done
 ```
 
 - Writes `$PDW/runs/final_eval/ued_<robot>_<mode>_seed<N>_final_eval.{json,npz}`
-  and the metrics to a wandb run of that name; ~8.5 min per Wojtek eval on
-  warp (~45 GPU-h for 300).
-- Optional transfer test: `slurm/eval_sim2sim.sbatch` (same variables, CPU
-  partition), [ued-accel.md](docs/ued-accel.md#sim2sim).
+  and logs the metrics to a wandb run of that name.
+- Optional transfer test (CPU MuJoCo physics variants):
+  `slurm/eval_sim2sim.sbatch`, [docs/evaluation.md](docs/evaluation.md#sim2sim).
 
-Copy the eval dir next to the repo (e.g. `rsync` it to
-`artifacts/final_eval`); the rest runs on a laptop.
+Copy the eval dir to the laptop (`PDW` = the cluster path); the rest runs
+without a GPU:
+
+```bash
+rsync -a "user@login-node:$PDW/runs/final_eval/" artifacts/final_eval/
+```
 
 ### 5. Domination comparison
 
@@ -114,11 +149,10 @@ just domination eval_dir=artifacts/final_eval method_a=plr method_b=dr \
   out=artifacts/paper/domination_plr_dr
 ```
 
-- In: `*_final_eval.npz` (`param_uniform` levels); out:
-  `artifacts/paper/domination/` (`domination.json`,
-  `domination_<a>_vs_<b>[_<robot>].{pdf,png}`, `domination_matrix.pdf`).
+- Out: `artifacts/paper/domination/` (`domination.json`, heatmaps,
+  `domination_matrix.pdf`). Method: [docs/results.md](docs/results.md#domination-comparison).
 
-### 6. Paper tables and figures
+### 6. Tables and figures
 
 ```bash
 just paper-tables dump_wandb=artifacts/paper/summaries.json
@@ -136,89 +170,29 @@ JAX_PLATFORMS=cpu just paper-figures terrains=true
 | `artifacts/paper/figs/curves.pdf`, `composition.pdf` | wandb histories (`history.json`) |
 | `artifacts/paper/figs/terrains.pdf`, `robots.pdf` | rendered levels (built assets) |
 
-- `dump_wandb` / `dump_history` read the wandb project in `src/paper/runs.py`
-  (`ENTITY`, `PROJECT`).
+- `dump_wandb` / `dump_history` read the wandb project set in
+  `src/paper/runs.py` (`ENTITY`, `PROJECT`).
 - A robot without runs: `prefixes.<robot>=null`.
-- Tables are bare booktabs `tabular`s for the paper (Overleaf), figures go
-  into its `figs/`.
+- Details: [docs/results.md](docs/results.md).
 
-### A single run locally
+### 7. Overleaf
 
-```bash
-just train mode=accel robot=wojtek seed=0 name=ued_wojtek_accel_seed0 \
-  checkpoint_dir=artifacts/checkpoints
-just eval checkpoint=artifacts/checkpoints/ued_wojtek_accel_seed0.pkl \
-  name=ued_wojtek_accel_seed0_final_eval out_dir=artifacts/final_eval
-just train --cfg job mode=accel name=x    # print the composed config
-```
+The tables are bare booktabs `tabular`s: upload `artifacts/paper/tables/*.tex`
+and the PDFs in `artifacts/paper/figs/` (into the project's `figs/`) to the
+paper's Overleaf project; the paper owns floats, captions and labels.
 
-CPU smoke run (~4 min on a laptop, no GPU, wandb offline):
+## Train and export a policy
 
-```bash
-WANDB_MODE=offline JAX_PLATFORMS=cpu just train mode=accel name=smoke \
-  backend=jax num_lanes=2 envs_per_lane=16 level_steps=20 eval_levels=2 \
-  eval_every=1 num_timesteps=1500 mode.buffer_size=8 \
-  checkpoint_dir=artifacts/checkpoints
-```
+See [docs/export.md](docs/export.md).
 
-### SLURM job interface
+## Documentation
 
-Env vars of `slurm/brax_ued.sbatch`, `eval_brax.sbatch`,
-`eval_sim2sim.sbatch` (turned into Hydra overrides):
+Map of all pages: [docs/index.md](docs/index.md).
 
-| variable | default | meaning |
-|---|---|---|
-| `MODES` | `dr accel` (train; required for evals) | `conf/mode` options; train also takes `<mode>-s<scale>` = `mode.generator_scale=<scale>` |
-| `NSEEDS` / `SEED0` | `3` / `0` | task = mode index x `NSEEDS` + offset, seed = `SEED0` + offset; array size `NSEEDS` x modes |
-| `ROBOT` | `wojtek` | `conf/robot` option |
-| `SPACE` | `param` | `conf/level_space` option (train, eval_brax) |
-| `PREFIX` | `ued` | run name `<PREFIX>_<ROBOT>_<mode>_seed<N>` |
-| `BACKEND` | `auto` | `auto` / `jax` / `warp` (train, eval_brax) |
-| `NUM_TIMESTEPS` | `300000000` | train |
-| `TAGS` | — | extra wandb tags, space-separated |
-| `SRC` | `$REPO/src` | `src/` of a frozen copy with built `assets/` and `conf/` beside it |
-
-### Cluster-specific values
-
-Set to WCSS (Lem, H100) in every `slurm/*.sbatch`; another lab changes:
-
-| where | value |
+| Doc | Read it for |
 |---|---|
-| `#SBATCH --account` | compute grant |
-| `#SBATCH --partition`, `--gres` | GPU partition / GPU type (`build_assets`, `eval_sim2sim`: a CPU partition) |
-| `#SBATCH --output`, `--error` | log directory |
-| `REPO` | clone with the synced `.venv` |
-| `PDW` | work dir: checkpoints `artifacts/brax_ued/`, evals `runs/final_eval/`, `runs/sim2sim/` |
-| `WB_ENTITY`, `WB_PROJECT` | wandb entity / project (also `ENTITY`, `PROJECT` in `src/paper/runs.py`) |
-
-## Justfile recipes
-
-`PYTHONPATH=src` and `XLA_PYTHON_CLIENT_PREALLOCATE=false` are exported for
-every recipe; `just --list` lists them. `*args` are Hydra overrides of the
-recipe's config.
-
-| recipe | does |
-|---|---|
-| `just sync` | `uv sync --extra dev` |
-| `just install` | `uv lock && uv sync --extra dev` (relock, then sync) |
-| `just fmt` | `ruff format` + `ruff check --fix` on `src` |
-| `just lint` | `ruff check` + `ruff format --check` on `src` |
-| `just build` | build the MJX model (`wojtek_mjx.xml` + `scene_mjx.xml`) |
-| `just build-accel-arena *args` | write the tiled `accel` arena; `conf/arena.yaml` |
-| `just train *args` | train with `brax_ued.py`; `conf/train.yaml` (`mode=` required) |
-| `just profile *args` | throughput profile of a training iteration; `conf/profile.yaml` |
-| `just eval *args` | final eval of a checkpoint; `conf/eval.yaml` |
-| `just sim2sim *args` | the checkpoint on CPU MuJoCo physics variants; `conf/sim2sim.yaml` |
-| `just render-video *args` | mp4 clips of a checkpoint on generated levels; `conf/render.yaml` |
-| `just paper-tables *args` | LaTeX tables from final evals; `conf/paper_tables.yaml` |
-| `just paper-figures *args` | figures from wandb + rendered terrains; `conf/paper_figures.yaml` |
-| `just domination *args` | level-by-level domination comparison; `conf/domination.yaml` |
-
-## Env usage
-
-```python
-from wojtek_env.gymnasium import WojtekGymEnv
-
-env = WojtekGymEnv(task="joystick")
-obs, info = env.reset(seed=0)
-```
+| [overview](docs/overview.md) | methods, robots, level space, metrics, pipeline, repo map |
+| [setup](docs/setup.md) | install, dependency pins, assets, outputs |
+| [slurm](docs/slurm.md) | job variables, per-robot budgets, cluster values |
+| [configuration](docs/configuration.md) | every Hydra config and field |
+| [development](docs/development.md) | layout rules, recipes, tests, adding features |

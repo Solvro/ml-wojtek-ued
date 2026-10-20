@@ -1,5 +1,5 @@
 """Shared base of the Playground quadrupeds on the tiled UED arena
-(docs/ued-accel.md#robots)."""
+(docs/robots.md)."""
 
 import abc
 import dataclasses
@@ -72,7 +72,7 @@ def playground_backend(backend: str) -> str:
         raise ValueError(
             "backend=warp is not supported for the Playground robots: their "
             "foot contacts with the tiled arena diverge on warp far from the "
-            "arena origin (docs/ued-accel.md#robots). Use backend=jax or "
+            "arena origin (docs/robots.md). Use backend=jax or "
             "backend=auto (jax for these robots)"
         )
     if backend not in ("auto", "jax"):

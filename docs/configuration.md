@@ -55,7 +55,7 @@ python src/scripts/brax_ued.py --cfg job mode=dr name=x   # print the composed c
 | option | `name` |
 |---|---|
 | `wojtek` (default) | `wojtek` |
-| `go1` | `go1` — Playground Go1 ([ued-accel.md](ued-accel.md#robots)) |
+| `go1` | `go1` — Playground Go1 ([robots.md](robots.md)) |
 | `barkour` | `barkour` — Barkour vB |
 | `spot` | `spot` — Spot |
 | `go2` | `go2` — Unitree Go2 (Go1's env on the Go2 model) |
@@ -87,7 +87,7 @@ each `mode/<option>.yaml` sets its switches.
 
 | field | default | meaning |
 |---|---|---|
-| `curriculum` | — | `dr` / `dr_easy` / `dr_mixed` / `accel` / `plr` / `paired` / `paired_evo` ([ued-accel.md](ued-accel.md#brax-ued)) |
+| `curriculum` | — | `dr` / `dr_easy` / `dr_mixed` / `accel` / `plr` / `paired` / `paired_evo` ([training.md](training.md#trainer)) |
 | `replay_prob` | `0.8` | ACCEL/PLR/PAIRED+Evo: replay probability once the buffer holds `num_lanes` levels |
 | `buffer_size` | `4000` | ACCEL/PLR/PAIRED+Evo: levels kept (highest score) |
 | `generator_scale` | `0.1` | easy generator: control points within this of flat (`dr_easy`, ACCEL explore) |
@@ -116,11 +116,11 @@ geometry, so `arena.n_edits=...` fails at startup). `n_edits` picks from
 `n_edits_by_mutation` by `mode.mutation`, so `mode=accel_grow` / `accel_sfl`
 on `level_space=grid` compose to 16 edits; an explicit
 `level_space.n_edits=N` overrides it. Spaces:
-[ued-accel.md](ued-accel.md#level-spaces).
+[levels.md](levels.md#level-spaces).
 
-### `arena/` — `HFieldConfig` {#hfield}
+### `arena/`
 
-`benchmark` (the only option, default everywhere):
+Typed by `HFieldConfig`. `benchmark` (the only option, default everywhere):
 `amplitude: 0.3`, `coarse_n: 13`, `pad_radius: 0.55`, `pad_taper: 0.2`; the
 rest are `HFieldConfig` defaults. Values are in Wojtek units; training,
 eval, sim2sim, render and the paper figures scale every length by the robot
@@ -134,7 +134,7 @@ just train mode=dr name=x arena.tiles=8
 ```
 
 Plain dataclass (`config/hfield_config.py`); the level genome envelope. See
-[ued-accel.md](ued-accel.md#level-representation).
+[levels.md](levels.md#level-representation).
 
 | field | dataclass default | `benchmark` | meaning |
 |---|---|---|---|
@@ -171,7 +171,7 @@ shape the genome and can vary between runs.
 |---|---|---|
 | `name` | `???` | wandb run name; checkpoint `<checkpoint_dir>/<name>.pkl` |
 | `entity` / `project` | `""` / `wojtek-benchmark-iclr` | wandb |
-| `backend` | `auto` | physics: `auto` (warp on a GPU, jax on CPU) / `jax` / `warp` |
+| `backend` | `auto` | physics: `auto` (warp on a GPU, jax on CPU; jax for the Playground robots) / `jax` / `warp` (refused for them) |
 | `seed` | `0` | |
 | `num_timesteps` | `300000000` | env steps (protagonist only for PAIRED) |
 | `num_lanes` | `256` | levels per iteration, ≤ `arena.tiles²` |
@@ -260,7 +260,7 @@ data layout), `level_space` (always `param`), `alphas` and `tags`;
 
 ### `domination.yaml` — `DominationConfig`
 
-[ued-accel.md](ued-accel.md#domination).
+[results.md](results.md#domination-comparison).
 
 | field | default | meaning |
 |---|---|---|

@@ -1,5 +1,5 @@
 """Unitree Go2: Go1's joystick env on the menagerie Go2 model, rewritten
-feet-only (docs/ued-accel.md#robots)."""
+feet-only (docs/robots.md)."""
 
 import re
 from typing import Any

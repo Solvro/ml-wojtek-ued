@@ -8,7 +8,7 @@
 #SBATCH --output=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued/logs/%x_%j.out
 #SBATCH --error=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued/logs/%x_%j.out
 # Cluster-specific: the #SBATCH account, partition and log paths above and
-# REPO below (README "Cluster-specific values").
+# REPO below (docs/slurm.md).
 # Robot model and the accel arena into SRC/.. (the frozen copy the GPU
 # arrays run), then mujoco_menagerie for the Playground robots; the arrays
 # depend on this job and never rebuild.

@@ -1,4 +1,4 @@
-"""Where a training iteration spends its time (docs/ued-accel.md#throughput)."""
+"""Where a training iteration spends its time (docs/training.md#throughput)."""
 
 import json
 import time
