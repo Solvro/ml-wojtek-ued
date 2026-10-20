@@ -324,7 +324,7 @@ a robot file keeps its constants, scene and what differs):
   | Barkour | 0-1.5 | +-0.8 | +-0.7 | `barkour/joystick.py` `lin_vel_x/y`, `ang_vel_yaw` |
   | Spot | 0-1.0 | +-0.8 | +-1.0 | `spot/joystick.py` `command_config` |
 
-  vx starts at 0. Eval commands (`make_env(..., eval_travel=)`, used by brax_ued's eval,
+- Eval commands (`make_env(..., eval_travel=)`, used by brax_ued's eval,
   eval_brax and eval_sim2sim): vx only from `EVAL_SPEED_MARGIN` (1.2) x
   threshold / episode time up to the max, so every eval command can reach
   the success threshold (`min_travel` x `SCALE` in `level_steps`): Go1, Go2
