@@ -170,7 +170,7 @@ shape the genome and can vary between runs.
 | field | default | meaning |
 |---|---|---|
 | `name` | `???` | wandb run name; checkpoint `<checkpoint_dir>/<name>.pkl` |
-| `entity` / `project` | `""` / `wojtyla` | wandb |
+| `entity` / `project` | `""` / `wojtek-benchmark-iclr` | wandb |
 | `backend` | `auto` | physics: `auto` (warp on a GPU, jax on CPU) / `jax` / `warp` |
 | `seed` | `0` | |
 | `num_timesteps` | `300000000` | env steps (protagonist only for PAIRED) |
@@ -197,7 +197,7 @@ record's `backend` is the config value.
 | `checkpoint` | `???` | `brax_ued.py` `.pkl` params |
 | `name` | `???` | wandb run name; `<out_dir>/<name>.{json,npz}` |
 | `out_dir` | `???` | |
-| `entity` / `project` | `""` / `wojtyla` | |
+| `entity` / `project` | `""` / `wojtek-benchmark-iclr` | |
 | `backend` | `auto` | score on the backend the run trained on |
 | `num_levels` | `2048` | levels per random set |
 | `episodes` | `4` | per level per pass |
