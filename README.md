@@ -191,6 +191,26 @@ Set to WCSS (Lem, H100) in every `slurm/*.sbatch`; another lab changes:
 | `PDW` | work dir: checkpoints `artifacts/brax_ued/`, evals `runs/final_eval/`, `runs/sim2sim/` |
 | `WB_ENTITY`, `WB_PROJECT` | wandb entity / project (also `ENTITY`, `PROJECT` in `src/paper/runs.py`) |
 
+## Train and export a policy
+
+A deployable model for the real robot, next to the benchmark: define the
+run in one YAML, train one policy, export it to ONNX.
+
+```bash
+cp conf/policy/template.yaml conf/policy/my_robot.yaml   # robot, mode, terrain, PPO, network
+just train-export policy=my_robot                        # train, then export
+just export checkpoint=<run>.pkl policy=my_robot         # export an existing checkpoint
+```
+
+- Output `artifacts/export/<name>/`: `policy.onnx` (deterministic actor,
+  observation normalizer inside, outputs `action` and `joint_targets`),
+  `config.yaml` (the full training config), `README.md` (the generated
+  contract: observation layout, joints, gains, commands, `onnxruntime`
+  example, training metrics).
+- Every robot is supported; the example and the README focus on Wojtek.
+- Details, cluster `sbatch` example and the verification:
+  [docs/export.md](docs/export.md).
+
 ## Justfile recipes
 
 `PYTHONPATH=src` and `XLA_PYTHON_CLIENT_PREALLOCATE=false` are exported for

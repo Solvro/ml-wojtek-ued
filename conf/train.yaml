@@ -5,6 +5,8 @@ defaults:
   - mode: ???
   - level_space: param
   - arena: benchmark
+  - network: default
+  - policy: null
 
 name: ???
 entity: ""
@@ -19,6 +21,7 @@ eval_every: 10
 eval_levels: 512
 min_travel: 1.0
 checkpoint_dir: null
+export_dir: artifacts/export
 tags: []
 
 # every mode starts from these; mode/<name>.yaml sets its own switches
@@ -37,6 +40,17 @@ mode:
   bc: none
   bc_coef: 0.5
   bc_every: 1
+
+# mujoco_playground's locomotion recipe
+ppo:
+  unroll_length: 20
+  num_minibatches: 32
+  num_updates_per_batch: 4
+  discounting: 0.97
+  gae_lambda: 0.95
+  learning_rate: 3.0e-4
+  clipping_epsilon: 0.2
+  max_grad_norm: 1.0
 
 hydra:
   job:

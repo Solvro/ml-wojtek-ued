@@ -85,6 +85,11 @@ build-accel-arena *args:
 train *args:
     uv run python src/scripts/brax_ued.py {{ args }}
 
+# Train a policy and export it to artifacts/export/<name>/ (conf/policy/<name>.yaml, e.g. `just train-export policy=my_policy`); args are Hydra overrides of conf/train.yaml
+[group('train')]
+train-export *args:
+    uv run python src/scripts/train_export.py {{ args }}
+
 # Throughput profile of a brax_ued.py iteration (conf/profile.yaml, e.g. `just profile backend=warp`)
 [group('train')]
 profile *args:
@@ -106,6 +111,13 @@ sim2sim *args:
 [group('eval')]
 render-video *args:
     MUJOCO_GL="${MUJOCO_GL:-$([ "$(uname)" = Darwin ] && echo cgl || echo egl)}" uv run python src/scripts/render_video.py {{ args }}
+
+# --- export ---
+
+# Export a checkpoint to artifacts/export/<name>/ (conf/export.yaml); the training config from policy=<name>, config=<yaml> mode=<mode>, or overrides, e.g. `just export checkpoint=run.pkl policy=my_policy`
+[group('export')]
+export *args:
+    uv run python src/scripts/export_policy.py {{ args }}
 
 # --- paper ---
 

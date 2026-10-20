@@ -9,7 +9,7 @@ import numpy as np
 from brax.io import model as brax_model
 from brax.training.agents.ppo import networks as ppo_networks
 
-from config.schema import RenderConfig
+from config.schema import NetworkConfig, RenderConfig
 from env.factory import check_wojtek_arena, make_env
 from env.functional import FunctionalEnv
 from hfield.level_space import LevelSpace, make_level_space
@@ -66,11 +66,15 @@ def hold_command(info: dict[str, Any], command: jax.Array) -> dict[str, Any]:
 
 
 def make_rollout(
-    env: FunctionalEnv, params: Any, command: jax.Array, n_steps: int
+    env: FunctionalEnv,
+    params: Any,
+    command: jax.Array,
+    n_steps: int,
+    network: NetworkConfig,
 ) -> Rollout:
     """(key, arena hfield_data, tile_xy) -> per-step qpos before the step,
     and fell flags."""
-    make_policy = ppo_networks.make_inference_fn(make_network(env))
+    make_policy = ppo_networks.make_inference_fn(make_network(env, network))
     policy = make_policy(params, deterministic=True)
 
     def step(
@@ -159,7 +163,7 @@ class LevelRecorder:
             robot_scale=self.scale,
         )
         command = jnp.asarray(cfg.command)
-        self.rollout = make_rollout(env, params, command, n_steps)
+        self.rollout = make_rollout(env, params, command, n_steps, cfg.network)
         self.layout = TileLayout(self.config)
         self.tile_xy = self.layout.tile_xy(1, 1)[0]
         self.model = render_model(self.base, self.config)

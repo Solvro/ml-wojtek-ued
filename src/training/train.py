@@ -13,7 +13,7 @@ from training.context import TrainContext
 from training.curricula import PAIRED, run_iteration
 from training.evaluate import evaluate
 from training.metrics import level_composition
-from training.ppo import PPO
+from training.summary import SummaryWindow, TrainingSummary, write_summary
 
 EVAL_SEED = 1234
 
@@ -53,13 +53,15 @@ def iteration_log(
     }
 
 
-def save_checkpoint(ctx: TrainContext) -> None:
+def save_checkpoint(ctx: TrainContext, summary: TrainingSummary | None) -> None:
     cfg = ctx.cfg
     if not cfg.checkpoint_dir:
         return
     path = Path(cfg.checkpoint_dir) / f"{cfg.name}.pkl"
     path.parent.mkdir(parents=True, exist_ok=True)
     brax_model.save_params(str(path), ctx.student.inference_params())
+    if summary is not None:
+        write_summary(path, summary)
 
 
 def train(cfg: TrainConfig, mode_name: str) -> None:
@@ -70,16 +72,18 @@ def train(cfg: TrainConfig, mode_name: str) -> None:
         project=cfg.project,
         name=cfg.name,
         tags=["brax-ued", mode_name, cfg.robot.name, *cfg.tags],
-        config={**as_dict(cfg), "ppo": PPO},
+        config=as_dict(cfg),
     )
     ctx = build(cfg)
     buffer = LevelBuffer(cfg.mode.buffer_size)
     steps = StepCounter(cfg)
     it, start = 0, time.time()
+    window = SummaryWindow()
     while steps.env_steps < cfg.num_timesteps:
         out = run_iteration(ctx, buffer, it)
         steps.add(out["replay"])
         row = iteration_log(ctx, out, buffer)
+        window.add(row)
         log = {
             "env_steps": steps.env_steps,
             "iteration": it,
@@ -99,7 +103,8 @@ def train(cfg: TrainConfig, mode_name: str) -> None:
         }
         print(rounded, flush=True)
         it += 1
-    save_checkpoint(ctx)
+    summary = window.summary(steps.env_steps, time.time() - launch)
+    save_checkpoint(ctx, summary)
     run.summary["final/elapsed_h"] = (time.time() - launch) / 3600
     run.summary["final/sim_steps"] = steps.sim_steps
     run.summary["final/student_train_steps"] = steps.student_train_steps

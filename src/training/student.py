@@ -8,9 +8,10 @@ from brax.training.acme import running_statistics, specs
 from brax.training.agents.ppo import losses as ppo_losses
 from brax.training.agents.ppo import networks as ppo_networks
 
+from config.schema import NetworkConfig, PPOConfig
 from env.functional import FunctionalEnv
 from training.paired import Teacher, policy_kl
-from training.ppo import PPO, Normalizer, make_network
+from training.ppo import Normalizer, make_network
 
 Params = ppo_losses.PPONetworkParams
 
@@ -19,11 +20,17 @@ class Student:
     """brax PPO networks, optimizer and jitted update / regret / BC KL."""
 
     def __init__(
-        self, env: FunctionalEnv, key: jax.Array, entropy_coef: float
+        self,
+        env: FunctionalEnv,
+        key: jax.Array,
+        entropy_coef: float,
+        ppo: PPOConfig,
+        network: NetworkConfig,
     ) -> None:
         obs_size = env.observation_size
         self.entropy_coef = entropy_coef
-        self.network = make_network(env)
+        self.ppo = ppo
+        self.network = make_network(env, network)
         self.make_policy = ppo_networks.make_inference_fn(self.network)
         policy_key, value_key = jax.random.split(key)
         self.params = Params(
@@ -38,8 +45,8 @@ class Student:
             }
         )
         self.optimizer = optax.chain(
-            optax.clip_by_global_norm(PPO["max_grad_norm"]),
-            optax.adam(PPO["learning_rate"]),
+            optax.clip_by_global_norm(ppo.max_grad_norm),
+            optax.adam(ppo.learning_rate),
         )
         self.opt_state = self.optimizer.init(self.params)
         self.update = jax.jit(self._update)
@@ -98,9 +105,9 @@ class Student:
             key,
             self.network,
             entropy_cost=self.entropy_coef,
-            discounting=PPO["discounting"],
-            gae_lambda=PPO["gae_lambda"],
-            clipping_epsilon=PPO["clipping_epsilon"],
+            discounting=self.ppo.discounting,
+            gae_lambda=self.ppo.gae_lambda,
+            clipping_epsilon=self.ppo.clipping_epsilon,
         )
         if teacher is None:
             return loss, metrics
@@ -144,13 +151,16 @@ class Student:
 
             def shuffle(x: jax.Array) -> jax.Array:
                 x = jax.random.permutation(perm_key, x)
-                return x.reshape((PPO["num_minibatches"], -1, *x.shape[1:]))
+                return x.reshape((self.ppo.num_minibatches, -1, *x.shape[1:]))
 
             batches = jax.tree.map(shuffle, data)
             return jax.lax.scan(minibatch, (params, opt_state, key), batches)
 
         (params, opt_state, _), metrics = jax.lax.scan(
-            epoch, (params, opt_state, key), None, PPO["num_updates_per_batch"]
+            epoch,
+            (params, opt_state, key),
+            None,
+            self.ppo.num_updates_per_batch,
         )
         return params, opt_state, normalizer, jax.tree.map(jnp.mean, metrics)
 
@@ -170,7 +180,7 @@ class Student:
             rewards=data.reward,
             values=values,
             bootstrap_value=bootstrap,
-            lambda_=PPO["gae_lambda"],
-            discount=PPO["discounting"],
+            lambda_=self.ppo.gae_lambda,
+            discount=self.ppo.discounting,
         )
         return jnp.maximum(advantages, 0.0).mean(axis=0)

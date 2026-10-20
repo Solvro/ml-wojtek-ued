@@ -17,6 +17,7 @@ it when the code changes.**
 | Playground robots (`robots/`: Go1, Barkour vB, Spot, Go2), their scale and scene | [docs/ued-accel.md](docs/ued-accel.md#robots) |
 | Hydra configs (`conf/`, `config/schema.py`), any CLI argument | [docs/configuration.md](docs/configuration.md) |
 | Layout rules, tooling, adding features, gotchas | [docs/development.md](docs/development.md) |
+| Train-from-template, ONNX export, the generated deployment README (`export/`, `conf/policy/`) | [docs/export.md](docs/export.md) |
 | Running training/eval on the cluster | `slurm/*.sbatch`, [README.md](README.md#slurm-job-interface) |
 
 ## Where code lives
@@ -34,6 +35,8 @@ it when the code changes.**
     domination comparison of eval dumps (`compare_domination`).
   - `src/env/` — `FunctionalEnv` and the env factory/overrides;
     `src/hfield/` — levels and the tiled arena; `src/config/` — schemas.
+  - `src/export/` — checkpoint + config → ONNX policy and its README:
+    `contract` (built from the env), `onnx_graph`, `verify`, `readme`, `run`.
   - `src/rendering/`, `src/paper/`, `src/diagnostics/` — videos, paper
     artefacts, arena check (`check_hfield_batch.py`) and throughput
     profile (`just profile`).
@@ -45,7 +48,9 @@ it when the code changes.**
   `TERRAIN_ROBOTS` entry, `ROBOT_LABEL` (`paper/labels.py`) and
   `prefixes` entries (default `ued_<robot>`).
 - `conf/` — Hydra YAML, one primary per entry point plus the `robot`, `mode`,
-  `level_space`, `arena` groups; `src/config/schema.py` types each primary.
+  `level_space`, `arena`, `network` groups and the optional `policy` group
+  (whole-policy definitions, `conf/policy/template.yaml`);
+  `src/config/schema.py` types each primary.
   A new curriculum = a `conf/mode/<name>.yaml` and a `METHODS` label
   (`paper/labels.py`).
 - `slurm/` — job arrays (train, final eval, sim2sim, asset build); cluster

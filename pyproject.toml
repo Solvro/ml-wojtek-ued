@@ -28,6 +28,8 @@ dependencies = [
     "wandb>=0.28.2",
     "matplotlib>=3.11.1",
     "mediapy>=1.2.7",
+    "onnx==1.23.2",
+    "onnxruntime==1.31.0",
 ]
 
 [project.optional-dependencies]

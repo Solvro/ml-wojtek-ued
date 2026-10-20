@@ -8,7 +8,7 @@ repeated here.
 
 - **Research code goes in sibling packages under `src/`** — `config/`,
   `env/`, `robots/`, `hfield/`, `training/`, `evaluation/`, `rendering/`,
-  `paper/`, `diagnostics/`, `scripts/` ([overview](overview.md#repo-map)).
+  `paper/`, `diagnostics/`, `export/`, `scripts/` ([overview](overview.md#repo-map)).
   Never add files inside `src/wojtek_env/`; it is the extracted env library
   and is ruff-excluded and hatchling-packaged
   (`packages = ["src/wojtek_env"]`).
@@ -49,6 +49,8 @@ of those pins.
 | `just build` | build the MJX model XMLs |
 | `just build-accel-arena *args` | write the `accel` terrain arena (`conf/arena.yaml`) |
 | `just train *args` | `scripts/brax_ued.py` (`conf/train.yaml`) |
+| `just train-export *args` | `scripts/train_export.py` (`conf/train.yaml`): train, then export |
+| `just export *args` | `scripts/export_policy.py` (`conf/export.yaml`) |
 | `just profile *args` | `scripts/profile_brax_ued.py` (`conf/profile.yaml`) |
 | `just eval *args` | `scripts/eval_brax.py` (`conf/eval.yaml`) |
 | `just sim2sim *args` | `scripts/eval_sim2sim.py` (`conf/sim2sim.yaml`) |

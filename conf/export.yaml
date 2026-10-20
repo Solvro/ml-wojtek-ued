@@ -1,0 +1,11 @@
+defaults:
+  - train
+  - export_schema
+  - _self_
+
+checkpoint: ???
+config: null
+
+hydra:
+  run:
+    dir: artifacts/hydra/export

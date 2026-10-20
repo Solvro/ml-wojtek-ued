@@ -37,11 +37,12 @@ python src/scripts/brax_ued.py --cfg job mode=dr name=x   # print the composed c
 
 | primary | script | `just` | groups |
 |---|---|---|---|
-| `train.yaml` | `scripts/brax_ued.py` | `train` | robot, mode, level_space, arena |
+| `train.yaml` | `scripts/brax_ued.py`, `scripts/train_export.py` | `train`, `train-export` | robot, mode, level_space, arena, network, policy (optional) |
+| `export.yaml` | `scripts/export_policy.py` | `export` | `train.yaml` + `checkpoint`, `config` |
 | `profile.yaml` | `scripts/profile_brax_ued.py` | `profile` | `train.yaml` with `mode: dr`, `name: profile` |
-| `eval.yaml` | `scripts/eval_brax.py` | `eval` | robot, level_space, arena |
-| `sim2sim.yaml` | `scripts/eval_sim2sim.py` | `sim2sim` | robot, arena |
-| `render.yaml` | `scripts/render_video.py` | `render-video` | robot, level_space, arena |
+| `eval.yaml` | `scripts/eval_brax.py` | `eval` | robot, level_space, arena, network |
+| `sim2sim.yaml` | `scripts/eval_sim2sim.py` | `sim2sim` | robot, arena, network |
+| `render.yaml` | `scripts/render_video.py` | `render-video` | robot, level_space, arena, network |
 | `arena.yaml` | `python -m hfield.arena` | `build-accel-arena` | arena |
 | `check_hfield.yaml` | `scripts/check_hfield_batch.py` | — | arena |
 | `paper_tables.yaml` | `scripts/paper_tables.py` | `paper-tables` | — |
@@ -160,6 +161,30 @@ shape the genome and can vary between runs.
 - `level_space.edit_scale` is small (`0.1`-`0.15`): an ACCEL mutation is a
   small nudge from a curated parent, not a fresh `generate()`.
 
+### `network/` — `NetworkConfig`
+
+`default` (the only option; `train`, `export`, `eval`, `sim2sim`, `render`):
+the policy / value MLPs of the brax PPO student.
+
+| field | default | meaning |
+|---|---|---|
+| `policy_hidden` | `[512, 256, 128]` | policy hidden layer sizes; the exported actor |
+| `value_hidden` | `[512, 256, 128]` | value (critic) hidden layer sizes |
+| `activation` | `elu` | `elu` / `relu` / `tanh` / `swish` |
+
+A checkpoint is only readable with the `network` it was trained with:
+eval, sim2sim, render and export build the network from the same fields
+(`network.policy_hidden=[...]`, or `policy=<name>` for export).
+
+### `policy/` — optional, `train` and `export`
+
+`conf/policy/<name>.yaml`: a whole policy definition (`# @package _global_`)
+selected with `policy=<name>`; `train.yaml` lists the group as `null`, so
+benchmark runs never read it. A policy file overrides the `robot`, `mode`
+and `level_space` options in its `defaults` and sets any other field in its
+body; command-line overrides win. `template.yaml` is the starting point
+([export.md](export.md#1-define-the-policy)).
+
 ## Primaries
 
 `???` = required. `name` / `entity` / `project` are the wandb run, entity
@@ -180,8 +205,41 @@ shape the genome and can vary between runs.
 | `eval_every` | `10` | iterations between in-training evals |
 | `eval_levels` | `512` | uniform levels per eval difficulty |
 | `min_travel` | `1.0` | m (Wojtek units) from spawn for a success |
-| `checkpoint_dir` | `null` | no checkpoint when null |
+| `checkpoint_dir` | `null` | no checkpoint when null; `train-export` requires it |
+| `export_dir` | `artifacts/export` | `train-export` writes `<export_dir>/<name>/` |
 | `tags` | `[]` | extra wandb tags (always: `brax-ued`, curriculum, robot) |
+| `ppo.*` | | brax PPO, see below |
+
+`ppo` (`PPOConfig`; mujoco_playground's locomotion recipe, also logged to
+wandb as `ppo.*`):
+
+| field | default | meaning |
+|---|---|---|
+| `unroll_length` | `20` | steps per PPO update; `level_steps` is a multiple |
+| `num_minibatches` | `32` | |
+| `num_updates_per_batch` | `4` | epochs over one unroll |
+| `discounting` | `0.97` | |
+| `gae_lambda` | `0.95` | |
+| `learning_rate` | `3e-4` | Adam |
+| `clipping_epsilon` | `0.2` | |
+| `max_grad_norm` | `1.0` | global-norm clip |
+
+A checkpoint (`<checkpoint_dir>/<name>.pkl`) is followed by
+`<name>.train.yaml`: means of the training metrics over the run's last 10
+iterations (the export README reads it).
+
+### `export.yaml` — `ExportConfig`
+
+`train.yaml` plus:
+
+| field | default | meaning |
+|---|---|---|
+| `checkpoint` | `???` | the `.pkl` of a run |
+| `config` | `null` | a composed config YAML (a run's `.hydra/config.yaml`, an export's `config.yaml`) whose values replace the composed ones; `mode=` is still required to compose |
+
+The training config comes from `policy=<name>`, from `config=`, or from
+overrides ([export.md](export.md#3-export-an-existing-checkpoint)).
+`hydra.run.dir` is `artifacts/hydra/export`.
 
 ### `profile.yaml` — `TrainConfig`
 

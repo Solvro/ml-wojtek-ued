@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -73,10 +74,17 @@ def max_abs_diff(a: Any, b: Any) -> float:
     return float(max(jax.tree.leaves(diffs)))
 
 
-def test_bc_coef_changes_the_student_update() -> None:
+def test_bc_coef_changes_the_student_update(
+    compose_cfg: Callable[..., Any],
+) -> None:
+    cfg = compose_cfg("train", "mode=dr", "name=t")
     env = FakeEnv()
-    student = Student(cast(Any, env), jax.random.key(0), 1e-3)
-    teacher = Student(cast(Any, env), jax.random.key(7), 1e-3)
+    student = Student(
+        cast(Any, env), jax.random.key(0), 1e-3, cfg.ppo, cfg.network
+    )
+    teacher = Student(
+        cast(Any, env), jax.random.key(7), 1e-3, cfg.ppo, cfg.network
+    )
     batch = make_batch(env)
     no_teacher = updated_policy(student, batch, None, 0.0)
     zero_coef = updated_policy(student, batch, teacher.as_teacher(), 0.0)

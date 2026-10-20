@@ -92,6 +92,11 @@ class FunctionalEnv:
             critic=int(probe.obs["privileged_state"].shape[-1]),
         )
 
+    @property
+    def base(self) -> Any:
+        """The robot env under the episode wrapper."""
+        return self._env.unwrapped
+
     def sample_dr(
         self, rng: jax.Array, envs_num: int
     ) -> tuple[mjx.Model, mjx.Model] | tuple[None, None]:

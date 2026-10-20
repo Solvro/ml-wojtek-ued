@@ -9,16 +9,15 @@ from robots.scale import ROBOT_SCALE, hfield_config, min_travel
 from training.adversary import Adversary
 from training.context import KeyStream, TrainContext
 from training.curricula import PAIRED
-from training.ppo import PPO
 from training.student import Student
 from training.unroll import make_unroll
 
 
 def check_config(cfg: TrainConfig) -> None:
-    if cfg.level_steps % PPO["unroll_length"]:
+    if cfg.level_steps % cfg.ppo.unroll_length:
         raise ValueError(
             f"level_steps={cfg.level_steps} must be a multiple of "
-            f"unroll_length={PPO['unroll_length']}"
+            f"ppo.unroll_length={cfg.ppo.unroll_length}"
         )
     mode = cfg.mode
     if mode.bc != BC.none and mode.curriculum not in PAIRED:
@@ -68,9 +67,13 @@ def build(cfg: TrainConfig) -> TrainContext:
     )
     next_key = KeyStream(cfg.seed)
     entropy = cfg.mode.student_entropy_coef
-    student = Student(env, next_key(), entropy)
+    student = Student(env, next_key(), entropy, cfg.ppo, cfg.network)
     paired = cfg.mode.curriculum in PAIRED
-    antagonist = Student(env, next_key(), entropy) if paired else None
+    antagonist = (
+        Student(env, next_key(), entropy, cfg.ppo, cfg.network)
+        if paired
+        else None
+    )
     adversary = None
     if cfg.mode.curriculum == Curriculum.paired:
         adversary = Adversary(cfg.mode, space.gen_shape, next_key())

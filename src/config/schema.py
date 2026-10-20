@@ -63,6 +63,13 @@ class LevelSpaceKind(StrEnum):
     param = "param"
 
 
+class Activation(StrEnum):
+    elu = "elu"
+    relu = "relu"
+    tanh = "tanh"
+    swish = "swish"
+
+
 @dataclass
 class RobotConfig:
     name: Robot = MISSING
@@ -96,6 +103,25 @@ class ModeConfig:
 
 
 @dataclass
+class PPOConfig:
+    unroll_length: int = MISSING
+    num_minibatches: int = MISSING
+    num_updates_per_batch: int = MISSING
+    discounting: float = MISSING
+    gae_lambda: float = MISSING
+    learning_rate: float = MISSING
+    clipping_epsilon: float = MISSING
+    max_grad_norm: float = MISSING
+
+
+@dataclass
+class NetworkConfig:
+    policy_hidden: list[int] = MISSING
+    value_hidden: list[int] = MISSING
+    activation: Activation = MISSING
+
+
+@dataclass
 class WandbConfig:
     name: str = MISSING
     entity: str = MISSING
@@ -108,6 +134,8 @@ class TrainConfig(WandbConfig):
     mode: ModeConfig = field(default_factory=ModeConfig)
     level_space: LevelSpaceConfig = field(default_factory=LevelSpaceConfig)
     arena: HFieldConfig = field(default_factory=HFieldConfig)
+    network: NetworkConfig = field(default_factory=NetworkConfig)
+    ppo: PPOConfig = field(default_factory=PPOConfig)
     backend: Backend = MISSING
     seed: int = MISSING
     num_timesteps: int = MISSING
@@ -118,6 +146,7 @@ class TrainConfig(WandbConfig):
     eval_levels: int = MISSING
     min_travel: float = MISSING
     checkpoint_dir: str | None = MISSING
+    export_dir: str = MISSING
     tags: list[str] = MISSING
 
 
@@ -126,6 +155,7 @@ class EvalConfig(WandbConfig):
     robot: RobotConfig = field(default_factory=RobotConfig)
     level_space: LevelSpaceConfig = field(default_factory=LevelSpaceConfig)
     arena: HFieldConfig = field(default_factory=HFieldConfig)
+    network: NetworkConfig = field(default_factory=NetworkConfig)
     backend: Backend = MISSING
     checkpoint: str = MISSING
     out_dir: str = MISSING
@@ -144,6 +174,7 @@ class EvalConfig(WandbConfig):
 class Sim2SimConfig(WandbConfig):
     robot: RobotConfig = field(default_factory=RobotConfig)
     arena: HFieldConfig = field(default_factory=HFieldConfig)
+    network: NetworkConfig = field(default_factory=NetworkConfig)
     checkpoint: str = MISSING
     out_dir: str = MISSING
     num_levels: int = MISSING
@@ -160,6 +191,7 @@ class RenderConfig:
     robot: RobotConfig = field(default_factory=RobotConfig)
     level_space: LevelSpaceConfig = field(default_factory=LevelSpaceConfig)
     arena: HFieldConfig = field(default_factory=HFieldConfig)
+    network: NetworkConfig = field(default_factory=NetworkConfig)
     backend: Backend = MISSING
     checkpoint: str = MISSING
     out_dir: str = MISSING
@@ -170,6 +202,12 @@ class RenderConfig:
     height: int = MISSING
     command: list[float] = MISSING
     seed: int = MISSING
+
+
+@dataclass
+class ExportConfig(TrainConfig):
+    checkpoint: str = MISSING
+    config: str | None = MISSING
 
 
 @dataclass
@@ -227,6 +265,7 @@ SCHEMAS: dict[str, type] = {
     "eval": EvalConfig,
     "sim2sim": Sim2SimConfig,
     "render": RenderConfig,
+    "export": ExportConfig,
     "arena": ArenaBuildConfig,
     "check_hfield": CheckHFieldConfig,
     "paper_tables": PaperTablesConfig,

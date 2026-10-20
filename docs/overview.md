@@ -60,6 +60,13 @@ flowchart LR
   level lengths, commands and `min_travel` (slopes do not scale).
 - Details: [ued-accel.md](ued-accel.md#robots).
 
+## Export
+
+`just train-export policy=<name>` / `just export checkpoint=<pkl>`: one YAML
+(`conf/policy/`) defines a run; the result is `artifacts/export/<name>/`
+(`policy.onnx`, `config.yaml`, a generated `README.md`).
+[export.md](export.md).
+
 ## Level space — `level_space=param` (default)
 
 - 8 parameters in `[0, 1]` + a never-mutated noise seed; ranges in Wojtek
@@ -131,7 +138,7 @@ src/
     arena.py         write the static tiled "accel" MJCF arena assets
     tiles.py         TileLayout: one level per tile of the shared arena
   training/          the trainer behind scripts/brax_ued.py
-    ppo.py           brax PPO hyperparameters, networks
+    ppo.py           brax PPO networks (hyperparameters: `ppo` / `network` config)
     student.py       Student: params, optimizer, jitted update / regret / BC KL
     unroll.py        jitted policy rollout on the shared arena
     context.py       TrainContext (everything build makes), KeyStream
@@ -145,6 +152,13 @@ src/
     evaluate.py      in-training eval on uniform levels
     metrics.py       level composition of the levels trained on
     train.py         the train loop: wandb, logging, checkpoint
+    summary.py       final training metrics beside the checkpoint
+  export/            checkpoint + config -> ONNX policy + deployment README
+    contract.py      obs layout, joints, gains, commands, built from the env
+    onnx_graph.py    the deterministic actor as an ONNX graph
+    verify.py        onnxruntime vs JAX at export
+    readme.py        the generated README
+    run.py           export_policy: the three output files
   evaluation/        behind eval_brax / eval_sim2sim / compare_domination
     rollout.py       EvalContext, chunked deterministic rollouts
     suite.py         held-out structured terrain suite
@@ -173,10 +187,13 @@ src/
     render_video.py      mp4 clips of a checkpoint   (`just render-video`)
     paper_tables.py / paper_figures.py               (`just paper-*`)
     compare_domination.py  domination comparison     (`just domination`)
+    train_export.py      train, then export          (`just train-export`)
+    export_policy.py     export a checkpoint         (`just export`)
     profile_brax_ued.py  throughput profile          (`just profile`)
     check_hfield_batch.py  shared-arena check
 conf/                Hydra YAML: one primary per entry point + groups
-                     robot/ mode/ level_space/ arena/  (see configuration.md)
+                     robot/ mode/ level_space/ arena/ network/ policy/
+                     (see configuration.md)
 slurm/               SLURM job arrays: train, final eval, sim2sim, assets
 ```
 
@@ -195,4 +212,5 @@ slurm/               SLURM job arrays: train, final eval, sim2sim, assets
 - The env, tasks, terrain, tiled arena → [environment.md](environment.md)
 - Curricula, levels, trainer, eval and paper scripts → [ued-accel.md](ued-accel.md)
 - `conf/` groups and every config field → [configuration.md](configuration.md)
+- Train a policy and export it to ONNX → [export.md](export.md)
 - Tooling, conventions, gotchas → [development.md](development.md)

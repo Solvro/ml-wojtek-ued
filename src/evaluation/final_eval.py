@@ -237,7 +237,7 @@ def evaluate(ctx: EvalContext[EvalConfig]) -> tuple[Metrics, Raw]:
 
 def build(cfg: EvalConfig) -> EvalContext[EvalConfig]:
     config, layout, env = make_eval_env(cfg, cfg.backend)
-    make_policy = ppo_networks.make_inference_fn(make_network(env))
+    make_policy = ppo_networks.make_inference_fn(make_network(env, cfg.network))
     return EvalContext(
         cfg=cfg,
         config=config,

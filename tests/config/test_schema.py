@@ -10,6 +10,7 @@ from config.hfield_config import HFieldConfig
 from config.schema import (
     BC,
     CONF_DIR,
+    Activation,
     Backend,
     Curriculum,
     LevelSpaceKind,
@@ -27,6 +28,7 @@ REQUIRED = {
     "eval": ("checkpoint=c.pkl", "name=t", "out_dir=o"),
     "sim2sim": ("checkpoint=c.pkl", "name=t", "out_dir=o"),
     "render": ("checkpoint=c.pkl", "levels=[0.75:3]"),
+    "export": ("checkpoint=c.pkl", "mode=dr", "name=t"),
     "arena": (),
     "check_hfield": (),
     "paper_tables": (),
@@ -34,11 +36,12 @@ REQUIRED = {
     "domination": ("eval_dir=e",),
 }
 GROUPS = {
-    "train": ("robot", "mode", "level_space", "arena"),
-    "profile": ("robot", "mode", "level_space", "arena"),
-    "eval": ("robot", "level_space", "arena"),
-    "sim2sim": ("robot", "arena"),
-    "render": ("robot", "level_space", "arena"),
+    "train": ("robot", "mode", "level_space", "arena", "network"),
+    "profile": ("robot", "mode", "level_space", "arena", "network"),
+    "eval": ("robot", "level_space", "arena", "network"),
+    "sim2sim": ("robot", "arena", "network"),
+    "render": ("robot", "level_space", "arena", "network"),
+    "export": ("robot", "mode", "level_space", "arena", "network"),
     "arena": ("arena",),
     "check_hfield": ("arena",),
     "paper_figures": ("arena",),
@@ -61,6 +64,7 @@ OPTIONS = {
     ),
     "level_space": ("grid", "param"),
     "arena": ("benchmark",),
+    "network": ("default",),
 }
 BENCHMARK = HFieldConfig(
     amplitude=0.3, coarse_n=13, pad_radius=0.55, pad_taper=0.2
@@ -339,3 +343,103 @@ def test_run_dir_records_the_config_beside_the_run() -> None:
         )
     assert cfg.hydra.run.dir == "artifacts/hydra/x"
     assert cfg.hydra.job.chdir is False
+
+
+# mujoco_playground's locomotion recipe, the constants training/ppo.py held
+OLD_PPO = {
+    "unroll_length": 20,
+    "num_minibatches": 32,
+    "num_updates_per_batch": 4,
+    "discounting": 0.97,
+    "gae_lambda": 0.95,
+    "learning_rate": 3e-4,
+    "clipping_epsilon": 0.2,
+    "max_grad_norm": 1.0,
+}
+
+
+def test_ppo_defaults_are_the_old_constants(compose_cfg: Compose) -> None:
+    cfg = compose_cfg("train", "mode=dr", "name=t")
+    assert as_dict(cfg.ppo) == OLD_PPO
+
+
+@pytest.mark.parametrize("name", ["train", "eval", "sim2sim", "render"])
+def test_network_defaults_are_the_old_constants(
+    compose_cfg: Compose, name: str
+) -> None:
+    net = compose_cfg(name, *REQUIRED[name]).network
+    assert net.policy_hidden == [512, 256, 128]
+    assert net.value_hidden == [512, 256, 128]
+    assert net.activation == Activation.elu
+
+
+def test_ppo_and_network_are_overridable(compose_cfg: Compose) -> None:
+    cfg = compose_cfg(
+        "train",
+        "mode=dr",
+        "name=t",
+        "ppo.learning_rate=1e-3",
+        "network.policy_hidden=[64,64]",
+        "network.activation=swish",
+    )
+    assert cfg.ppo.learning_rate == 1e-3
+    assert cfg.network.policy_hidden == [64, 64]
+    assert cfg.network.activation == Activation.swish
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [("ppo.learning=1e-3",), ("network.activation=gelu",)],
+)
+def test_ppo_and_network_typos_fail_at_startup(
+    compose_cfg: Compose, overrides: tuple[str]
+) -> None:
+    with pytest.raises(ConfigCompositionException):
+        compose_cfg("train", "mode=dr", "name=t", *overrides)
+
+
+# --- conf/policy/template.yaml ---------------------------------------------
+
+
+def test_template_composes_without_a_mode(compose_cfg: Compose) -> None:
+    cfg = compose_cfg("train", "policy=template")
+    assert cfg.name == "my_policy"
+    assert cfg.robot.name == Robot.wojtek
+    assert cfg.mode.curriculum == Curriculum.accel
+
+
+def test_template_matches_the_benchmark_accel_config(
+    compose_cfg: Compose,
+) -> None:
+    template = as_dict(compose_cfg("train", "policy=template"))
+    bench = as_dict(compose_cfg("train", "mode=accel", "name=my_policy"))
+    # the run bookkeeping the template sets for local policy runs
+    for key in ("project", "tags", "checkpoint_dir"):
+        template.pop(key)
+        bench.pop(key)
+    assert template == bench
+
+
+@pytest.mark.parametrize("robot", OPTIONS["robot"])
+@pytest.mark.parametrize(
+    "mode", [m for m in OPTIONS["mode"] if isinstance(m, str)]
+)
+def test_template_takes_any_robot_and_mode(
+    compose_cfg: Compose, robot: str, mode: str
+) -> None:
+    cfg = compose_cfg(
+        "train", "policy=template", f"robot={robot}", f"mode={mode}"
+    )
+    assert cfg.robot.name == Robot(robot)
+
+
+def test_cli_overrides_win_over_the_template(compose_cfg: Compose) -> None:
+    cfg = compose_cfg(
+        "train", "policy=template", "seed=7", "ppo.max_grad_norm=0.5"
+    )
+    assert (cfg.seed, cfg.ppo.max_grad_norm) == (7, 0.5)
+
+
+def test_unknown_policy_fails(compose_cfg: Compose) -> None:
+    with pytest.raises(MissingConfigException, match="nothing"):
+        compose_cfg("train", "policy=nothing")
