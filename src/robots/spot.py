@@ -24,10 +24,9 @@ class SpotTerrain(TerrainRobot, joystick.Joystick):
         self,
         hfield: HFieldConfig,
         backend: str = "jax",
-        num_envs: int = 8192,
         episode_length: int = 1000,
     ):
-        super().__init__(hfield, backend, num_envs, episode_length)
+        super().__init__(hfield, backend, episode_length)
         # Wojtek's range x 4.3 reaches vx 2.6 m/s, beyond what Playground's
         # Spot was tuned for (real Spot: ~1.6 m/s): cap at its command range
         c = self._config.command_config

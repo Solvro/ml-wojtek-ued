@@ -17,17 +17,12 @@ from mujoco_playground._src import mjx_env
 from config.hfield_config import HFieldConfig
 from hfield.tiles import TileLayout
 from wojtek_env.envs import height_scan
-from wojtek_env.envs.base import resolve_backend
 
 WOJTEK_HEIGHT = 0.10  # m, Wojtek's standing trunk height: scale 1
 FALL_HEIGHT_RATIO = 0.6  # Wojtek: fall.min_height 0.06 of 0.10
 MAX_TILT_GZ = -0.4  # Wojtek: fall.max_tilt_gz
 WOJTEK_COMMAND = {"vx": (0.2, 0.6), "vy": (-0.2, 0.2), "wz": (-0.4, 0.4)}
 SCAN_X, SCAN_Y, SCAN_N, SCAN_CLIP = (0.65, 1.45), (-0.3, 0.3), 5, 0.3
-
-# pyramidal friction rows per contact are 4 (condim 3) to 10 (condim 6)
-ROWS_PER_CONTACT = 6
-CONTACTS_PER_GEOM = 2
 
 
 def arena_scene(
@@ -67,18 +62,21 @@ def compile_scene(xml: str, assets: dict[str, bytes]) -> Any:
     )
 
 
-def contact_budget(model: Any) -> tuple[int, int]:
-    """(naconmax per env, njmax) from the geoms that collide with the hfield:
-    two contacts each, `ROWS_PER_CONTACT` constraint rows per contact, plus
-    one row per actuated joint limit. Go1 (4 feet) gets Playground's 8, 60."""
-    # mujoco is a C extension that ty cannot introspect
-    hfield_type = mujoco.mjtGeom.mjGEOM_HFIELD  # ty: ignore[unresolved-attribute]
-    (hf,) = [i for i in range(model.ngeom) if model.geom_type[i] == hfield_type]
-    contype, conaffinity = model.geom_contype, model.geom_conaffinity
-    hits = (contype & conaffinity[hf]) | (conaffinity & contype[hf])
-    colliding = int((hits != 0).sum()) - int(hits[hf] != 0)
-    contacts = CONTACTS_PER_GEOM * colliding
-    return contacts, model.nu + ROWS_PER_CONTACT * contacts
+def playground_backend(backend: str) -> str:
+    """jax: on warp, a foot's contact with the tiled arena's hfield blows up
+    more often the farther its tile is from the arena origin (16 x 16 tiles:
+    1.5-5 % of random-action steps for Go1, 0-0.5 % on a 2 x 2 arena), which
+    ends those episodes and teaches the robot to stand still."""
+    if backend == "warp":
+        raise ValueError(
+            "backend=warp is not supported for the Playground robots: their "
+            "foot contacts with the tiled arena diverge on warp far from the "
+            "arena origin (docs/ued-accel.md#robots). Use backend=jax or "
+            "backend=auto (jax for these robots)"
+        )
+    if backend not in ("auto", "jax"):
+        raise ValueError(f"backend must be jax, warp or auto, got {backend!r}")
+    return "jax"
 
 
 class TerrainRobot(abc.ABC):
@@ -117,19 +115,15 @@ class TerrainRobot(abc.ABC):
         self,
         hfield: HFieldConfig,
         backend: str = "jax",
-        num_envs: int = 8192,
         episode_length: int = 1000,
     ):
         config = self.default_config()
-        # every env shares the tiled arena's hfield_data, so warp is valid
-        self._backend = resolve_backend(backend)
+        self._backend = playground_backend(backend)
         config.impl = self._backend
         config.episode_length = episode_length
         self._build_env(config, hfield)
         self._hfield_config = hfield
         self._layout = TileLayout(hfield)
-        contacts, config.njmax = contact_budget(self.mj_model)
-        config.naconmax = contacts * num_envs
         # FunctionalEnv sets this to the env's tile centre around reset
         self.spawn_xy = jnp.zeros(2)
         self._scan_grid = jnp.array(

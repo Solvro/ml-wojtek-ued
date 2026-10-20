@@ -34,9 +34,7 @@ def make_env(
     train: bool,
 ) -> FunctionalEnv:
     if robot in TERRAIN_ROBOTS:
-        terrain_robot = TERRAIN_ROBOTS[robot](
-            config, backend=backend, num_envs=num_envs
-        )
+        terrain_robot = TERRAIN_ROBOTS[robot](config, backend=backend)
         return FunctionalEnv(domain_randomize=train, robot=terrain_robot)
     overrides = wojtek_overrides(config, backend, num_envs, train)
     return FunctionalEnv(

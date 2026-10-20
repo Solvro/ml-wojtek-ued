@@ -23,7 +23,7 @@ from hfield.tiles import TileLayout
 from robots.registry import TERRAIN_ROBOTS
 from robots.scale import hfield_config
 from robots.spot import SpotTerrain
-from robots.terrain import FALL_HEIGHT_RATIO, WOJTEK_HEIGHT, contact_budget
+from robots.terrain import FALL_HEIGHT_RATIO, WOJTEK_HEIGHT, playground_backend
 
 ARENA = HFieldConfig(
     patch_radius=1.5,
@@ -44,7 +44,7 @@ class Setup:
     def __init__(self, robot: str):
         self.config = hfield_config(robot, ARENA)  # ty: ignore[invalid-argument-type]
         self.layout = TileLayout(self.config)
-        self.base: Any = TERRAIN_ROBOTS[robot](self.config, "jax", num_envs=4)
+        self.base: Any = TERRAIN_ROBOTS[robot](self.config, "jax")
         self.env = FunctionalEnv(robot=self.base, domain_randomize=True)
 
     def flat(self) -> jax.Array:
@@ -229,11 +229,11 @@ def test_fall_rule_measures_height_above_the_terrain_under_the_trunk(
         assert bool(base._get_termination(posed(setup, on_floor)))
 
 
-def test_contact_budget_is_sized_from_the_model(setup: Setup) -> None:
-    contacts, njmax = contact_budget(setup.base.mj_model)
-    assert (contacts, njmax) == (8, 60)
-    assert setup.base._config.naconmax == contacts * 4
-    assert setup.base._config.njmax == njmax
+def test_playground_robots_run_on_jax() -> None:
+    assert playground_backend("auto") == "jax"
+    assert playground_backend("jax") == "jax"
+    with pytest.raises(ValueError, match="backend=jax"):
+        playground_backend("warp")
 
 
 def test_domain_randomization_only_where_playground_has_one(
