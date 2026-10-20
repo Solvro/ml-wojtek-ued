@@ -37,6 +37,7 @@ just paper-tables eval_dir=<evals> \
 - `compute.tex`: GPU-hours (`final/elapsed_h`), sim and student steps per
   robot x method, from `train_summaries` (training run name ->
   wandb summary); not written without it.
+- `results.csv`: one row per run, every value the tables use.
 - `dump_wandb=FILE`: fetches the training-run summaries for the prefixes
   from the wandb project `ENTITY/PROJECT` (`paper/runs.py`) and writes
   that JSON.
@@ -67,7 +68,6 @@ JAX_PLATFORMS=cpu just paper-figures terrains=true
   does, and `arena` (default `benchmark`) is the arena the levels render on.
 - Overleaf: upload the PDFs into a `figs/` folder; `\resultfig` falls back to a
   placeholder while a file is missing.
-- `results.csv`: one row per run, every value the tables use.
 
 ## Domination comparison
 

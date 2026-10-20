@@ -142,7 +142,8 @@ network and deterministic policy as eval_brax; no physics DR.
   levels x episodes) to `out_dir`; wandb tags `sim2sim`, robot.
 - `just sim2sim checkpoint=<pkl> name=<name> out_dir=<dir>`
   (`conf/sim2sim.yaml`; always `param` levels on the jax env).
-- SLURM: `slurm/eval_sim2sim.sbatch`, same task layout and variables as
+- SLURM: `slurm/eval_sim2sim.sbatch`, same task layout and variables
+  (`MODES`, `NSEEDS`, `SEED0`, `PREFIX`, `ROBOT`, `SRC`) as
   `eval_brax.sbatch`; CPU partition, 16 cores (the CPU nodes must run the
   OS the venv was built on).
 
