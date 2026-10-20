@@ -5,7 +5,7 @@ from config.schema import BC, Curriculum, Score, TrainConfig
 from env.factory import check_wojtek_arena, make_env, tile_reset
 from hfield.level_space import make_level_space
 from hfield.tiles import TileLayout
-from robots.scale import ROBOT_SCALE, hfield_config
+from robots.scale import ROBOT_SCALE, hfield_config, min_travel
 from training.adversary import Adversary
 from training.context import KeyStream, TrainContext
 from training.curricula import PAIRED
@@ -58,7 +58,14 @@ def build(cfg: TrainConfig) -> TrainContext:
     reach = env.travel.reach(cfg.level_steps, env.travel.sensing)
     layout.check_reach(reach, f"level_steps={cfg.level_steps}")
     eval_envs = 2 * min(cfg.eval_levels, layout.n_tiles)
-    eval_env = make_env(robot, backend, config, num_envs=eval_envs, train=False)
+    eval_env = make_env(
+        robot,
+        backend,
+        config,
+        num_envs=eval_envs,
+        train=False,
+        eval_travel=(min_travel(robot, cfg.min_travel), cfg.level_steps),
+    )
     next_key = KeyStream(cfg.seed)
     entropy = cfg.mode.student_entropy_coef
     student = Student(env, next_key(), entropy)

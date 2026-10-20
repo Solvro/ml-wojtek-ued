@@ -21,7 +21,8 @@ from wojtek_env.envs import height_scan
 WOJTEK_HEIGHT = 0.10  # m, Wojtek's standing trunk height: scale 1
 FALL_HEIGHT_RATIO = 0.6  # Wojtek: fall.min_height 0.06 of 0.10
 MAX_TILT_GZ = -0.4  # Wojtek: fall.max_tilt_gz
-WOJTEK_COMMAND = {"vx": (0.2, 0.6), "vy": (-0.2, 0.2), "wz": (-0.4, 0.4)}
+# eval commands are at least this much faster than the success threshold
+EVAL_SPEED_MARGIN = 1.2
 SCAN_X, SCAN_Y, SCAN_N, SCAN_CLIP = (0.65, 1.45), (-0.3, 0.3), 5, 0.3
 
 
@@ -93,6 +94,8 @@ class TerrainRobot(abc.ABC):
     # the Playground env this mixes into provides these
     mj_model: Any
     mjx_model: Any
+    dt: Any
+    _config: Any
     _feet_site_id: Any
     _init_q: jax.Array
 
@@ -116,7 +119,10 @@ class TerrainRobot(abc.ABC):
         hfield: HFieldConfig,
         backend: str = "jax",
         episode_length: int = 1000,
+        eval_travel: tuple[float, int] | None = None,
     ):
+        """`eval_travel`: (success threshold in m, steps per episode) of an
+        eval env; its vx commands start where the threshold is reachable."""
         config = self.default_config()
         self._backend = playground_backend(backend)
         config.impl = self._backend
@@ -134,14 +140,27 @@ class TerrainRobot(abc.ABC):
                 SCAN_N,
             )
         )
-        low = jnp.array([WOJTEK_COMMAND[k][0] for k in ("vx", "vy", "wz")])
-        high = jnp.array([WOJTEK_COMMAND[k][1] for k in ("vx", "vy", "wz")])
-        speed = jnp.array([self.SCALE, self.SCALE, 1.0])
-        self._cmd_low, self._cmd_high = low * speed, high * speed
+        low, high = self.native_command_range()
+        # the forward slice of Playground's (vx, vy, wz) box
+        low[0] = max(low[0], 0.0)
+        if eval_travel is not None:
+            meters, steps = eval_travel
+            low[0] = max(low[0], EVAL_SPEED_MARGIN * meters / (steps * self.dt))
+        if low[0] >= high[0]:
+            raise ValueError(
+                f"{type(self).__name__}: eval vx floor {low[0]:.2f} m/s is at "
+                f"or past the top of its command range {high[0]:.2f} m/s; "
+                "lower min_travel or raise level_steps"
+            )
+        self._cmd_low, self._cmd_high = jnp.array(low), jnp.array(high)
 
     @staticmethod
     @abc.abstractmethod
     def default_config() -> Any: ...
+
+    @abc.abstractmethod
+    def native_command_range(self) -> tuple[list[float], list[float]]:
+        """(low, high) of (vx, vy, wz) in Playground's config of the env."""
 
     def _write_scene(self, hfield: HFieldConfig) -> str:
         # Playground's env classes read the scene from a path; its includes

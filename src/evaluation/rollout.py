@@ -12,7 +12,7 @@ from config.schema import Backend, EvalConfig, Sim2SimConfig
 from env.factory import check_wojtek_arena, make_env
 from env.functional import FunctionalEnv
 from hfield.tiles import TileLayout
-from robots.scale import hfield_config
+from robots.scale import hfield_config, min_travel
 from training.unroll import Unroll
 
 # per (level, episode): fell, final travel
@@ -47,8 +47,14 @@ def make_eval_env(
     check_wojtek_arena(cfg.robot.name, config)
     layout = TileLayout(config)
     num_envs = levels_per_chunk(cfg, layout) * cfg.episodes
+    robot = cfg.robot.name
     env = make_env(
-        cfg.robot.name, backend, config, num_envs=num_envs, train=False
+        robot,
+        backend,
+        config,
+        num_envs=num_envs,
+        train=False,
+        eval_travel=(min_travel(robot, cfg.min_travel), cfg.level_steps),
     )
     # scored on the deterministic policy: its own obs and feet, not the critic
     reach = env.travel.reach(cfg.level_steps, env.travel.actor_sensing)
