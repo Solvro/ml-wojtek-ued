@@ -43,11 +43,11 @@ def levels_per_chunk(
 def make_eval_env(
     cfg: EvalConfig | Sim2SimConfig, backend: Backend
 ) -> tuple[HFieldConfig, TileLayout, FunctionalEnv]:
-    config = hfield_config(cfg.robot.name, cfg.arena)
+    config = hfield_config(cfg.robot, cfg.arena)
     check_wojtek_arena(cfg.robot.name, config)
     layout = TileLayout(config)
     num_envs = levels_per_chunk(cfg, layout) * cfg.episodes
-    robot = cfg.robot.name
+    robot = cfg.robot
     env = make_env(
         robot,
         backend,

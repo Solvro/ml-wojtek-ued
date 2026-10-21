@@ -12,7 +12,7 @@ def evaluate(ctx: TrainContext, rng: np.random.Generator) -> dict[str, float]:
     """The deterministic policy on fresh uniform levels per difficulty."""
     cfg, out = ctx.cfg, {}
     per_chunk = min(cfg.eval_levels, ctx.layout.n_tiles)
-    threshold = min_travel(cfg.robot.name, cfg.min_travel)
+    threshold = min_travel(cfg.robot, cfg.min_travel)
     for difficulty in EVAL_DIFFICULTIES:
         levels = ctx.space.scaled(rng, cfg.eval_levels, difficulty)
         rendered = jnp.asarray(ctx.space.render(levels))

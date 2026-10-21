@@ -74,6 +74,11 @@ class Activation(StrEnum):
 @dataclass
 class RobotConfig:
     name: Robot = MISSING
+    # Playground robots; null keeps the robot's own value
+    kp: float | None = MISSING
+    kd: float | None = MISSING
+    damping: float | None = MISSING
+    scale: float | None = MISSING
 
 
 @dataclass

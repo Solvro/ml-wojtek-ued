@@ -29,7 +29,7 @@ from export.readme import render_readme
 from export.verify import Targets, Verification, verify
 from hfield.level_space import make_level_space
 from hfield.tiles import TileLayout
-from robots.scale import ROBOT_SCALE, hfield_config
+from robots.scale import hfield_config, robot_scale
 from training.ppo import make_network
 from training.summary import read_summary
 from training.unroll import make_unroll
@@ -87,15 +87,15 @@ def make_export_env(
     cfg: TrainConfig,
 ) -> tuple[FunctionalEnv, TileLayout, Any]:
     # the inference graph has no physics: jax runs wherever warp is absent
-    robot = cfg.robot.name
+    robot = cfg.robot
     config = hfield_config(robot, cfg.arena)
-    check_wojtek_arena(robot, config)
+    check_wojtek_arena(robot.name, config)
     space = make_level_space(
         cfg.level_space.kind,
         config,
         n_edits=cfg.level_space.n_edits,
         edit_scale=cfg.level_space.edit_scale,
-        robot_scale=ROBOT_SCALE[robot],
+        robot_scale=robot_scale(robot),
     )
     num_envs = ENV_LEVELS * ENV_PER_LEVEL
     env = make_env(robot, Backend.jax, config, num_envs=num_envs, train=True)

@@ -17,10 +17,10 @@
 # built; tasks start together and must not rebuild.
 set -euo pipefail
 
-REPO="$HOME/workspace/ml-wojtek-ued"
+REPO="${REPO:-$HOME/workspace/ml-wojtek-ued}"
 PDW=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued
 WB_ENTITY=dominikgalus9-wroc-aw-university-of-science-and-technology
-WB_PROJECT=wojtek-benchmark-iclr
+WB_PROJECT="${WB_PROJECT:-wojtek-benchmark-iclr}"
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1
 export HYDRA_FULL_ERROR=1
@@ -45,6 +45,15 @@ SPACE="${SPACE:-param}"
 PREFIX="${PREFIX:-ued}"
 # ROBOT: a conf/robot/ option
 ROBOT="${ROBOT:-wojtek}"
+# ROBOT_ARGS: robot.* Hydra overrides, space-separated ("robot.kp=50
+# robot.scale=2.0"); the evals of a run need the same ones
+read -ra ROBOT_ARGS <<<"${ROBOT_ARGS:-}"
+for arg in "${ROBOT_ARGS[@]}"; do
+  [[ "$arg" == robot.* ]] || {
+    echo "ROBOT_ARGS entry '$arg' is not a robot.* override" >&2
+    exit 1
+  }
+done
 # BACKEND: auto (warp on the GPU) | jax | warp; TAGS: extra wandb tags
 read -ra TAG_LIST <<<"${TAGS:-}"
 TAG_LIST_CSV="$(
@@ -64,4 +73,4 @@ uv run --no-sync python "$SRC/scripts/brax_ued.py" "${OVERRIDES[@]}" \
   "name=$RUN" "seed=$SEED" "entity=$WB_ENTITY" "project=$WB_PROJECT" \
   "num_timesteps=${NUM_TIMESTEPS:-300000000}" \
   "checkpoint_dir=$PDW/artifacts/brax_ued" "robot=$ROBOT" \
-  "backend=${BACKEND:-auto}" "tags=[$TAG_LIST_CSV]"
+  "${ROBOT_ARGS[@]}" "backend=${BACKEND:-auto}" "tags=[$TAG_LIST_CSV]"

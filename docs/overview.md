@@ -140,7 +140,7 @@ src/
     terrain.py       TerrainRobot: arena scene, spawn, fall, scan, commands
     go1.py barkour.py spot.py go2.py   one file per Playground robot
     registry.py      TERRAIN_ROBOTS: robot name -> class
-    scale.py         ROBOT_SCALE, hfield_config, min_travel (robot size)
+    scale.py         robot_scale, pd_gains, hfield_config, min_travel (robot.* overrides)
   hfield/            heightfield levels  (see levels.md)
     manager.py       HFieldManager: generate / mutate / upsample a grid level
     level_space.py   level spaces (`param`, `grid`)

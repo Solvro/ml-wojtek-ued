@@ -14,10 +14,10 @@
 # SPACE, PREFIX, ROBOT, BACKEND, TAGS, SRC).
 set -euo pipefail
 
-REPO="$HOME/workspace/ml-wojtek-ued"
+REPO="${REPO:-$HOME/workspace/ml-wojtek-ued}"
 PDW=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued
 WB_ENTITY=dominikgalus9-wroc-aw-university-of-science-and-technology
-WB_PROJECT=wojtek-benchmark-iclr
+WB_PROJECT="${WB_PROJECT:-wojtek-benchmark-iclr}"
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1
 export HYDRA_FULL_ERROR=1
@@ -40,6 +40,15 @@ SEED=$((${SEED0:-0} + SLURM_ARRAY_TASK_ID % NSEEDS))
 PREFIX="${PREFIX:-ued}"
 # ROBOT: a conf/robot/ option
 ROBOT="${ROBOT:-wojtek}"
+# ROBOT_ARGS: robot.* Hydra overrides, space-separated ("robot.kp=50
+# robot.scale=2.0"); the evals of a run need the same ones
+read -ra ROBOT_ARGS <<<"${ROBOT_ARGS:-}"
+for arg in "${ROBOT_ARGS[@]}"; do
+  [[ "$arg" == robot.* ]] || {
+    echo "ROBOT_ARGS entry '$arg' is not a robot.* override" >&2
+    exit 1
+  }
+done
 # BACKEND: auto (warp on the GPU) | jax | warp; TAGS: extra wandb tags
 read -ra TAG_LIST <<<"${TAGS:-}"
 TAG_LIST_CSV="$(
@@ -52,5 +61,6 @@ echo "job ${SLURM_JOB_ID} task ${SLURM_ARRAY_TASK_ID}: eval $RUN"
 uv run --no-sync python "$SRC/scripts/eval_brax.py" \
   "checkpoint=$PDW/artifacts/brax_ued/$RUN.pkl" "name=${RUN}_final_eval" \
   "entity=$WB_ENTITY" "project=$WB_PROJECT" \
-  "out_dir=$PDW/runs/final_eval" "level_space=${SPACE:-param}" \
-  "robot=$ROBOT" "backend=${BACKEND:-auto}" "tags=[$TAG_LIST_CSV]"
+  "out_dir=$PDW/${EVAL_DIR:-runs/final_eval}" "level_space=${SPACE:-param}" \
+  "robot=$ROBOT" "${ROBOT_ARGS[@]}" "backend=${BACKEND:-auto}" \
+  "tags=[$TAG_LIST_CSV]"

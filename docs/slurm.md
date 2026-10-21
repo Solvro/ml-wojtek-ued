@@ -30,12 +30,16 @@ turned into Hydra overrides.
 | `MODES` | `dr accel` (train); required (evals) | `conf/mode` options; train also takes `<mode>-s<scale>` = `mode.generator_scale=<scale>` | all three |
 | `NSEEDS` / `SEED0` | `3` / `0` | seeds per mode / first seed | all three |
 | `ROBOT` | `wojtek` | `conf/robot` option | all three |
+| `ROBOT_ARGS` | — | `robot.*` overrides, space-separated (`"robot.kp=50 robot.scale=2.0"`); a run's evals need the same | all three |
 | `PREFIX` | `ued` | run-name prefix | all three |
 | `SPACE` | `param` | `conf/level_space` option | train, `eval_brax` |
 | `BACKEND` | `auto` | `auto` / `jax` / `warp` | train, `eval_brax` |
 | `NUM_TIMESTEPS` | `300000000` | env steps (`num_timesteps`) | train |
 | `TAGS` | — | extra wandb tags, space-separated | train, `eval_brax` |
 | `SRC` | `$REPO/src` | `src/` of a frozen copy with built `assets/` and `conf/` beside it | all four |
+| `REPO` | `$HOME/workspace/ml-wojtek-ued` | clone with the synced `.venv` | all three |
+| `WB_PROJECT` | `wojtek-benchmark-iclr` | wandb project | all three |
+| `EVAL_DIR` | `runs/final_eval` | eval output dir under `PDW` | `eval_brax` |
 
 ## Per-robot budgets
 
@@ -68,9 +72,9 @@ changes:
 | `#SBATCH --account` | compute grant |
 | `#SBATCH --partition`, `--gres` | GPU partition / GPU type (`build_assets`, `eval_sim2sim`: a CPU partition) |
 | `#SBATCH --output`, `--error` | log directory (SLURM does not create it) |
-| `REPO` | clone with the synced `.venv` |
+| `REPO` | clone with the synced `.venv` (default; job variable) |
 | `PDW` | work dir: checkpoints `artifacts/brax_ued/`, evals `runs/final_eval/`, `runs/sim2sim/` |
-| `WB_ENTITY`, `WB_PROJECT` | wandb entity / project (also `ENTITY`, `PROJECT` in `src/paper/runs.py`) |
+| `WB_ENTITY`, `WB_PROJECT` | wandb entity / project (`WB_PROJECT` default) (also `ENTITY`, `PROJECT` in `src/paper/runs.py`) |
 
 ## Environment the scripts export
 

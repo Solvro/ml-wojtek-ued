@@ -14,10 +14,10 @@
 # the GPU nodes the venv was built for.
 set -euo pipefail
 
-REPO="$HOME/workspace/ml-wojtek-ued"
+REPO="${REPO:-$HOME/workspace/ml-wojtek-ued}"
 PDW=/lustre/pd03/hpc-danbor2008-1756464546/jakgil6519/wojtek-ued
 WB_ENTITY=dominikgalus9-wroc-aw-university-of-science-and-technology
-WB_PROJECT=wojtek-benchmark-iclr
+WB_PROJECT="${WB_PROJECT:-wojtek-benchmark-iclr}"
 
 export PYTHONNOUSERSITE=1 PYTHONUNBUFFERED=1 JAX_PLATFORMS=cpu
 export HYDRA_FULL_ERROR=1
@@ -35,10 +35,19 @@ SEED=$((${SEED0:-0} + SLURM_ARRAY_TASK_ID % NSEEDS))
 PREFIX="${PREFIX:-ued}"
 # ROBOT: a conf/robot/ option
 ROBOT="${ROBOT:-wojtek}"
+# ROBOT_ARGS: robot.* Hydra overrides, space-separated ("robot.kp=50
+# robot.scale=2.0"); the evals of a run need the same ones
+read -ra ROBOT_ARGS <<<"${ROBOT_ARGS:-}"
+for arg in "${ROBOT_ARGS[@]}"; do
+  [[ "$arg" == robot.* ]] || {
+    echo "ROBOT_ARGS entry '$arg' is not a robot.* override" >&2
+    exit 1
+  }
+done
 RUN="${PREFIX}_${ROBOT}_${MODE}_seed${SEED}"
 echo "job ${SLURM_JOB_ID} task ${SLURM_ARRAY_TASK_ID}: sim2sim $RUN"
 
 uv run --no-sync python "$SRC/scripts/eval_sim2sim.py" \
   "checkpoint=$PDW/artifacts/brax_ued/$RUN.pkl" "name=${RUN}_sim2sim" \
   "entity=$WB_ENTITY" "project=$WB_PROJECT" \
-  "out_dir=$PDW/runs/sim2sim" "robot=$ROBOT"
+  "out_dir=$PDW/runs/sim2sim" "robot=$ROBOT" "${ROBOT_ARGS[@]}"

@@ -22,7 +22,7 @@ from evaluation.rollout import (
 from evaluation.stats import bootstrap_ci
 from evaluation.suite import SUITE_STRENGTHS, suite_levels
 from hfield.level_space import make_level_space
-from robots.scale import ROBOT_SCALE, min_travel
+from robots.scale import min_travel, robot_scale
 from training.ppo import make_network
 from training.unroll import Unroll, make_unroll
 
@@ -43,7 +43,7 @@ class Sim2SimContext(EvalContext[Sim2SimConfig]):
 
 def level_sets(cfg: Sim2SimConfig, config: HFieldConfig) -> dict[str, Any]:
     """Rendered hfields per set, the levels eval_brax builds for them."""
-    scale = ROBOT_SCALE[cfg.robot.name]
+    scale = robot_scale(cfg.robot)
     space = make_level_space(
         LevelSpaceKind.param,
         config,
@@ -152,7 +152,7 @@ def evaluate(
             raw[f"{tag}_fell"], raw[f"{tag}_travel"] = fell, travel
         elapsed[variant] = time.time() - start
         print(f"{variant}: {elapsed[variant]:.0f} s", flush=True)
-    threshold = min_travel(cfg.robot.name, cfg.min_travel)
+    threshold = min_travel(cfg.robot, cfg.min_travel)
     metrics = summarize(results, threshold)
     for variant, seconds in elapsed.items():
         metrics[f"{variant}/elapsed_s"] = seconds

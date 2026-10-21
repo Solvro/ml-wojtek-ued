@@ -61,10 +61,20 @@ python src/scripts/brax_ued.py --cfg job mode=dr name=x   # print the composed c
 | `spot` | `spot` — Spot |
 | `go2` | `go2` — Unitree Go2 (Go1's env on the Go2 model) |
 
-The robot's size relative to Wojtek is `ROBOT_SCALE` in
-`robots/scale.py` (each Playground robot's `SCALE`, `robots/*.py`: go1
-2.5, barkour 2.4, spot 4.3, go2 2.5); it scales
-the arena, level lengths, commands and `min_travel`.
+| field | default | meaning |
+|---|---|---|
+| `name` | the option | robot |
+| `kp` | `null` | actuator position gain; `null` = the robot's own |
+| `kd` | `null` | actuator velocity gain (kv); `null` = the robot's own |
+| `damping` | `null` | leg joint damping; `null` = the robot's own |
+| `scale` | `null` | size relative to Wojtek; `null` = the robot's `SCALE` |
+
+The four overrides apply to the Playground robots only (Wojtek refuses
+them); per-robot values and what reads them:
+[robots.md](robots.md#overrides-gains-and-scale). The robot's size
+(`robots.scale.robot_scale`: `robot.scale`, else `ROBOT_SCALE` = each
+Playground robot's `SCALE`, `robots/*.py`: go1 2.5, barkour 2.4, spot 4.3,
+go2 2.5) scales the arena, level lengths, commands and `min_travel`.
 
 ### `mode/` — `ModeConfig` (train only, required)
 

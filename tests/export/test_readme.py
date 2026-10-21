@@ -19,7 +19,7 @@ from export.verify import Verification
 from hfield.arena import write_accel_arena
 from hfield.tiles import TileLayout
 from robots.registry import TERRAIN_ROBOTS
-from robots.scale import hfield_config
+from robots.scale import default_robot, hfield_config
 from training.summary import TrainingSummary
 from wojtek_env import paths
 
@@ -62,7 +62,7 @@ def wojtek_env() -> Iterator[FunctionalEnv]:
 
 
 def playground_env(robot: str) -> FunctionalEnv:
-    config = hfield_config(robot, ARENA)  # ty: ignore[invalid-argument-type]
+    config = hfield_config(default_robot(Robot(robot)), ARENA)
     return FunctionalEnv(
         robot=TERRAIN_ROBOTS[robot](config, "jax"), domain_randomize=True
     )

@@ -5,7 +5,7 @@ from config.schema import BC, Curriculum, Score, TrainConfig
 from env.factory import check_wojtek_arena, make_env, tile_reset
 from hfield.level_space import make_level_space
 from hfield.tiles import TileLayout
-from robots.scale import ROBOT_SCALE, hfield_config, min_travel
+from robots.scale import hfield_config, min_travel, robot_scale
 from training.adversary import Adversary
 from training.context import KeyStream, TrainContext
 from training.curricula import PAIRED
@@ -36,16 +36,16 @@ def check_config(cfg: TrainConfig) -> None:
 
 
 def build(cfg: TrainConfig) -> TrainContext:
-    robot, backend = cfg.robot.name, cfg.backend
+    robot, backend = cfg.robot, cfg.backend
     config = hfield_config(robot, cfg.arena)
     space = make_level_space(
         cfg.level_space.kind,
         config,
         n_edits=cfg.level_space.n_edits,
         edit_scale=cfg.level_space.edit_scale,
-        robot_scale=ROBOT_SCALE[robot],
+        robot_scale=robot_scale(robot),
     )
-    check_wojtek_arena(robot, config)
+    check_wojtek_arena(robot.name, config)
     layout = TileLayout(config)
     if cfg.num_lanes > layout.n_tiles:
         raise ValueError(

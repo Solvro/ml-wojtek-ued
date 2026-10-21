@@ -18,7 +18,7 @@ from evaluation.rollout import (
 from evaluation.stats import bootstrap_ci, cross_fit_cvar, envelope
 from evaluation.suite import SUITE_STRENGTHS, suite_levels
 from hfield.level_space import PARAMS, LevelSpace, ParamSpace, make_level_space
-from robots.scale import ROBOT_SCALE, min_travel
+from robots.scale import min_travel, robot_scale
 from training.ppo import make_network
 from training.unroll import make_unroll
 
@@ -55,7 +55,7 @@ def ci_into(
 def summarize(prefix: str, passes: Passes, cfg: EvalConfig) -> Metrics:
     """Success, falls, travel, cross-fitted CVaR and bootstrap CIs."""
     (fell_a, travel_a), (fell_b, travel_b) = passes
-    threshold = min_travel(cfg.robot.name, cfg.min_travel)
+    threshold = min_travel(cfg.robot, cfg.min_travel)
     success_a = level_success(fell_a, travel_a, threshold)
     success_b = level_success(fell_b, travel_b, threshold)
     rng = np.random.default_rng(0)
@@ -190,7 +190,7 @@ def suite_sets(
         SUITE_STRENGTHS,
         cfg.suite_instances,
         rng,
-        ROBOT_SCALE[cfg.robot.name],
+        robot_scale(cfg.robot),
     )
     suite_success = []
     for name, hfields in cells:
@@ -216,7 +216,7 @@ def evaluate(ctx: EvalContext[EvalConfig]) -> tuple[Metrics, Raw]:
         ctx.config,
         n_edits=1,
         edit_scale=0.0,
-        robot_scale=ROBOT_SCALE[cfg.robot.name],
+        robot_scale=robot_scale(cfg.robot),
     )
     metrics, raw, key = random_sets(ctx, space, key)
     suite_metrics, suite_raw, key = suite_sets(ctx, rng, key)

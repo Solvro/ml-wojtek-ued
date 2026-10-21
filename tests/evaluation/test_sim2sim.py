@@ -24,7 +24,7 @@ def level_cfg(compose_cfg: Callable[..., Any], robot: str = "wojtek") -> Any:
 
 def test_level_sets_names_and_sizes(compose_cfg: Callable[..., Any]) -> None:
     cfg = level_cfg(compose_cfg)
-    config = hfield_config(cfg.robot.name, cfg.arena)
+    config = hfield_config(cfg.robot, cfg.arena)
     sets = s2s.level_sets(cfg, config)
     cells = [f"suite/{t}_{k}" for t in SUITE_TERRAINS for k in (1, 2)]
     assert list(sets) == ["flat", "param/uniform", *cells]
@@ -37,7 +37,7 @@ def test_uniform_levels_are_eval_brax_prefix(
     compose_cfg: Callable[..., Any],
 ) -> None:
     cfg = level_cfg(compose_cfg)
-    config = hfield_config(cfg.robot.name, cfg.arena)
+    config = hfield_config(cfg.robot, cfg.arena)
     space = make_level_space("param", config, n_edits=1, edit_scale=0.0)
     eval_brax = space.uniform(np.random.default_rng(cfg.seed + 1), 2048)
     np.testing.assert_array_equal(
@@ -51,7 +51,7 @@ def test_suite_cells_match_eval_brax(
     compose_cfg: Callable[..., Any], robot: str
 ) -> None:
     cfg = level_cfg(compose_cfg, robot)
-    config = hfield_config(cfg.robot.name, cfg.arena)
+    config = hfield_config(cfg.robot, cfg.arena)
     rng = np.random.default_rng(cfg.seed)
     scale = ROBOT_SCALE[robot]
     eval_brax = {

@@ -52,7 +52,8 @@ a robot file keeps its constants, scene and what differs):
   gravity z > -0.4 in the trunk frame.
 - The critic gets a clean 5x5 height scan (Wojtek's grid x `SCALE`) appended
   to `privileged_state`.
-- `SCALE` = standing trunk height / Wojtek's 0.10 m, rounded to 0.1. The
+- `SCALE` = standing trunk height / Wojtek's 0.10 m, rounded to 0.1;
+  `robot.scale` overrides it (below). The
   trunk height is measured: the settled `qpos[2]` over flat ground under zero
   action (the PD pose), which sags below the kinematic height.
   `tests/robots/test_terrain_robots.py` re-measures it per robot. `SCALE`
@@ -66,7 +67,34 @@ a robot file keeps its constants, scene and what differs):
   (`FULL_COLLISION`); Barkour has no full-collision model and Go2's is not
   wired, so those two refuse it with an error.
 
-Per robot:
+## Overrides: gains and scale
+
+`conf/robot/<name>.yaml` carries four fields, `null` by default = the
+robot's own value; a number replaces it (`robot.kp=50 robot.scale=2.0`):
+
+| field | sets | Go1 | Go2 | Barkour | Spot |
+|---|---|---|---|---|---|
+| `kp` | actuator position gain (`gainprm[0]`, `biasprm[1] = -kp`) | 35 | 50 | 35 | 300 |
+| `kd` | actuator velocity gain kv (`biasprm[2] = -kd`) | 0 | 0.5 | 0.5 | 20 |
+| `damping` | passive damping of the 12 leg joints (`dof_damping[6:]`; Playground's `Kd` for Go1 / Spot) | 0.5 | 2 | 0.5239 | 1 |
+| `scale` | size relative to Wojtek (`SCALE`) | 2.5 | 2.5 | 2.4 | 4.3 |
+
+- Gains: `PDGains` (`robots/terrain.py`) edits the compiled `MjModel`
+  after the robot's own setup and rebuilds the MJX model; all-null leaves
+  the model untouched. Exported `kd` (`export/contract.py`) = `kd` +
+  `damping`.
+- Scale: `robots.scale.robot_scale(cfg.robot)` is the one value read by
+  `hfield_config` (arena lengths, `reach`), `min_travel`, the param level
+  space (`robot_scale`), the eval suite, the critic's height scan and the
+  travel bounds; `make_env` passes it to the robot. Pass the same
+  overrides to train, eval, sim2sim, render and export of a run
+  (`ROBOT_ARGS` in `slurm/`). Fall rule and spawn height do not scale
+  (they are the robot's physical size).
+- Wojtek refuses every non-null field.
+- Native values the defaults differ from: Barkour's menagerie model is
+  kp 50, kv 0.5, damping 0.024 (Playground sets kp 35, damping 0.5239).
+
+## Per robot
 
 - **Go1**: Playground `Go1JoystickRoughTerrain`, spawning 0.35 m above the
   tile.

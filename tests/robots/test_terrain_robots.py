@@ -17,13 +17,14 @@ import pytest
 from mujoco import mjx
 
 from config.hfield_config import HFieldConfig
+from config.schema import Robot
 from env.functional import FunctionalEnv
 from evaluation.physics_variants import full_collision
 from hfield.tiles import TileLayout
 from robots.barkour import BarkourTerrain
 from robots.go1 import Go1Terrain
 from robots.registry import TERRAIN_ROBOTS
-from robots.scale import hfield_config
+from robots.scale import default_robot, hfield_config
 from robots.terrain import FALL_HEIGHT_RATIO, WOJTEK_HEIGHT, playground_backend
 
 ARENA = HFieldConfig(
@@ -43,7 +44,7 @@ ROBOTS = list(TERRAIN_ROBOTS)
 
 class Setup:
     def __init__(self, robot: str):
-        self.config = hfield_config(robot, ARENA)  # ty: ignore[invalid-argument-type]
+        self.config = hfield_config(default_robot(Robot(robot)), ARENA)
         self.layout = TileLayout(self.config)
         self.base: Any = TERRAIN_ROBOTS[robot](self.config, "jax")
         self.env = FunctionalEnv(robot=self.base, domain_randomize=True)

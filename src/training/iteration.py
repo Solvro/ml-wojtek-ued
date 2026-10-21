@@ -107,7 +107,7 @@ def summarize_lanes(
     lanes = cfg.num_lanes
     lane_regret = np.asarray(totals.regret.reshape(lanes, -1).mean(axis=1))
     lane_returns = np.asarray(totals.episode_return.reshape(lanes, -1))
-    threshold = min_travel(cfg.robot.name, cfg.min_travel)
+    threshold = min_travel(cfg.robot, cfg.min_travel)
     success = np.asarray(
         (totals.fell_any == 0) & (travel >= threshold), dtype=float
     )

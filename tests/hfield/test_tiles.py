@@ -15,7 +15,7 @@ Compose = Callable[..., Any]
 
 def benchmark_layout(compose_cfg: Compose, robot: str) -> TileLayout:
     cfg = compose_cfg("train", "mode=dr", "name=t", f"robot={robot}")
-    return TileLayout(hfield_config(cfg.robot.name, cfg.arena))
+    return TileLayout(hfield_config(cfg.robot, cfg.arena))
 
 
 def node(layout: TileLayout, xy: np.ndarray) -> tuple[int, int]:
