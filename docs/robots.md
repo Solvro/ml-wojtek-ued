@@ -113,12 +113,12 @@ must be > 0, `kd` and `damping` >= 0:
   the model untouched. Exported `kd` (`export/contract.py`) = `kd` +
   `damping`.
 - Scale: `robots.scale.robot_scale(cfg.robot)` is the one value read by
-  `hfield_config` (arena lengths, `reach`), `min_travel` (Spot: no), the param level
+  `hfield_config` (arena lengths, `reach`), `min_travel`, the param level
   space (`robot_scale`), the eval suite, the critic's height scan and the
   travel bounds; `make_env` passes it to the robot. Pass the same
   overrides to train, eval, sim2sim, render and export of a run
-  (`ROBOT_ARGS` in `slurm/`). Fall rule and spawn height do not scale
-  (they are the robot's physical size).
+  (`ROBOT_ARGS` in `slurm/`). Fall rule, spawn height and the level length
+  (`EPISODE_SCALE`) do not scale (they are the robot's own).
 - Wojtek refuses every non-null field.
 - Defaults: Go1 and Spot keep Playground's gains, Barkour its menagerie
   model's (Playground's env would set kp 35, damping 0.5239), Go2 its own
