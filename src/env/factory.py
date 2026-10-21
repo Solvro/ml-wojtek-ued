@@ -4,7 +4,7 @@ from typing import Any
 import jax
 
 from config.hfield_config import HFieldConfig
-from config.schema import Backend, Robot
+from config.schema import Backend, Robot, RobotConfig
 from env.functional import FunctionalEnv
 from env.overrides import (
     accel_arena_overrides,
@@ -15,6 +15,7 @@ from env.overrides import (
 )
 from hfield.arena import check_arena
 from robots.registry import TERRAIN_ROBOTS
+from robots.scale import pd_gains, robot_scale
 from wojtek_env import paths
 
 
@@ -26,7 +27,7 @@ def check_wojtek_arena(robot: Robot, config: HFieldConfig) -> None:
 
 
 def make_env(
-    robot: Robot,
+    robot: RobotConfig,
     backend: Backend,
     config: HFieldConfig,
     *,
@@ -34,12 +35,18 @@ def make_env(
     train: bool,
     eval_travel: tuple[float, int] | None = None,
 ) -> FunctionalEnv:
-    """`eval_travel`: (success threshold in m, `level_steps`) of an eval
-    env; a Playground robot draws only vx commands that can reach it
-    (Wojtek's commands already do)."""
-    if robot in TERRAIN_ROBOTS:
-        terrain_robot = TERRAIN_ROBOTS[robot](
-            config, backend=backend, eval_travel=eval_travel
+    """`config`: the arena at `robot`'s scale (`robots.scale.hfield_config`).
+    `eval_travel`: (success threshold in m, `level_steps`) of an eval env; a
+    Playground robot draws only vx commands that can reach it (Wojtek's
+    commands already do)."""
+    gains, scale = pd_gains(robot), robot_scale(robot)
+    if robot.name in TERRAIN_ROBOTS:
+        terrain_robot = TERRAIN_ROBOTS[robot.name](
+            config,
+            backend=backend,
+            eval_travel=eval_travel,
+            scale=scale,
+            gains=gains,
         )
         return FunctionalEnv(domain_randomize=train, robot=terrain_robot)
     overrides = wojtek_overrides(config, backend, num_envs, train)

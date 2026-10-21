@@ -22,7 +22,7 @@ Compose = Callable[..., Any]
 @pytest.fixture
 def benchmark(compose_cfg: Compose) -> tuple[TravelBounds, TileLayout]:
     cfg = compose_cfg("train", "mode=accel", "name=t")
-    arena = hfield_config(cfg.robot.name, cfg.arena)
+    arena = hfield_config(cfg.robot, cfg.arena)
     config = registry.TASKS["joystick"][1]()
     overrides = wojtek_overrides(arena, cfg.backend, 1, train=True)
     registry._apply_overrides(config, overrides)

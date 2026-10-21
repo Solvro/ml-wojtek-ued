@@ -52,7 +52,8 @@ when the code changes.** Page map: [docs/index.md](docs/index.md).
   via `PYTHONPATH=src` (exported by the `justfile`).
 - **Hydra only, no argparse** — every research entry point is `@hydra.main`
   over `conf/<name>.yaml`. A new option = a schema field (`= MISSING`) plus a
-  YAML value, never a default in code.
+  YAML value, never a default in code. Exception: `RobotConfig`'s
+  `kp` / `kd` / `damping` / `scale` default to `None` (= the robot's own).
 - **Tiled arena** — every level of an iteration sits on its own tile of one
   shared `hfield_data`; never vmap `hfield_data` (warp collides every env with
   the first one's). Warp needs `XLA_PYTHON_CLIENT_PREALLOCATE=false`. The

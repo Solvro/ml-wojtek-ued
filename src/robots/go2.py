@@ -9,11 +9,14 @@ from mujoco_playground._src import mjx_env
 
 from config.hfield_config import HFieldConfig
 from robots.go1 import Go1Terrain
-from robots.terrain import arena_scene, compile_scene
+from robots.terrain import PDGains, arena_scene, compile_scene
 
 FEET = ("FL", "FR", "RL", "RR")
 HOME_POSE = "0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8"
 FEET_ONLY = "go2_feetonly.xml"
+# menagerie's kp 50 x2, kv and damping x sqrt(2) (same damping ratio):
+# menagerie's own gains sag the trunk and track swing targets loosely
+GAINS = PDGains(kp=100.0, kd=0.707, damping=2.828)
 SENSORS = "\n".join(
     [
         "<sensor>",
@@ -65,9 +68,9 @@ def feet_only_model(xml: str) -> str:
 
 
 class Go2Terrain(Go1Terrain):
-    # standing trunk height 0.254 m (measured) over Wojtek's design 0.10 m
-    SCALE = 2.5
-    STANDING_HEIGHT = 0.254
+    # standing trunk height 0.270 m (measured) over Wojtek's design 0.10 m
+    SCALE = 2.7
+    STANDING_HEIGHT = 0.270
     FULL_COLLISION = None
 
     @classmethod
@@ -95,8 +98,9 @@ class Go2Terrain(Go1Terrain):
         self._xml_path = self._write_scene(hfield)
         self._model_assets = self.assets()
         model = compile_scene(self.scene_xml(hfield), self._model_assets)
-        # Go1Env's setup minus its PD gains: Go1's kp 35 sags the heavier Go2
-        # well below its keyframe, so Go2 keeps menagerie's kp 50, kv 0.5
+        # Go1Env's setup with Go2's own gains: Go1's kp 35 sags the heavier
+        # Go2 well below its keyframe
+        GAINS.apply(model)
         model.opt.timestep = config.sim_dt
         model.opt.ccd_iterations = 20
         model.vis.global_.offwidth = 3840

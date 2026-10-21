@@ -88,7 +88,8 @@ just export checkpoint=<run>.pkl policy=my_robot
 | overrides | `mode=accel robot=go1 seed=0 name=<run>`: benchmark runs are the `conf/train.yaml` defaults plus their overrides (`.hydra/overrides.yaml` beside the run lists them) |
 
 - Benchmark checkpoint from the cluster: copy `artifacts/brax_ued/<run>.pkl`
-  (and `<run>.train.yaml` if present, for the README's training metrics) and
+  (and `<run>.train.yaml` if present, for the README's training metrics;
+  `<run>.robot.yaml` for a later eval's robot check) and
   `artifacts/hydra/<run>/` to the laptop, then
   `just export checkpoint=<run>.pkl config=artifacts/hydra/<run>/.hydra/config.yaml`.
 - The export builds its env on jax whatever `backend` the run trained on:

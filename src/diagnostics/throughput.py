@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from config.schema import TrainConfig
+from robots.scale import level_steps
 from training.build import build
 from training.context import TrainContext
 from training.evaluate import evaluate
@@ -116,11 +117,12 @@ def profile(cfg: TrainConfig) -> None:
     for dr in (False, True):
         rec[f"env_steps_per_s_dr{int(dr)}"] = env_steps_per_s(ctx, hfield, dr)
     rec.update(iteration_parts(ctx, levels))
-    unrolls = cfg.level_steps // cfg.ppo.unroll_length
+    steps_per_level = level_steps(cfg.robot, cfg.level_steps)
+    unrolls = steps_per_level // cfg.ppo.unroll_length
     per_unroll = rec["unroll_s"] + rec["update_s"] + rec["regret_s"]
     once = rec["render_assemble_s"] + rec["sample_dr_s"] + rec["reset_s"]
     rec["iteration_est_s"] = once + unrolls * per_unroll
-    steps = rec["num_envs"] * cfg.level_steps
+    steps = rec["num_envs"] * steps_per_level
     rec["loop_steps_per_s"] = steps / rec["iteration_est_s"]
     run_levels(ctx, levels, train=True)
     start = time.perf_counter()

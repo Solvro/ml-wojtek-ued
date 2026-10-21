@@ -7,6 +7,8 @@ import wandb
 from brax.io import model as brax_model
 
 from config.schema import TrainConfig, as_dict
+from robots.record import robot_record, write_record
+from robots.scale import level_steps
 from training.buffer import LevelBuffer
 from training.build import build, check_config
 from training.context import TrainContext
@@ -20,7 +22,8 @@ EVAL_SEED = 1234
 
 class StepCounter:
     def __init__(self, cfg: TrainConfig) -> None:
-        self.per_iteration = cfg.num_lanes * cfg.envs_per_lane * cfg.level_steps
+        steps = level_steps(cfg.robot, cfg.level_steps)
+        self.per_iteration = cfg.num_lanes * cfg.envs_per_lane * steps
         # the PAIRED antagonist simulates (and trains on) the same levels
         self.sims_per_iteration = 2 if cfg.mode.curriculum in PAIRED else 1
         self.env_steps = 0
@@ -60,6 +63,7 @@ def save_checkpoint(ctx: TrainContext, summary: TrainingSummary | None) -> None:
     path = Path(cfg.checkpoint_dir) / f"{cfg.name}.pkl"
     path.parent.mkdir(parents=True, exist_ok=True)
     brax_model.save_params(str(path), ctx.student.inference_params())
+    write_record(path, robot_record(cfg, ctx.env.base))
     if summary is not None:
         write_summary(path, summary)
 

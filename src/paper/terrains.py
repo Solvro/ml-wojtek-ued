@@ -13,7 +13,7 @@ from env.factory import make_env
 from hfield.level_space import PARAMS, ParamSpace
 from paper.labels import ROBOT_LABEL
 from rendering.scene import level_on_single_tile, render_model
-from robots.scale import ROBOT_SCALE, hfield_config
+from robots.scale import ROBOT_SCALE, default_robot, hfield_config
 
 # mujoco is a C extension that ty cannot introspect
 mj: Any = mujoco
@@ -37,8 +37,9 @@ FEATURES = (
 def _model(
     robot: Robot, arena: HFieldConfig
 ) -> tuple[Any, ParamSpace, HFieldConfig]:
-    config = hfield_config(robot, arena)
-    env = make_env(robot, Backend.jax, config, num_envs=1, train=False)
+    robot_cfg = default_robot(robot)
+    config = hfield_config(robot_cfg, arena)
+    env = make_env(robot_cfg, Backend.jax, config, num_envs=1, train=False)
     space = ParamSpace(config, robot_scale=ROBOT_SCALE[robot])
     base: Any = env._env.env
     return render_model(base, config), space, config

@@ -61,10 +61,33 @@ python src/scripts/brax_ued.py --cfg job mode=dr name=x   # print the composed c
 | `spot` | `spot` — Spot |
 | `go2` | `go2` — Unitree Go2 (Go1's env on the Go2 model) |
 
-The robot's size relative to Wojtek is `ROBOT_SCALE` in
-`robots/scale.py` (each Playground robot's `SCALE`, `robots/*.py`: go1
-2.5, barkour 2.4, spot 4.3, go2 2.5); it scales
-the arena, level lengths, commands and `min_travel`.
+| field | default | meaning |
+|---|---|---|
+| `name` | the option | robot |
+| `kp` | `null` | actuator position gain, > 0; `null` = the robot's own |
+| `kd` | `null` | actuator velocity gain (kv), >= 0; `null` = the robot's own |
+| `damping` | `null` | leg joint damping, >= 0; `null` = the robot's own |
+| `scale` | `null` | size relative to Wojtek; `null` = the robot's `SCALE` |
+
+The four overrides default to `null` in the schema (the one exception to
+`MISSING`), so `conf/robot/<option>.yaml` sets only `name`. They apply to the
+Playground robots only (Wojtek refuses them); per-robot values and what
+reads them: [robots.md](robots.md#overrides-gains-and-scale).
+
+| robot | `kp` | `kd` | `damping` | `SCALE` | success threshold (m) | steps per level |
+|---|---|---|---|---|---|---|
+| wojtek | — | — | — | 1.0 | 1.0 | 300 |
+| go1 | 35 | 0 | 0.5 | 2.5 | 2.5 | 300 |
+| go2 | 100 | 0.707 | 2.828 | 2.7 | 2.7 | 300 |
+| barkour | 50 | 0.5 | 0.024 | 2.5 | 2.5 | 300 |
+| spot | 300 | 20 | 1 | 4.3 | 4.3 | 780 |
+
+The robot's size (`robots.scale.robot_scale`: `robot.scale`, else
+`ROBOT_SCALE` = each Playground robot's `SCALE`, `robots/*.py`) scales the
+arena, level lengths and commands; the success threshold is
+`robots.scale.min_travel` (`min_travel` x the size) and the steps per level
+`robots.scale.level_steps` (`level_steps` x the robot's `EPISODE_SCALE`:
+1, Spot 2.6), both at the defaults `min_travel=1.0`, `level_steps=300`.
 
 ### `mode/` — `ModeConfig` (train only, required)
 
@@ -201,7 +224,7 @@ body; command-line overrides win. `template.yaml` is the starting point
 | `num_timesteps` | `300000000` | env steps (protagonist only for PAIRED) |
 | `num_lanes` | `256` | levels per iteration, ≤ `arena.tiles²` |
 | `envs_per_lane` | `32` | envs per level |
-| `level_steps` | `300` | steps per iteration, multiple of the 20-step unroll |
+| `level_steps` | `300` | Wojtek's steps per iteration (Spot runs 2.6x: `robots.scale.level_steps`); the robot's count is a multiple of the 20-step unroll |
 | `eval_every` | `10` | iterations between in-training evals |
 | `eval_levels` | `512` | uniform levels per eval difficulty |
 | `min_travel` | `1.0` | m (Wojtek units) from spawn for a success |
@@ -226,7 +249,9 @@ wandb as `ppo.*`):
 
 A checkpoint (`<checkpoint_dir>/<name>.pkl`) is followed by
 `<name>.train.yaml`: means of the training metrics over the run's last 10
-iterations (the export README reads it).
+iterations (the export README reads it), and `<name>.robot.yaml`: the robot
+it trained as (compiled gains, scale, success threshold), which eval and
+sim2sim check ([robots.md](robots.md#overrides-gains-and-scale)).
 
 ### `export.yaml` — `ExportConfig`
 
@@ -261,7 +286,7 @@ record's `backend` is the config value.
 | `episodes` | `4` | per level per pass |
 | `suite_instances` | `64` | levels per suite cell, flat set, axis step |
 | `chunk_envs` | `4096` | envs per batch |
-| `level_steps` | `300` | |
+| `level_steps` | `300` | Wojtek's steps; the robot's: `robots.scale.level_steps` |
 | `min_travel` | `1.0` | m, Wojtek units |
 | `alphas` | `[0.1, 0.25]` | CVaR levels |
 | `seed` | `1234` | |

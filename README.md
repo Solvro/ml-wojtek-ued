@@ -64,10 +64,10 @@ comparison, tables and figures.
 | `wojtek` | 300M | `warp` |
 | `go1`, `barkour`, `spot`, `go2` | 1B | `jax` (the Playground robots do not run on warp) |
 
-Shared by all runs: 256 levels x 32 envs per iteration, 300-step levels,
+Shared by all runs: 256 levels x 32 envs per iteration, 300-step levels (Spot 780),
 `level_space=param`, `arena=benchmark`. Final eval (`conf/eval.yaml`): 2048
 levels per random set, 4 episodes x 2 passes, 64 levels per suite cell, 300
-steps, success = no fall and >= 1 m x robot scale, CVaR 10 / 25 %, seed
+steps (Spot 780), success = no fall and >= 1 m x robot scale, CVaR 10 / 25 %, seed
 1234, on the training backend. Run names: `ued_<robot>_<mode>_seed<N>`,
 evals `ued_<robot>_<mode>_seed<N>_final_eval`.
 

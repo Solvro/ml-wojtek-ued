@@ -50,9 +50,9 @@ def terrain_robot_bounds(robot: Any) -> TravelBounds:
         float(max(abs(low[0]), abs(high[0]))),
         float(max(abs(low[1]), abs(high[1]))),
     )
-    feet = robot.SCALE * SPAWN_EDGE_MARGIN
+    feet = robot.scale * SPAWN_EDGE_MARGIN
     # the scan is critic-only
-    sensing = max(feet, robot.SCALE * scan_reach(SCAN_X, SCAN_Y))
+    sensing = max(feet, robot.scale * scan_reach(SCAN_X, SCAN_Y))
     return TravelBounds(0.0, speed, sensing, feet, robot.dt)
 
 

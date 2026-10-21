@@ -20,7 +20,7 @@ from rendering.scene import (
     render_model,
     tracking_camera,
 )
-from robots.scale import ROBOT_SCALE, hfield_config
+from robots.scale import hfield_config, robot_scale
 from training.ppo import make_network
 
 Rollout = Callable[
@@ -147,12 +147,12 @@ class LevelRecorder:
 
     def __init__(self, cfg: RenderConfig, params: Any) -> None:
         self.cfg = cfg
-        self.config = hfield_config(cfg.robot.name, cfg.arena)
+        self.config = hfield_config(cfg.robot, cfg.arena)
         check_wojtek_arena(cfg.robot.name, self.config)
         env = make_env(
-            cfg.robot.name, cfg.backend, self.config, num_envs=1, train=False
+            cfg.robot, cfg.backend, self.config, num_envs=1, train=False
         )
-        self.scale = ROBOT_SCALE[cfg.robot.name]
+        self.scale = robot_scale(cfg.robot)
         self.base: Any = env._env.unwrapped
         n_steps = control_steps(cfg, self.base.dt, env._env.episode_length)
         self.space: LevelSpace = make_level_space(

@@ -10,7 +10,7 @@ from config.schema import DominationConfig, Robot
 from evaluation.stats import bootstrap_ci
 from paper.labels import method_order
 from paper.runs import run_prefixes
-from robots.scale import min_travel
+from robots.scale import default_robot, min_travel
 
 # seed means of k/n fractions can differ by float rounding alone
 TIE_TOL = 1e-9
@@ -236,7 +236,7 @@ def robot_report(
         for m, seeds in found.items()
     }
     check_same_levels([d for seeds in dumps.values() for d in seeds.values()])
-    threshold = min_travel(Robot(robot), cfg.min_travel)
+    threshold = min_travel(default_robot(Robot(robot)), cfg.min_travel)
     rates = {
         m: method_rates(dumps[m], threshold) for m in all_methods if m in dumps
     }

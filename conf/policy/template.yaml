@@ -35,6 +35,11 @@ export_dir: artifacts/export
 # --- robot -----------------------------------------------------------------
 robot:
   name: wojtek # wojtek | go1 | barkour | spot | go2
+  # Playground robots only; null = the robot's own value (docs/robots.md)
+  kp: null # actuator position gain
+  kd: null # actuator velocity gain (kv)
+  damping: null # leg joint damping
+  scale: null # size relative to Wojtek: arena lengths and min_travel
 
 # --- training levels -------------------------------------------------------
 # levels per iteration (<= arena.tiles^2) and envs per level

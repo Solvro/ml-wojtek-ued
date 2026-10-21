@@ -1,5 +1,6 @@
 import dataclasses
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Generic, TypeVar
 
 import jax
@@ -12,7 +13,8 @@ from config.schema import Backend, EvalConfig, Sim2SimConfig
 from env.factory import check_wojtek_arena, make_env
 from env.functional import FunctionalEnv
 from hfield.tiles import TileLayout
-from robots.scale import hfield_config, min_travel
+from robots.record import check_record, robot_record
+from robots.scale import hfield_config, level_steps, min_travel
 from training.unroll import Unroll
 
 # per (level, episode): fell, final travel
@@ -43,22 +45,24 @@ def levels_per_chunk(
 def make_eval_env(
     cfg: EvalConfig | Sim2SimConfig, backend: Backend
 ) -> tuple[HFieldConfig, TileLayout, FunctionalEnv]:
-    config = hfield_config(cfg.robot.name, cfg.arena)
+    config = hfield_config(cfg.robot, cfg.arena)
     check_wojtek_arena(cfg.robot.name, config)
     layout = TileLayout(config)
     num_envs = levels_per_chunk(cfg, layout) * cfg.episodes
-    robot = cfg.robot.name
+    robot = cfg.robot
+    steps = level_steps(robot, cfg.level_steps)
     env = make_env(
         robot,
         backend,
         config,
         num_envs=num_envs,
         train=False,
-        eval_travel=(min_travel(robot, cfg.min_travel), cfg.level_steps),
+        eval_travel=(min_travel(robot, cfg.min_travel), steps),
     )
+    check_record(Path(cfg.checkpoint), robot_record(cfg, env.base))
     # scored on the deterministic policy: its own obs and feet, not the critic
-    reach = env.travel.reach(cfg.level_steps, env.travel.actor_sensing)
-    layout.check_reach(reach, f"level_steps={cfg.level_steps}")
+    reach = env.travel.reach(steps, env.travel.actor_sensing)
+    layout.check_reach(reach, f"{steps} steps per level")
     return config, layout, env
 
 
@@ -88,7 +92,7 @@ def rollout(
             arena,
             None,
             deterministic=True,
-            length=cfg.level_steps,
+            length=level_steps(cfg.robot, cfg.level_steps),
         )
         log = data.extras["log"]
         end_xy = log["xy"][:, -1]

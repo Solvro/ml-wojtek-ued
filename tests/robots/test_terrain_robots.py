@@ -17,13 +17,15 @@ import pytest
 from mujoco import mjx
 
 from config.hfield_config import HFieldConfig
+from config.schema import Robot
 from env.functional import FunctionalEnv
 from evaluation.physics_variants import full_collision
 from hfield.tiles import TileLayout
 from robots.barkour import BarkourTerrain
 from robots.go1 import Go1Terrain
 from robots.registry import TERRAIN_ROBOTS
-from robots.scale import hfield_config
+from robots.scale import default_robot, hfield_config, level_steps, min_travel
+from robots.spot import SpotTerrain
 from robots.terrain import FALL_HEIGHT_RATIO, WOJTEK_HEIGHT, playground_backend
 
 ARENA = HFieldConfig(
@@ -43,7 +45,8 @@ ROBOTS = list(TERRAIN_ROBOTS)
 
 class Setup:
     def __init__(self, robot: str):
-        self.config = hfield_config(robot, ARENA)  # ty: ignore[invalid-argument-type]
+        self.robot = default_robot(Robot(robot))
+        self.config = hfield_config(self.robot, ARENA)
         self.layout = TileLayout(self.config)
         self.base: Any = TERRAIN_ROBOTS[robot](self.config, "jax")
         self.env = FunctionalEnv(robot=self.base, domain_randomize=True)
@@ -208,13 +211,24 @@ def test_commands_are_the_forward_slice_of_playgrounds(setup: Setup) -> None:
 
 def test_eval_commands_reach_the_success_threshold(setup: Setup) -> None:
     cls = type(setup.base)
-    meters, steps = 1.0 * cls.SCALE, 300
+    meters = min_travel(setup.robot, 1.0)
+    steps = level_steps(setup.robot, 300)
     base = cls(setup.config, "jax", eval_travel=(meters, steps))
     vx = commands(base)[:, 0]
     floor = 1.2 * meters / (steps * base.dt)
     assert vx.min() >= floor - 1e-6
     assert vx.min() < floor + 0.02
     assert vx.max() > 0.98 * NATIVE_COMMANDS[cls.__name__][0]
+
+
+def test_threshold_is_the_same_share_of_top_speed_travel(setup: Setup) -> None:
+    # Wojtek: 1 m of 0.6 m/s x 6 s; Spot's levels are longer for it
+    top_vx = setup.base.native_command_range()[1][0]
+    steps = level_steps(setup.robot, 300)
+    share = min_travel(setup.robot, 1.0) / (top_vx * steps * setup.base.dt)
+    assert share == pytest.approx(1.0 / 3.6, abs=0.025)
+    if isinstance(setup.base, SpotTerrain):
+        assert top_vx == SpotTerrain.TOP_VX
 
 
 def test_eval_commands_refuse_an_unreachable_threshold(setup: Setup) -> None:

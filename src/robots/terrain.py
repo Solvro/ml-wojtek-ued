@@ -80,11 +80,34 @@ def playground_backend(backend: str) -> str:
     return "jax"
 
 
+@dataclasses.dataclass(frozen=True)
+class PDGains:
+    """Overrides of the leg actuators; None keeps the robot's own value."""
+
+    kp: float | None = None  # actuator position gain
+    kd: float | None = None  # actuator velocity gain (kv)
+    damping: float | None = None  # passive damping of the 12 leg joints
+
+    def apply(self, model: Any) -> None:
+        if self.kp is not None:
+            model.actuator_gainprm[:, 0] = self.kp
+            model.actuator_biasprm[:, 1] = -self.kp
+        if self.kd is not None:
+            model.actuator_biasprm[:, 2] = -self.kd
+        if self.damping is not None:
+            model.dof_damping[6:] = self.damping
+
+
+OWN_GAINS = PDGains()
+
+
 class TerrainRobot(abc.ABC):
     """Mixin over a Playground joystick env; put it first in the bases."""
 
     SCALE: ClassVar[float]  # standing trunk height / WOJTEK_HEIGHT
     STANDING_HEIGHT: ClassVar[float]  # m, trunk above flat ground, settled
+    # control steps per Wojtek `level_steps` step (`robots.scale.level_steps`)
+    EPISODE_SCALE: ClassVar[float] = 1.0
     # (feet-only, full-collision) robot XML names for sim2sim's
     # full_collision variant; None: the model has no full-collision version
     FULL_COLLISION: ClassVar[tuple[str, str] | None] = None
@@ -98,6 +121,8 @@ class TerrainRobot(abc.ABC):
     _config: Any
     _feet_site_id: Any
     _init_q: jax.Array
+    _mj_model: Any
+    _mjx_model: Any
 
     @classmethod
     @abc.abstractmethod
@@ -126,22 +151,31 @@ class TerrainRobot(abc.ABC):
         backend: str = "jax",
         episode_length: int = 1000,
         eval_travel: tuple[float, int] | None = None,
+        *,
+        scale: float | None = None,
+        gains: PDGains = OWN_GAINS,
     ):
         """`eval_travel`: (success threshold in m, steps per episode) of an
-        eval env; its vx commands start where the threshold is reachable."""
+        eval env; its vx commands start where the threshold is reachable.
+        `scale`: size relative to Wojtek (scan grid, travel bounds); `hfield`
+        must be scaled by the same value. None: `SCALE`."""
         config = self.default_config()
         self._backend = playground_backend(backend)
         config.impl = self._backend
         config.episode_length = episode_length
         self._build_env(config, hfield)
+        if gains != OWN_GAINS:
+            gains.apply(self._mj_model)
+            self._mjx_model = mjx.put_model(self._mj_model, impl=config.impl)
+        self.scale = type(self).SCALE if scale is None else scale
         self._hfield_config = hfield
         self._layout = TileLayout(hfield)
         # FunctionalEnv sets this to the env's tile centre around reset
         self.spawn_xy = jnp.zeros(2)
         self._scan_grid = jnp.array(
             height_scan.body_grid(
-                [x * self.SCALE for x in SCAN_X],
-                [y * self.SCALE for y in SCAN_Y],
+                [x * self.scale for x in SCAN_X],
+                [y * self.scale for y in SCAN_Y],
                 SCAN_N,
                 SCAN_N,
             )
@@ -237,7 +271,7 @@ class TerrainRobot(abc.ABC):
         )
         ref_z = jnp.min(data.site_xpos[self._feet_site_id][:, 2])
         scan = height_scan.scan_values(
-            self.terrain_height(xy), ref_z, SCAN_CLIP * self.SCALE
+            self.terrain_height(xy), ref_z, SCAN_CLIP * self.scale
         )
         obs = self._obs_dict(state.obs)
         obs["privileged_state"] = jnp.concatenate(
