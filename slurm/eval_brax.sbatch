@@ -11,7 +11,7 @@
 # Cluster-specific: the #SBATCH account, partition, gres and log paths above
 # and the variables below (docs/slurm.md).
 # Same task layout and variables as brax_ued.sbatch (MODES, NSEEDS, SEED0,
-# SPACE, PREFIX, ROBOT, BACKEND, TAGS, SRC).
+# SPACE, PREFIX, ROBOT, ROBOT_ARGS, BACKEND, TAGS, SRC) plus EVAL_DIR.
 set -euo pipefail
 
 REPO="${REPO:-$HOME/workspace/ml-wojtek-ued}"

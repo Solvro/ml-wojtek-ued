@@ -10,7 +10,7 @@
 # Cluster-specific: the #SBATCH account, partition and log paths above and
 # the variables below (docs/slurm.md).
 # Same task layout as brax_ued.sbatch (MODES, NSEEDS, SEED0, PREFIX, ROBOT,
-# SRC). CPU-only (physics on CPU MuJoCo); the CPU nodes run the same OS as
+# ROBOT_ARGS, SRC). CPU-only (physics on CPU MuJoCo); the CPU nodes run the same OS as
 # the GPU nodes the venv was built for.
 set -euo pipefail
 

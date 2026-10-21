@@ -30,7 +30,7 @@ turned into Hydra overrides.
 | `MODES` | `dr accel` (train); required (evals) | `conf/mode` options; train also takes `<mode>-s<scale>` = `mode.generator_scale=<scale>` | all three |
 | `NSEEDS` / `SEED0` | `3` / `0` | seeds per mode / first seed | all three |
 | `ROBOT` | `wojtek` | `conf/robot` option | all three |
-| `ROBOT_ARGS` | — | `robot.*` overrides, space-separated (`"robot.kp=50 robot.scale=2.0"`); a run's evals need the same | all three |
+| `ROBOT_ARGS` | — | `robot.*` overrides, space-separated (`"robot.kp=50 robot.scale=2.0"`); a run's evals need the same; not part of the run name, so give each set its own `PREFIX` | all three |
 | `PREFIX` | `ued` | run-name prefix | all three |
 | `SPACE` | `param` | `conf/level_space` option | train, `eval_brax` |
 | `BACKEND` | `auto` | `auto` / `jax` / `warp` | train, `eval_brax` |
