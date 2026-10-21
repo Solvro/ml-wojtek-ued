@@ -9,6 +9,7 @@ from mujoco_playground._src.locomotion.spot import base as spot_base
 from mujoco_playground._src.locomotion.spot import joystick
 
 from config.hfield_config import HFieldConfig
+from env.overrides import WOJTEK_VX
 from robots.terrain import TerrainRobot, arena_scene
 
 HOME_POSE = "0 1.04 -1.8 0 1.04 -1.8 0 1.04 -1.8 0 1.04 -1.8"
@@ -18,6 +19,12 @@ class SpotTerrain(TerrainRobot, joystick.Joystick):
     # standing trunk height 0.433 m (measured) over Wojtek's design 0.10 m
     SCALE = 4.3
     STANDING_HEIGHT = 0.433
+    # m/s, spot/joystick.py command_config lin_vel_x[1]
+    TOP_VX = 1.0
+    # Wojtek's top vx per unit size over Spot's, rounded to 0.1 (2.58 -> 2.6):
+    # 780-step levels, in which the 4.3 m threshold is the same 0.28 of the
+    # distance at top speed as for Wojtek, Go1 and Barkour
+    EPISODE_SCALE = round(WOJTEK_VX[1] * SCALE / TOP_VX, 1)
     FULL_COLLISION = ("spot_mjx_feetonly.xml", "spot_mjx.xml")
 
     def native_command_range(self) -> tuple[list[float], list[float]]:

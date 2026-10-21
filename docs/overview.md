@@ -57,12 +57,13 @@ flowchart LR
 |---|---|---|---|
 | `wojtek` | W01-TEK (closed-chain legs, `wojtek_env`) | 1.0 | `wojtek_env` baseline |
 | `go1` | Unitree Go1 (Playground) | 2.5 | Playground Go1 |
-| `barkour` | Google Barkour vB (Playground) | 2.4 | none |
+| `barkour` | Google Barkour vB (Playground) | 2.5 | none |
 | `spot` | Boston Dynamics Spot (Playground) | 4.3 | none |
-| `go2` | Unitree Go2 (Go1's env on the menagerie model) | 2.5 | Go1's |
+| `go2` | Unitree Go2 (Go1's env on the menagerie model) | 2.7 | Go1's |
 
 - `SCALE` = standing trunk height / Wojtek's 0.10 m; scales arena lengths,
-  level lengths, commands and `min_travel` (slopes do not scale).
+  level lengths, commands and `min_travel` (slopes do not scale). Spot's
+  levels are 780 steps, not 300: [robots.md](robots.md).
 - Details: [robots.md](robots.md).
 
 ## Export
@@ -90,7 +91,7 @@ flowchart LR
 Computed by `eval_brax.py`.
 
 - **Success**: no fall and >= `min_travel` (1 m x `SCALE`) from spawn after
-  300 steps (6 s); deterministic policy, no physics DR.
+  300 steps (6 s; Spot 780, 15.6 s); deterministic policy, no physics DR.
 - **Sets**: `param/uniform` (2048 levels from the full box, headline),
   `random/d<d>` (difficulty 0.25/0.5/0.75/1.0), `suite/*` (28 held-out
   structured terrains), `flat`, `axis/<feature>` capability ramps.

@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from robots.scale import min_travel
+from robots.scale import level_steps, min_travel
 from training.context import TrainContext
 
 EVAL_DIFFICULTIES = (0.25, 0.5, 0.75, 1.0)
@@ -50,7 +50,7 @@ def eval_chunk(
         hfield,
         None,
         deterministic=True,
-        length=ctx.cfg.level_steps,
+        length=level_steps(ctx.cfg.robot, ctx.cfg.level_steps),
     )
     log = data.extras["log"]
     travel = jnp.linalg.norm(log["xy"][:, -1] - start_xy, axis=-1)

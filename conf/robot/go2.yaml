@@ -1,8 +1,1 @@
 name: go2
-# Playground robots only (Wojtek refuses non-null); null = the robot's own
-# value (docs/robots.md): actuator kp, actuator kv, leg joint damping, size
-# relative to Wojtek (`SCALE`)
-kp: null
-kd: null
-damping: null
-scale: null

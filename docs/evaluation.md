@@ -11,7 +11,14 @@ Entry point `scripts/eval_brax.py`; code in `src/evaluation/final_eval.py`
 (`conf/eval.yaml`; pass the run's `robot`, `level_space`, `arena`).
 Loads a `brax_ued.py` checkpoint, deterministic
 policy, no physics DR, no `no_progress` cut. Success = no fall and >=
-`min_travel` m from spawn after `level_steps`. Levels run in chunks of
+the robot's threshold from spawn after the robot's level:
+`robots.scale.min_travel(cfg.robot, cfg.min_travel)` = 1.0 m Wojtek,
+2.5 m Go1 and Barkour, 2.7 m Go2, 4.3 m Spot at `min_travel=1.0`, in
+`robots.scale.level_steps(cfg.robot, cfg.level_steps)` = 300 steps, Spot
+780 at `level_steps=300` ([robots.md](robots.md)). eval refuses a
+checkpoint whose `<run>.robot.yaml` (gains, scale, threshold, level
+length) differs from the robot it builds; pass the run's `robot.*`
+overrides, `min_travel` and `level_steps`. Levels run in chunks of
 `min(chunk_envs / episodes, tiles²)` levels, level i of a chunk on tile i;
 `backend` as in training (score a checkpoint on the backend it trained
 on).

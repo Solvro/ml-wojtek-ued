@@ -1,5 +1,8 @@
 from typing import Any
 
+# m/s, Wojtek's forward command range on terrain
+WOJTEK_VX = (0.2, 0.6)
+
 
 def merge_overrides(*overrides: dict[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {}
@@ -28,7 +31,7 @@ def terrain_task_overrides() -> dict[str, Any]:
     # within an episode; standing, spinning and backing up never reach it
     return {
         "command": {
-            "vx": (0.2, 0.6),
+            "vx": WOJTEK_VX,
             "vy": (-0.2, 0.2),
             "wz": (-0.4, 0.4),
             "terrain_bias": {

@@ -7,7 +7,7 @@ from brax.training import types
 
 from config.schema import Score
 from hfield.level_space import mean_abs_height
-from robots.scale import min_travel
+from robots.scale import level_steps, min_travel
 from training.context import TrainContext
 from training.student import Student
 
@@ -66,7 +66,7 @@ def run_levels(
     _, state = ctx.reset(jax.random.split(key, n), hfield, dr_model, tile_xy)
     start_xy = state.data.qpos[:, :2]
     totals = LaneTotals(n)
-    unrolls = cfg.level_steps // cfg.ppo.unroll_length
+    unrolls = level_steps(cfg.robot, cfg.level_steps) // cfg.ppo.unroll_length
     for _ in range(unrolls):
         state, data = ctx.unroll(
             student.inference_params(),

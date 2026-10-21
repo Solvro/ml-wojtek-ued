@@ -19,7 +19,7 @@ from export.verify import Verification
 from hfield.arena import write_accel_arena
 from hfield.tiles import TileLayout
 from robots.registry import TERRAIN_ROBOTS
-from robots.scale import default_robot, hfield_config
+from robots.scale import default_robot, hfield_config, level_steps, min_travel
 from training.summary import TrainingSummary
 from wojtek_env import paths
 
@@ -122,6 +122,9 @@ def test_readme_lists_every_component_with_its_index_range(
         assert f"`{joint.name}`" in readme
     assert "```python" in readme and "onnxruntime" in readme
     assert "reward per step" in readme
+    threshold = min_travel(cfg.robot, cfg.min_travel)
+    steps = level_steps(cfg.robot, cfg.level_steps)
+    assert f">= {threshold:.2f} m in {steps} steps" in readme
 
 
 def test_wojtek_readme_has_the_gait_clock_and_the_action_filter(

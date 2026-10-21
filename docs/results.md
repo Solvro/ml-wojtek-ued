@@ -85,8 +85,8 @@ just domination eval_dir=<evals> method_a=accel method_b=dr
   and still differ per level (one better everywhere, or each winning on
   disjoint levels). The comparison pairs them level by level.
 - Definition: per level θ of the set, `solve_rate(θ)` = fraction of
-  episodes with no fall and travel >= `min_travel` x robot scale (eval_brax's
-  success rule) over both passes (2 x 4 = 8 episodes), then the mean over
+  episodes with no fall and travel >= the robot's threshold
+  (`robots.scale.min_travel`, eval_brax's success rule) over both passes (2 x 4 = 8 episodes), then the mean over
   the method's seeds (5 seeds: values k/40).
   H(x, y) = number of levels with A's rate in bin x and B's in bin y.
 - Inputs: `eval_dir` of eval_brax npz dumps

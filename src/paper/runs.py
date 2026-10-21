@@ -9,7 +9,7 @@ import numpy as np
 import wandb
 
 from config.schema import Robot
-from robots.scale import ROBOT_SCALE
+from robots.scale import default_robot, min_travel
 
 ENTITY = "dominikgalus9-wroc-aw-university-of-science-and-technology"
 PROJECT = "wojtek-benchmark-iclr"
@@ -98,9 +98,9 @@ def add_solvable(runs: list[Run]) -> None:
         )
         return
     check_same_levels(runs)
-    min_travel = MIN_TRAVEL_M * ROBOT_SCALE[robot]
+    threshold = min_travel(default_robot(Robot(robot)), MIN_TRAVEL_M)
     success = np.stack(
-        [[level_success(r, i, min_travel) for i in (0, 1)] for r in runs]
+        [[level_success(r, i, threshold) for i in (0, 1)] for r in runs]
     )
     solvable = (success > 0).any(axis=0)
     if not solvable.any(axis=1).all():

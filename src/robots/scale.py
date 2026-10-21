@@ -14,7 +14,7 @@ ROBOT_SCALE = {
 
 def default_robot(name: Robot) -> RobotConfig:
     """`name` with its own gains and scale, for runs logged by name only."""
-    return RobotConfig(name=name, kp=None, kd=None, damping=None, scale=None)
+    return RobotConfig(name=name)
 
 
 def robot_scale(robot: RobotConfig) -> float:
@@ -38,6 +38,11 @@ def pd_gains(robot: RobotConfig) -> PDGains:
             f"robot={robot.name} sets its actuators in wojtek_env. Drop "
             "the overrides"
         )
+    if gains.kp is not None and gains.kp <= 0:
+        raise ValueError(f"robot.kp={gains.kp} must be > 0")
+    for field, value in (("kd", gains.kd), ("damping", gains.damping)):
+        if value is not None and value < 0:
+            raise ValueError(f"robot.{field}={value} must be >= 0")
     return gains
 
 
@@ -58,3 +63,12 @@ def hfield_config(robot: RobotConfig, arena: HFieldConfig) -> HFieldConfig:
 
 def min_travel(robot: RobotConfig, wojtek_m: float) -> float:
     return wojtek_m * robot_scale(robot)
+
+
+def level_steps(robot: RobotConfig, wojtek_steps: int) -> int:
+    """Control steps per level for `wojtek_steps` of Wojtek's: longer for a
+    robot whose top speed per unit size is far below Wojtek's (Spot)."""
+    terrain_robot = TERRAIN_ROBOTS.get(robot.name)
+    if terrain_robot is None:
+        return wojtek_steps
+    return round(wojtek_steps * terrain_robot.EPISODE_SCALE)

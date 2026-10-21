@@ -106,6 +106,8 @@ class TerrainRobot(abc.ABC):
 
     SCALE: ClassVar[float]  # standing trunk height / WOJTEK_HEIGHT
     STANDING_HEIGHT: ClassVar[float]  # m, trunk above flat ground, settled
+    # control steps per Wojtek `level_steps` step (`robots.scale.level_steps`)
+    EPISODE_SCALE: ClassVar[float] = 1.0
     # (feet-only, full-collision) robot XML names for sim2sim's
     # full_collision variant; None: the model has no full-collision version
     FULL_COLLISION: ClassVar[tuple[str, str] | None] = None

@@ -13,6 +13,7 @@ from export.contract import (
 )
 from export.onnx_graph import INPUT, OPSET, OUTPUTS
 from export.verify import Verification
+from robots.scale import level_steps, min_travel
 from training.summary import TrainingSummary
 
 SECTIONS_SEP = "\n\n"
@@ -415,7 +416,9 @@ def conditions_section(contract: Contract) -> str:
     )
 
 
-def metrics_section(summary: TrainingSummary | None) -> str:
+def metrics_section(
+    summary: TrainingSummary | None, threshold: float, steps: int
+) -> str:
     head = "## Training metrics\n\n"
     if summary is None:
         return head + (
@@ -424,7 +427,10 @@ def metrics_section(summary: TrainingSummary | None) -> str:
         )
     rows = [
         ["reward per step", num(summary.reward_per_step)],
-        ["train success (no fall, min travel)", num(summary.train_success)],
+        [
+            f"train success (no fall, >= {threshold:.2f} m in {steps} steps)",
+            num(summary.train_success),
+        ],
         ["falls per step", num(summary.falls_per_step)],
         ["forward velocity (m/s)", num(summary.forward_vel)],
         ["commanded vx (m/s)", num(summary.cmd_vx)],
@@ -480,7 +486,11 @@ def render_readme(
         gait_section(contract),
         usage_section(contract),
         conditions_section(contract),
-        metrics_section(summary),
+        metrics_section(
+            summary,
+            min_travel(cfg.robot, cfg.min_travel),
+            level_steps(cfg.robot, cfg.level_steps),
+        ),
         verification_section(ver),
         reproduce_section(name),
     ]

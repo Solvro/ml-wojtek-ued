@@ -27,9 +27,9 @@ FEET_SENSORS = "\n".join(
 
 
 class BarkourTerrain(TerrainRobot, joystick.Joystick):
-    # standing trunk height 0.235 m (measured) over Wojtek's design 0.10 m
-    SCALE = 2.4
-    STANDING_HEIGHT = 0.235
+    # standing trunk height 0.253 m (measured) over Wojtek's design 0.10 m
+    SCALE = 2.5
+    STANDING_HEIGHT = 0.253
 
     @classmethod
     def scene_xml(cls, config: HFieldConfig) -> str:
@@ -63,9 +63,6 @@ class BarkourTerrain(TerrainRobot, joystick.Joystick):
         model = compile_scene(self.scene_xml(hfield), self._model_assets)
         model.vis.global_.offwidth = 3840
         model.vis.global_.offheight = 2160
-        model.dof_damping[6:] = 0.5239
-        model.actuator_gainprm[:, 0] = 35.0
-        model.actuator_biasprm[:, 1] = -35.0
         model.opt.timestep = config.sim_dt
         self._mj_model = model
         self._mjx_model = mjx.put_model(model, impl=config.impl)
