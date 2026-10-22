@@ -19,6 +19,10 @@ from robots.scale import ROBOT_SCALE, default_robot, hfield_config
 mj: Any = mujoco
 
 WIDTH, HEIGHT = 640, 480
+PAPER_ORDER = (Robot.wojtek, Robot.go1, Robot.go2, Robot.barkour, Robot.spot)
+# (lookat ahead, distance, elevation): lengths x the robot's scale; close
+# enough that the robot fills the panel
+ROBOT_VIEW = (0.3, 1.2, -30.0)
 SEED_SLOT = 0.37
 INDEX = {p.name: i for i, p in enumerate(PARAMS)}
 # (panel title, {param: genome value}); every unset param stays flat
@@ -68,15 +72,16 @@ def _render(
     config: HFieldConfig,
     hfield: np.ndarray,
     scale: float,
-    elevation: float = -35.0,
+    view: tuple[float, float, float] = (0.6, 2.8, -35.0),
 ) -> np.ndarray:
     model.hfield_data[:] = level_on_single_tile(config, hfield)
     data = mj.MjData(model)
     mj.mj_resetDataKeyframe(model, data, model.key("home").id)
     mj.mj_forward(model, data)
     camera = mj.MjvCamera()
-    camera.lookat[:] = (0.6 * scale, 0.0, 0.0)
-    camera.distance = 2.8 * scale
+    ahead, distance, elevation = view
+    camera.lookat[:] = (ahead * scale, 0.0, 0.0)
+    camera.distance = distance * scale
     camera.azimuth = 200.0
     camera.elevation = elevation
     # the renderer uploads the hfield at creation, so build it per level
@@ -115,14 +120,14 @@ def plot_terrains(out: Path, arena: HFieldConfig) -> None:
 
     shared = space.scaled(rng, 1, 0.6)[0]
     pair: list[tuple[str, Any]] = []
-    for robot in Robot:
+    for robot in PAPER_ORDER:
         model, space, config = _model(robot, arena)
         _restyle(model)
         hfield = space.render(shared[None])[0]
         pair.append(
             (
                 ROBOT_LABEL[robot],
-                _render(model, config, hfield, ROBOT_SCALE[robot], -50.0),
+                _render(model, config, hfield, ROBOT_SCALE[robot], ROBOT_VIEW),
             )
         )
-    _grid(pair, 2, out / "robots.pdf")
+    _grid(pair, len(pair), out / "robots.pdf")

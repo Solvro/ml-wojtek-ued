@@ -32,7 +32,11 @@ HISTORY_WORKERS = 16
 # composition is logged every iteration and PLR alternates replay and new
 # levels, so it is smoothed with a running mean over this many grid points
 SMOOTH = 9
-COLORS = {m: plt.get_cmap("tab10")(i) for i, m in enumerate(METHODS)}
+# tab10 has ten colours for twelve methods; the PAIRED family is dashed
+_TAB10 = plt.get_cmap("tab10")
+COLORS = dict(
+    zip(METHODS, [*map(_TAB10, range(10)), "black", "goldenrod"], strict=True)
+)
 
 
 def _scan(run: Any, keys: tuple[str, ...]) -> dict[str, list[float]]:
@@ -94,7 +98,10 @@ def _smooth(ys: np.ndarray) -> np.ndarray:
 
 def _band(ax: Any, grid: np.ndarray, ys: np.ndarray, method: str) -> None:
     color = COLORS[method]
-    ax.plot(grid, ys.mean(axis=0), color=color, lw=1.2, label=METHODS[method])
+    style = "--" if method.startswith("paired") else "-"
+    ax.plot(
+        grid, ys.mean(axis=0), style, color=color, lw=1.2, label=METHODS[method]
+    )
     ax.fill_between(
         grid, ys.min(axis=0), ys.max(axis=0), color=color, alpha=0.15
     )
