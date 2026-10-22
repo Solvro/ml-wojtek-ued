@@ -137,8 +137,8 @@ levels.
   student PPO update), `elapsed_s` (wall clock since launch, compile
   included). The run summary ends with `final/elapsed_h`, `final/sim_steps`,
   `final/student_train_steps` (`paper_tables.py` compute table).
-- SLURM: `slurm/brax_ued.sbatch`, job interface in the
-  [README](slurm.md#job-variables); assets must be built
+- SLURM: `slurm/brax_ued.sbatch`, job interface in
+  [slurm.md](slurm.md#job-variables); assets must be built
   beforehand since the array's tasks start together.
 - The arena must match the run's `arena` config (`hfield.arena.check_arena`:
   `pad_radius`, height scale, level grid, tiles, gap); the error names the

@@ -24,7 +24,7 @@ locomotion on procedural terrain. Start with the [README](../README.md)
 - Which methods and robots exist? [overview.md](overview.md#methods),
   [overview.md](overview.md#robots)
 - How do I run one training run? [setup.md](setup.md#run),
-  [configuration.md](configuration.md#trainyaml--trainconfig)
+  [configuration.md](configuration.md#trainyaml-trainconfig)
 - How is a level represented and mutated? [levels.md](levels.md)
 - Why can levels be swapped without recompiling?
   [environment.md](environment.md#why-the-arena-swap-is-free)

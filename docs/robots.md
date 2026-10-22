@@ -55,16 +55,14 @@ a robot file keeps its constants, scene and what differs):
   4.3 m threshold is the same share of the distance at top speed as for
   Wojtek, Go1 and Barkour. `robot.scale` does not change it.
 
-  | robot | threshold (m) | steps | / distance at eval vx floor | / distance at vx max | / measured flat travel |
-  |---|---|---|---|---|---|
-  | Wojtek | 1.0 | 300 | 0.83 | 0.28 | 0.53 |
-  | Go1 | 2.5 | 300 | 0.83 | 0.28 | 0.74 |
-  | Go2 | 2.7 | 300 | 0.83 | 0.30 | 0.88 |
-  | Barkour | 2.5 | 300 | 0.83 | 0.28 | 0.52 |
-  | Spot | 4.3 | 780 | 0.83 | 0.28 | not yet measured |
+  | robot | threshold (m) | steps | / distance at eval vx floor | / distance at vx max |
+  |---|---|---|---|---|
+  | Wojtek | 1.0 | 300 | 0.83 | 0.28 |
+  | Go1 | 2.5 | 300 | 0.83 | 0.28 |
+  | Go2 | 2.7 | 300 | 0.83 | 0.30 |
+  | Barkour | 2.5 | 300 | 0.83 | 0.28 |
+  | Spot | 4.3 | 780 | 0.83 | 0.28 |
 
-  Flat travel: `flat/mean_travel` of 1B-step runs at these gains and
-  levels (Go2 and Barkour: `experiments/pd-scale-sweep`).
   Spot redraws its command every 200 steps (Barkour 500, Go1 / Go2 every
   5 s on average); with turning, perfect tracking of eval commands reaches
   the threshold in 62 % of Spot's levels, 70 % of Go1's and Go2's, 95 %

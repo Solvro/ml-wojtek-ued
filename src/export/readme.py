@@ -50,9 +50,7 @@ def table(header: list[str], rows: list[list[str]]) -> str:
     return "\n".join(lines)
 
 
-def header_section(
-    name: str, cfg: TrainConfig, contract: Contract, ver: Verification
-) -> str:
+def header_section(name: str, cfg: TrainConfig, contract: Contract) -> str:
     rate = 1.0 / contract.ctrl_dt
     rows = [
         ["robot", f"`{contract.robot}`"],
@@ -477,7 +475,7 @@ def render_readme(
     summary: TrainingSummary | None,
 ) -> str:
     sections = [
-        header_section(name, cfg, contract, ver),
+        header_section(name, cfg, contract),
         inputs_section(contract),
         outputs_section(contract),
         joints_section(contract),
