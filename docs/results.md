@@ -60,10 +60,11 @@ JAX_PLATFORMS=cpu just paper-figures terrains=true
 ```
 
 - `conf/paper_figures.yaml`; output in `out` (default `artifacts/paper/figs`).
-- `dump_history`: per finished run, `eval/d{0.5,1.0}/success_rate` and the
-  `level/*` composition vs `env_steps` from wandb; rows with a NaN are dropped.
-- `curves.pdf`: eval success vs env steps, robot x d panels, seed mean with
-  min-max band.
+- `dump_history`: per finished run, `eval/d{0.25,0.5}/success_rate` and the
+  `level/*` composition vs `env_steps` from wandb, 16 runs fetched in
+  parallel; rows with a NaN are dropped.
+- `curves.pdf`: eval success vs env steps, one row per d, one column per
+  robot, seed mean with min-max band.
 - `composition.pdf`: mean physical value of the magnitude parameters and
   genome distance among training levels, Wojtek units, running mean over 9 points.
 - `terrains.pdf` / `robots.pdf` (`paper/terrains.py`): offscreen MuJoCo
