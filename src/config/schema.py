@@ -245,6 +245,17 @@ class PaperTablesConfig:
 
 
 @dataclass
+class PaperStatsConfig:
+    prefixes: dict[Robot, str | None] = MISSING
+    eval_dir: str = MISSING
+    pairs: list[list[str]] = MISSING
+    reps: int = MISSING
+    poi_reps: int = MISSING
+    seed: int = MISSING
+    out: str = MISSING
+
+
+@dataclass
 class PaperFiguresConfig:
     prefixes: dict[Robot, str | None] = MISSING
     arena: HFieldConfig = field(default_factory=HFieldConfig)
@@ -275,6 +286,7 @@ SCHEMAS: dict[str, type] = {
     "arena": ArenaBuildConfig,
     "check_hfield": CheckHFieldConfig,
     "paper_tables": PaperTablesConfig,
+    "paper_stats": PaperStatsConfig,
     "paper_figures": PaperFiguresConfig,
     "domination": DominationConfig,
 }

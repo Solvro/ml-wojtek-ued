@@ -18,6 +18,7 @@ flowchart LR
   E --> D["domination<br>scripts/compare_domination.py"]
   E --> P["paper tables<br>scripts/paper_tables.py"]
   W --> P
+  E --> R["paper stats<br>scripts/paper_stats.py"]
   W --> F["paper figures<br>scripts/paper_figures.py"]
 ```
 

@@ -126,6 +126,11 @@ export *args:
 paper-tables *args:
     uv run python src/scripts/paper_tables.py {{ args }}
 
+# IQM, stratified bootstrap CIs and probability of improvement from eval_brax.py outputs (conf/paper_stats.yaml, e.g. `just paper-stats eval_dir=evals`)
+[group('paper')]
+paper-stats *args:
+    uv run python src/scripts/paper_stats.py {{ args }}
+
 # Figures from wandb histories and rendered terrains (conf/paper_figures.yaml); MUJOCO_GL as in render-video
 [group('paper')]
 paper-figures *args:

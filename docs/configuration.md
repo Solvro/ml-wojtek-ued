@@ -46,6 +46,7 @@ python src/scripts/brax_ued.py --cfg job mode=dr name=x   # print the composed c
 | `arena.yaml` | `python -m hfield.arena` | `build-accel-arena` | arena |
 | `check_hfield.yaml` | `scripts/check_hfield_batch.py` | — | arena |
 | `paper_tables.yaml` | `scripts/paper_tables.py` | `paper-tables` | — |
+| `paper_stats.yaml` | `scripts/paper_stats.py` | `paper-stats` | — |
 | `paper_figures.yaml` | `scripts/paper_figures.py` (+ `paper/terrains.py`) | `paper-figures` | arena |
 | `domination.yaml` | `scripts/compare_domination.py` | `domination` | — |
 
@@ -340,6 +341,20 @@ data layout), `level_space` (always `param`), `alphas` and `tags`;
 | `history` | `null` | figures: JSON from `dump_history` → `curves.pdf`, `composition.pdf` |
 | `terrains` | `false` | figures: render `terrains.pdf` / `robots.pdf` on `arena` |
 | `out` | `artifacts/paper/tables` / `artifacts/paper/figs` | |
+
+### `paper_stats.yaml` — `PaperStatsConfig`
+
+[results.md](results.md#paper-statistics).
+
+| field | default | meaning |
+|---|---|---|
+| `prefixes.<robot>` | `ued_<robot>` | run-name prefix per robot, as in `paper_tables`; a robot set to `null` is skipped |
+| `eval_dir` | `???` | dir of `eval_brax.py` outputs |
+| `pairs` | the paper's `[X, Y]` comparisons | P(X > Y) pairs for `named_pairs` and `poi.pdf`; a pair without runs of both is skipped |
+| `reps` | `50000` | bootstrap resamples for IQM / mean CIs (rliable's default) |
+| `poi_reps` | `2000` | bootstrap resamples for P(X > Y) CIs (one Mann-Whitney U per robot per resample) |
+| `seed` | `0` | numpy seed for the bootstraps |
+| `out` | `artifacts/paper/stats` | `stats.json`, `stats.tex`, `iqm.pdf`, `poi.pdf` |
 
 ### `domination.yaml` — `DominationConfig`
 
