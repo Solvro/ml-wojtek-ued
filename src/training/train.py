@@ -45,7 +45,7 @@ def iteration_log(
     out["level_roughness_m"] = float(np.mean(out.pop("lane_roughness")))
     out.update(level_composition(ctx.space, out.pop("levels")))
     lane_keys = ("lane_success", "lane_travel", "lane_cmd_distance")
-    for key in ("lane_returns", "score", *lane_keys):
+    for key in ("lane_returns", "lane_episode_return", "score", *lane_keys):
         out.pop(key)
     scores = buffer.scores
     return {

@@ -41,7 +41,7 @@ flowchart LR
 | `accel` | PLR⊥ buffer + mutation of replayed levels; explore iterations score children + fresh easy levels | ACCEL (Parker-Holder et al. 2022) |
 | `accel_grow` | ACCEL, mutation also scales the level away from flat by `U(1, grow_max)` | ablation |
 | `accel_sfl` | `accel_grow` scored by learnability | ACCEL + SFL score |
-| `accel_lp` | `accel` scored by learning progress `\|fast EMA - slow EMA\|` of success | ACCEL + learning progress (LP-ACRL, Li et al. 2026) |
+| `accel_lp` | `accel` scored by learning progress: signed change in mean episodic return since the level's previous visit | ACCEL + learning progress (LP-ACRL, Li et al. 2026) |
 | `paired` | learned level generator, protagonist + antagonist, PAIRED regret | PAIRED (Dennis et al. 2020) |
 | `paired_uni` | PAIRED + UniBC (protagonist distils the antagonist) | Mediratta et al. 2023 (Stabilizing UED with a Learned Adversary) |
 | `paired_bi` | PAIRED + BiBC (both directions) | Mediratta et al. 2023 |

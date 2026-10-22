@@ -37,10 +37,6 @@ def check_config(cfg: TrainConfig) -> None:
             f"mode.score={mode.score} does not apply to paired_evo, whose "
             "level score is the PAIRED regret; drop the override"
         )
-    for field in ("lp_fast_rate", "lp_slow_rate"):
-        rate = getattr(mode, field)
-        if not 0 < rate <= 1:
-            raise ValueError(f"mode.{field}={rate} must be in (0, 1]")
 
 
 def build(cfg: TrainConfig) -> TrainContext:
@@ -109,6 +105,6 @@ def build(cfg: TrainConfig) -> TrainContext:
         unroll=make_unroll(env, student.make_policy, dr_in_axes),
         eval_unroll=make_unroll(eval_env, student.make_policy, None),
         children=np.zeros((0, *space.shape)),
-        children_progress=unvisited(0),
+        children_return=unvisited(0),
         terrain=terrain,
     )

@@ -14,8 +14,8 @@ class LevelBuffer:
         self.scores = np.zeros(0)
         self.last_seen = np.zeros(0)
         self.roughness = np.zeros(0)
-        # (fast, slow) success EMAs per level, the learning-progress state
-        self.progress = np.zeros((0, 2))
+        # each level's mean episodic return on its latest visit (`lp` score)
+        self.last_return = np.zeros(0)
 
     def __len__(self) -> int:
         return len(self.levels)
@@ -26,24 +26,24 @@ class LevelBuffer:
         scores: np.ndarray,
         now: int,
         roughness: np.ndarray,
-        progress: np.ndarray,
+        returns: np.ndarray,
     ) -> None:
         self.levels.extend(levels)
         self.scores = np.concatenate([self.scores, scores])
         seen = np.full(len(scores), now)
         self.last_seen = np.concatenate([self.last_seen, seen])
         self.roughness = np.concatenate([self.roughness, roughness])
-        self.progress = np.concatenate([self.progress, progress])
+        self.last_return = np.concatenate([self.last_return, returns])
         if len(self.levels) > self.capacity:
             keep = np.argsort(self.scores)[-self.capacity :]
             self.levels = [self.levels[i] for i in keep]
             self.scores = self.scores[keep]
             self.last_seen = self.last_seen[keep]
             self.roughness = self.roughness[keep]
-            self.progress = self.progress[keep]
+            self.last_return = self.last_return[keep]
 
     def sample(self, rng: np.random.Generator, n: int, now: int) -> np.ndarray:
-        ranks = np.empty(len(self)).astype(int)
+        ranks = np.empty(len(self), dtype=int)
         ranks[np.argsort(-self.scores)] = np.arange(1, len(self) + 1)
         score_p = (1.0 / ranks) ** (1.0 / self.temperature)
         score_p /= score_p.sum()
@@ -57,11 +57,11 @@ class LevelBuffer:
         idx: np.ndarray,
         scores: np.ndarray,
         now: int,
-        progress: np.ndarray,
+        returns: np.ndarray,
     ) -> None:
         self.scores[idx] = scores
         self.last_seen[idx] = now
-        self.progress[idx] = progress
+        self.last_return[idx] = returns
 
     def stats(self) -> dict[str, float]:
         if len(self) < 2:

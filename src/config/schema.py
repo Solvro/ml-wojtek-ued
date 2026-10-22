@@ -100,8 +100,6 @@ class ModeConfig:
     mutation: Mutation = MISSING
     grow_max: float = MISSING
     score: Score = MISSING
-    lp_fast_rate: float = MISSING
-    lp_slow_rate: float = MISSING
     generator: Generator = MISSING
     latent_dim: int = MISSING
     gen_learning_rate: float = MISSING

@@ -32,8 +32,6 @@ mode:
   mutation: local
   grow_max: 1.3
   score: pvl
-  lp_fast_rate: 0.5
-  lp_slow_rate: 0.1
   generator: easy
   latent_dim: 16
   gen_learning_rate: 1.0e-4

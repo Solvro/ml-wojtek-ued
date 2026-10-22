@@ -74,16 +74,30 @@ levels.
   - `mode.score=learnability` — level score `p(1-p)` (SFL), `p` = fraction of
     the lane's envs that never fell and ended >= `min_travel` m out,
     instead of positive value loss.
-  - `mode.score=lp` — learning progress (`training/progress.py`): per
-    buffer level a fast and a slow exponential moving average of `p`
-    (rates `mode.lp_fast_rate` 0.5, `mode.lp_slow_rate` 0.1), score
-    `|fast - slow|`. A fresh level's first visit sets both to its `p`
-    (score 0); a mutated child inherits its parent's EMAs (after the
-    parent's replay) and updates them with its own `p`. LP-ACRL (Li et
-    al. 2026) scores the change in mean episodic reward between two
-    consecutive evaluations and gives no EMA rates; 0.5 / 0.1 are this
-    repo's choice. Every buffered mode tracks the EMAs; only `lp` scores
-    by them.
+  - `mode.score=lp` — learning progress, signed (`training/progress.py`),
+    after LP-ACRL (Li et al. 2026, arXiv 2601.17428:
+    `LP = R_c(ζ) - R_c-1(ζ)`, the change in expected episodic reward
+    between consecutive stages), adapted to ACCEL's buffer:
+    - `R` per visit of a level = mean over its `envs_per_lane` envs of the
+      undiscounted return (full task reward) of the env's first episode on
+      the level: reward summed from the level's first step through its
+      first termination, else over all `H` = resolved `level_steps` steps
+      (Spot 780, Wojtek 300). `lane_episode_return`, `LaneTotals` in
+      `training/iteration.py`.
+    - A terminated env (fall, divergence, Wojtek's `no_progress` cut)
+      auto-resets onto its spawn on the same tile and keeps stepping for
+      the rest of the level; those steps still train PPO and still count
+      in `lane_returns` (PAIRED regret), but not in `R`. `H` stays below
+      the env's 1000-step episode length, so no truncation inside a level.
+    - Score = `R(this visit) - R(previous visit of the level)`: negative
+      on forgetting. A fresh level's first visit scores 0; a mutated
+      child's previous visit is its parent's latest one (the replay that
+      mutated it).
+    - The buffer stores each level's last `R` (every buffered mode tracks
+      it; only `lp` scores by it). Sampling, replay, mutation and the
+      generator are plain ACCEL's. Negative scores rank last and are
+      evicted first; at the start the buffer fills with 0-score fresh
+      levels (eviction only past `buffer_size`) and replays them.
   - `mode.generator=mixed` — explore iterations draw fresh levels from the
     `dr_mixed` distribution instead of the easy generator.
   - Logged: `buffer_roughness_mean`/`_p90`, `buffer_score_roughness_spearman`

@@ -34,6 +34,8 @@ class LaneTotals:
         self.dt = dt
         self.regret = jnp.zeros(n)
         self.episode_return = jnp.zeros(n)
+        self.first_return = jnp.zeros(n)
+        self.alive = jnp.ones(n)
         self.fell_any = jnp.zeros(n)
         self.leaked = jnp.zeros(n, bool)
         self.cmd_heading = jnp.zeros(n)
@@ -53,6 +55,13 @@ class LaneTotals:
         if bc_kl is not None:
             self.bc_kl = self.bc_kl + bc_kl
         self.episode_return = self.episode_return + data.reward.sum(axis=1)
+        # a terminated env restarts at its spawn on the same tile; only its
+        # first episode counts, through the terminating step
+        alive = self.alive[:, None] * jnp.cumprod(data.discount, axis=1)
+        counted = jnp.concatenate([self.alive[:, None], alive[:, :-1]], axis=1)
+        lived = (counted * data.reward).sum(axis=1)
+        self.first_return = self.first_return + lived
+        self.alive = alive[:, -1]
         self.fell_any = jnp.maximum(self.fell_any, log["fell"].max(axis=1))
         self.leaked = self.leaked | leaked.any(axis=1)
         self.cmd_heading, self.cmd_displacement = commanded_motion(
@@ -145,6 +154,8 @@ def summarize_lanes(
         "regret": lane_regret,
         "score": learnability if use_learnability else lane_regret,
         "lane_returns": lane_returns,
+        # undiscounted return of each env's first episode on the level
+        "lane_episode_return": lane_mean(totals.first_return, lanes),
         "lane_success": lane_success,
         "lane_travel": lane_mean(travel, lanes),
         "lane_cmd_distance": lane_mean(cmd_distance, lanes),

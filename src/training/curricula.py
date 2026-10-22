@@ -9,7 +9,7 @@ from training.buffer import LevelBuffer
 from training.context import TrainContext
 from training.iteration import run_levels
 from training.paired import bc_coefs, paired_regret
-from training.progress import learning_progress, unvisited, update_progress
+from training.progress import learning_progress, unvisited
 from training.terrain_cl import LaneOutcome
 
 # curricula that train a protagonist and an antagonist
@@ -76,16 +76,15 @@ def score_levels(
     it: int,
     prior: np.ndarray,
 ) -> dict[str, Any]:
-    """`prior`: the levels' learning-progress state before this visit;
-    `progress` comes back with the visit folded in."""
+    """`prior`: each level's mean episodic return on its previous visit
+    (NaN: none), what the `lp` score compares this visit's against."""
     mode = ctx.cfg.mode
     if mode.curriculum == Curriculum.paired_evo:
         out = run_pair(ctx, levels, train, it)
     else:
         out = run_levels(ctx, levels, train)
-    out["progress"] = update_progress(prior, out["lane_success"], mode)
     if mode.score == Score.lp:
-        out["score"] = learning_progress(out["progress"])
+        out["score"] = learning_progress(prior, out["lane_episode_return"])
     return out
 
 
@@ -108,23 +107,23 @@ def accel_iteration(
     if full and rng.random() < cfg.mode.replay_prob:
         idx = buffer.sample(rng, cfg.num_lanes, it)
         levels = np.stack([buffer.levels[i] for i in idx])
-        out = score_levels(ctx, levels, True, it, buffer.progress[idx])
-        progress = out.pop("progress")
-        buffer.update(idx, out["score"], it, progress)
+        out = score_levels(ctx, levels, True, it, buffer.last_return[idx])
+        returns = out["lane_episode_return"]
+        buffer.update(idx, out["score"], it, returns)
         mutates = (Curriculum.accel, Curriculum.paired_evo)
         if cfg.mode.curriculum in mutates:
             ctx.children = np.stack([mutate(ctx, level) for level in levels])
-            ctx.children_progress = progress
+            ctx.children_return = returns
         return {**out, "replay": 1, **buffer.stats()}
     new = explore_levels(ctx, cfg.num_lanes - len(ctx.children))
     queued = len(ctx.children)
     levels = np.concatenate([ctx.children, new]) if queued else new
-    prior = np.concatenate([ctx.children_progress, unvisited(len(new))])
+    prior = np.concatenate([ctx.children_return, unvisited(len(new))])
     ctx.children = np.zeros((0, *ctx.space.shape))
-    ctx.children_progress = unvisited(0)
+    ctx.children_return = unvisited(0)
     out = score_levels(ctx, levels, False, it, prior)
-    progress = out.pop("progress")
-    buffer.add(levels, out["score"], it, out["lane_roughness"], progress)
+    returns = out["lane_episode_return"]
+    buffer.add(levels, out["score"], it, out["lane_roughness"], returns)
     return {**out, "replay": 0, **buffer.stats()}
 
 
