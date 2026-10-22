@@ -96,9 +96,9 @@ just domination eval_dir=<evals> method_a=accel method_b=dr
   `random_d<d>`, or `param_uniform` (needs `level_space=param` evals); a
   dump without it fails naming the sets it has.
   - The paper's main comparison is `random_d0.25`; `param_uniform` goes to
-    the appendix (`out=artifacts/paper/domination_param_uniform`). On
-    `param_uniform` Go2, Barkour and Spot solve <= 4 % of levels (falls
-    ~90 %), so most levels tie at 0 and the heatmap says little.
+    the appendix (`out=artifacts/paper/domination_param_uniform`): the
+    Playground robots solve few `param_uniform` levels (sub-cell gap pits,
+    [levels.md](levels.md#level-spaces)), so most levels tie at 0.
 - Pairing: every dump of a robot must hold the same level genomes
   (`param_uniform_levels`, `random_levels` for `random_d*`); otherwise it
   refuses (rerun eval_brax with the same seed / `num_levels` /
