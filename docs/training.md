@@ -106,7 +106,8 @@ levels.
     (rank correlation of level score vs roughness), `children_roughness`,
     `train_success`, `learnability_mean`.
   - Mode options `mode=accel_grow` (grow), `mode=accel_sfl` (grow +
-    learnability) and `mode=accel_lp` (plain ACCEL + `lp`). `level_space=grid` composes 16 edits for both (8
+    learnability) and `mode=accel_lp` (plain ACCEL + `lp`).
+    `level_space=grid` composes 16 edits for the two `grow` modes (8
     otherwise); `param` edits 2 parameters either way.
 - `mode=paired` / `paired_uni` / `paired_bi` / `paired_evo`: PAIRED and
   its variants, two students; see [PAIRED](#paired).
