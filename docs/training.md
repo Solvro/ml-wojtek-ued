@@ -47,10 +47,16 @@ levels.
   - Every iteration trains (as DR); afterwards each lane moves: up one row
     when >= 50 % of its envs succeeded (no fall, >= `min_travel` m, as
     `train_success`), else down one row when its mean travel < 0.5 x its
-    mean commanded distance (sum of `|command_xy| x dt` over the
-    iteration's steps; legged_gym's `|command_xy| x episode_length_s x
-    0.5`); clipped at row 0. A lane promoted past row 10 goes to a uniformly
-    random row.
+    mean commanded distance; clipped at row 0. A lane promoted past row 10
+    goes to a uniformly random row.
+  - Commanded distance (`iteration.commanded_motion`): the displacement of
+    a robot tracking the iteration's commands exactly, body-frame
+    `(vx, vy)` integrated along the heading the `wz` commands turn, over
+    every step (resets included). A constant straight command gives
+    legged_gym's `|command_xy| x episode_length_s`. Travel is a
+    displacement, so a path length (`sum |command_xy| x dt`) would demote
+    perfect trackers: with the redrawn turning commands a perfect
+    tracker's mean displacement is ~0.43 of it on Spot, ~0.56 on Go1/Go2.
   - Logged: `terrain_cl/row_mean`, `/row_p10`, `/row_p90` (rows the
     iteration ran), `/promote_frac`, `/demote_frac`, `/top_reset_frac`,
     plus the level composition.

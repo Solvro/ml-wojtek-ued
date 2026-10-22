@@ -59,7 +59,6 @@ def make_unroll(
             key, act_key = jax.random.split(key)
             action, extras = policy(state.obs, act_key)
             cmd_vx = state.info["command"][:, 0]
-            cmd_speed = jnp.linalg.norm(state.info["command"][:, :2], axis=-1)
             next_state, reward, done, truncation, diverged = v_step(
                 state, action, hfield, dr_model
             )
@@ -79,7 +78,8 @@ def make_unroll(
                         "diverged": diverged,
                         "reward": reward,
                         "cmd_vx": cmd_vx,
-                        "cmd_speed": cmd_speed,
+                        # body-frame (vx, vy, wz); Wojtek appends a height
+                        "command": state.info["command"][:, :3],
                         "forward_vel": forward_vel,
                         "xy": next_state.data.qpos[:, :2],
                     },

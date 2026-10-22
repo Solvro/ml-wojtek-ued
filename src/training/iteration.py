@@ -12,15 +12,32 @@ from training.context import TrainContext
 from training.student import Student
 
 
+@jax.jit
+def commanded_motion(
+    heading: jax.Array, displacement: jax.Array, command: jax.Array, dt: float
+) -> tuple[jax.Array, jax.Array]:
+    """Heading (rad) and planar displacement (m) of a robot that tracks
+    `command` (env, step, (vx, vy, wz) in its body frame) exactly."""
+    wz = command[..., 2]
+    turned = heading[:, None] + dt * jnp.cumsum(wz, axis=1)
+    yaw = turned - dt * wz
+    vx, vy = command[..., 0], command[..., 1]
+    cos, sin = jnp.cos(yaw), jnp.sin(yaw)
+    velocity = jnp.stack([cos * vx - sin * vy, sin * vx + cos * vy], axis=-1)
+    return turned[:, -1], displacement + dt * velocity.sum(axis=1)
+
+
 class LaneTotals:
     """Per-env sums over one iteration's unrolls."""
 
-    def __init__(self, n: int) -> None:
+    def __init__(self, n: int, dt: float) -> None:
+        self.dt = dt
         self.regret = jnp.zeros(n)
         self.episode_return = jnp.zeros(n)
         self.fell_any = jnp.zeros(n)
         self.leaked = jnp.zeros(n, bool)
-        self.cmd_speed = jnp.zeros(n)
+        self.cmd_heading = jnp.zeros(n)
+        self.cmd_displacement = jnp.zeros((n, 2))
         self.bc_kl = jnp.zeros(())
         self.logs: list[dict[str, jax.Array]] = []
 
@@ -38,7 +55,9 @@ class LaneTotals:
         self.episode_return = self.episode_return + data.reward.sum(axis=1)
         self.fell_any = jnp.maximum(self.fell_any, log["fell"].max(axis=1))
         self.leaked = self.leaked | leaked.any(axis=1)
-        self.cmd_speed = self.cmd_speed + log["cmd_speed"].sum(axis=1)
+        self.cmd_heading, self.cmd_displacement = commanded_motion(
+            self.cmd_heading, self.cmd_displacement, log["command"], self.dt
+        )
         self.logs.append(jax.tree.map(jnp.mean, log))
 
 
@@ -67,7 +86,7 @@ def run_levels(
     dr_model, _ = env.sample_dr(ctx.next_key(), n)
     _, state = ctx.reset(jax.random.split(key, n), hfield, dr_model, tile_xy)
     start_xy = state.data.qpos[:, :2]
-    totals = LaneTotals(n)
+    totals = LaneTotals(n, env.travel.dt)
     unrolls = level_steps(cfg.robot, cfg.level_steps) // cfg.ppo.unroll_length
     for _ in range(unrolls):
         state, data = ctx.unroll(
@@ -114,8 +133,9 @@ def summarize_lanes(
         (totals.fell_any == 0) & (travel >= threshold), dtype=float
     )
     lane_success = success.reshape(lanes, -1).mean(axis=1)
-    # the planar distance the commands asked for (Terrain-CL demotion)
-    cmd_distance = totals.cmd_speed * ctx.env.travel.dt
+    # how far the commands asked to go (Terrain-CL demotion): travel is a
+    # displacement too, so commanded turns shorten it as they shorten travel
+    cmd_distance = jnp.linalg.norm(totals.cmd_displacement, axis=-1)
     lane_regret = lane_regret / unrolls
     # SFL learnability: highest where the student sometimes succeeds
     learnability = lane_success * (1.0 - lane_success)
