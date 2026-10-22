@@ -169,6 +169,7 @@ just domination eval_dir=artifacts/final_eval method_a=plr method_b=dr \
 just paper-tables dump_wandb=artifacts/paper/summaries.json
 just paper-tables eval_dir=artifacts/final_eval \
   train_summaries=artifacts/paper/summaries.json
+just paper-stats eval_dir=artifacts/final_eval
 just paper-figures dump_history=artifacts/paper/history.json
 just paper-figures history=artifacts/paper/history.json
 JAX_PLATFORMS=cpu just paper-figures terrains=true
@@ -177,6 +178,7 @@ JAX_PLATFORMS=cpu just paper-figures terrains=true
 | output | from |
 |---|---|
 | `artifacts/paper/tables/main.tex`, `detail.tex`, `uniform.tex`, `envelopes.tex`, `results.csv` | final evals |
+| `artifacts/paper/stats/stats.tex`, `stats.json`, `iqm.pdf`, `poi.pdf` | final evals (IQM, bootstrap CIs, P(X > Y)) |
 | `artifacts/paper/tables/compute.tex` | wandb run summaries (`summaries.json`) |
 | `artifacts/paper/figs/curves.pdf`, `composition.pdf` | wandb histories (`history.json`) |
 | `artifacts/paper/figs/terrains.pdf`, `robots.pdf` | rendered levels (built assets) |
@@ -188,8 +190,9 @@ JAX_PLATFORMS=cpu just paper-figures terrains=true
 
 ### 7. Overleaf
 
-The tables are bare booktabs `tabular`s: upload `artifacts/paper/tables/*.tex`
-and the PDFs in `artifacts/paper/figs/` (into the project's `figs/`) to the
+The tables are bare booktabs `tabular`s: upload `artifacts/paper/tables/*.tex`,
+`artifacts/paper/stats/stats.tex` and the PDFs in `artifacts/paper/figs/` and
+`artifacts/paper/stats/` (into the project's `figs/`) to the
 paper's Overleaf project; the paper owns floats, captions and labels.
 
 ## Train and export a policy

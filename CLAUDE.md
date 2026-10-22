@@ -36,7 +36,7 @@ when the code changes.** Page map: [docs/index.md](docs/index.md).
 - `src/export/` — checkpoint + config → ONNX policy and its README; the contract is built from the env (Playground obs layout measured by shifting input signals, `playground_obs.py`), export env always on jax.
 - `src/evaluation/` — final eval, sim2sim, domination.
 - `src/rendering/` — mp4 clips.
-- `src/paper/` — tables, figures, labels.
+- `src/paper/` — tables, statistics (rliable), figures, labels.
 - `src/diagnostics/` — arena check, throughput profile.
 - `conf/` — Hydra YAML (groups `robot`, `mode`, `level_space`, `arena`,
   `network`, optional `policy`); `slurm/` — job arrays; `tests/` mirrors `src/`.
