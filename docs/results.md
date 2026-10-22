@@ -20,10 +20,10 @@ just paper-tables eval_dir=<evals> \
 - `prefixes.<robot>=<prefix>` (`conf/paper_tables.yaml`, default
   `ued_<robot>`; a robot set to `null` is skipped): one column group / row
   group per robot. Every `conf/mode` option has a paper name
-  (`paper/labels.py`), in this order: DR, DR-easy, DR-mixed, PLR⊥, SFL,
-  ACCEL, ACCEL-grow, ACCEL-SFL, PAIRED, PAIRED+UniBC, PAIRED+BiBC,
-  PAIRED+Evo; other methods follow under their own name; missing ones are
-  skipped.
+  (`paper/labels.py`), in this order: DR, DR-easy, DR-mixed, Terrain-CL,
+  PLR⊥, SFL, ACCEL, ACCEL-grow, ACCEL-SFL, ACCEL-LP, PAIRED, PAIRED+UniBC,
+  PAIRED+BiBC, PAIRED+Evo; other methods follow under their own name; missing
+  ones are skipped.
 - `main.tex`: success (%) per method x robot: `random/d0.25` mean and
   `suite/success_rate`; mean ± std over seeds, best per column in bold,
   `--` if absent.
@@ -111,7 +111,7 @@ just paper-stats eval_dir=<evals>
     one panel per metric.
 - Methods in `paper/labels.py` order under their paper names, unknown
   methods after them.
-- Cost: about 1.5 min on one laptop core with the defaults (12 methods, 5
+- Cost: about 1.5 min on one laptop core with the defaults (14 methods, 5
   robots), mostly the 144 IQM / mean bootstraps (`reps`). 10000 resamples
   move no CI end by more than 0.003 against 50000 (rliable's default);
   with 5 seeds a per-robot bootstrap has only 126 distinct resamples.

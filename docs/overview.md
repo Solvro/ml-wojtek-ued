@@ -158,8 +158,10 @@ src/
     context.py       TrainContext (everything build makes), KeyStream
     build.py         build a TrainContext from TrainConfig, check_config
     iteration.py     run_levels: one outer iteration over the lanes
-    curricula.py     DR / ACCEL / PLR / PAIRED / PAIRED+Evo iterations
+    curricula.py     DR / Terrain-CL / ACCEL / PLR / PAIRED / PAIRED+Evo iterations
     buffer.py        LevelBuffer (rank + staleness replay)
+    progress.py      learning progress scoring (accel_lp)
+    terrain_cl.py    Terrain-CL curriculum
     adversary.py     PAIRED adversary (single-step PPO on regret)
     generator.py     LevelGenerator network (PAIRED adversary policy)
     paired.py        PAIRED regret, student BC KL, BC weights
@@ -188,6 +190,8 @@ src/
     labels.py        robot / method labels
     latex.py         booktabs cells and tabulars
     tables.py        main / envelopes / compute tables, CSV
+    stats.py         rliable IQM, bootstrap CIs, probability of improvement
+    stats_plots.py   interval estimates and probability-of-improvement figures
     figures.py       curves and composition figures
     domination.py    domination heatmaps and matrices
     terrains.py      rendered example levels
@@ -199,7 +203,7 @@ src/
     eval_brax.py         final eval of a checkpoint  (`just eval`)
     eval_sim2sim.py      CPU MuJoCo variants         (`just sim2sim`)
     render_video.py      mp4 clips of a checkpoint   (`just render-video`)
-    paper_tables.py / paper_figures.py               (`just paper-*`)
+    paper_tables.py / paper_stats.py / paper_figures.py  (`just paper-*`)
     compare_domination.py  domination comparison     (`just domination`)
     train_export.py      train, then export          (`just train-export`)
     export_policy.py     export a checkpoint         (`just export`)

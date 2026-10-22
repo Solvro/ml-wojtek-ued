@@ -14,7 +14,7 @@
   exactly (the paper's environment): jax/jaxlib 0.9.2, mujoco 3.11.0,
   mujoco-mjx 3.10.0, warp-lang 1.13.0, brax 0.14.2, playground 0.2.0.
 - A wandb account: training, eval and the paper dumps log to / read from
-  `entity` / `project` ([configuration.md](configuration.md#trainyaml--trainconfig)).
+  `entity` / `project` ([configuration.md](configuration.md#trainyaml-trainconfig)).
 
 ## Pinned dependencies (do not bump blindly)
 
