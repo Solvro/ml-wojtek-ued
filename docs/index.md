@@ -10,7 +10,7 @@ locomotion on procedural terrain. Start with the [README](../README.md)
 | [setup.md](setup.md) | requirements, pinned dependencies, install, generated assets, outputs | `justfile` |
 | [environment.md](environment.md) | `wojtek_env`, task knobs, `FunctionalEnv`, tiled arena, warp/jax backends | `src/wojtek_env/`, `src/env/` |
 | [levels.md](levels.md) | level genome, `HFieldConfig`, arena assets, level spaces | `src/hfield/` |
-| [training.md](training.md) | trainer, the 12 curricula, PAIRED, throughput | `src/training/` |
+| [training.md](training.md) | trainer, the 14 curricula, PAIRED, throughput | `src/training/` |
 | [robots.md](robots.md) | Go1, Go2, Barkour vB, Spot on the tiled arena | `src/robots/` |
 | [evaluation.md](evaluation.md) | final eval, sim2sim, demo videos | `src/evaluation/`, `src/rendering/` |
 | [results.md](results.md) | paper tables, statistics (rliable), figures, domination comparison | `src/paper/`, `src/evaluation/domination.py` |

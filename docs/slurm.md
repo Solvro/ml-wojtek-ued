@@ -16,7 +16,7 @@ Job arrays behind the paper grid; the commands in order:
 
 - `MODES` = space-separated `conf/mode` options; task =
   mode index x `NSEEDS` + seed offset; seed = `SEED0` + offset. Array size =
-  `NSEEDS` x number of modes (`--array=0-59` for 12 modes x 5 seeds).
+  `NSEEDS` x number of modes (`--array=0-69` for 14 modes x 5 seeds).
 - Run name `<PREFIX>_<ROBOT>_<mode>_seed<N>`; eval `<run>_final_eval`.
 - One array per robot (`ROBOT`).
 

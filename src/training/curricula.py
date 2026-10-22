@@ -4,11 +4,13 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from config.schema import Curriculum, Generator, Mutation
+from config.schema import Curriculum, Generator, Mutation, Score
 from training.buffer import LevelBuffer
 from training.context import TrainContext
 from training.iteration import run_levels
 from training.paired import bc_coefs, paired_regret
+from training.progress import learning_progress, unvisited
+from training.terrain_cl import LaneOutcome
 
 # curricula that train a protagonist and an antagonist
 PAIRED = (Curriculum.paired, Curriculum.paired_evo)
@@ -68,11 +70,22 @@ def run_pair(
 
 
 def score_levels(
-    ctx: TrainContext, levels: np.ndarray, train: bool, it: int
+    ctx: TrainContext,
+    levels: np.ndarray,
+    train: bool,
+    it: int,
+    prior: np.ndarray,
 ) -> dict[str, Any]:
-    if ctx.cfg.mode.curriculum == Curriculum.paired_evo:
-        return run_pair(ctx, levels, train, it)
-    return run_levels(ctx, levels, train)
+    """`prior`: each level's mean episodic return on its previous visit
+    (NaN: none), what the `lp` score compares this visit's against."""
+    mode = ctx.cfg.mode
+    if mode.curriculum == Curriculum.paired_evo:
+        out = run_pair(ctx, levels, train, it)
+    else:
+        out = run_levels(ctx, levels, train)
+    if mode.score == Score.lp:
+        out["score"] = learning_progress(prior, out["lane_episode_return"])
+    return out
 
 
 def explore_levels(ctx: TrainContext, fresh: int) -> np.ndarray:
@@ -94,8 +107,9 @@ def accel_iteration(
     if full and rng.random() < cfg.mode.replay_prob:
         idx = buffer.sample(rng, cfg.num_lanes, it)
         levels = np.stack([buffer.levels[i] for i in idx])
-        out = score_levels(ctx, levels, True, it)
-        buffer.update(idx, out["score"], it)
+        out = score_levels(ctx, levels, True, it, buffer.last_return[idx])
+        returns = out["lane_episode_return"]
+        buffer.update(idx, out["score"], it, returns)
         mutates = (Curriculum.accel, Curriculum.paired_evo)
         if cfg.mode.curriculum in mutates:
             ctx.children = np.stack([mutate(ctx, level) for level in levels])
@@ -104,9 +118,21 @@ def accel_iteration(
     queued = len(ctx.children)
     levels = np.concatenate([ctx.children, new]) if queued else new
     ctx.children = np.zeros((0, *ctx.space.shape))
-    out = score_levels(ctx, levels, False, it)
-    buffer.add(levels, out["score"], it, out["lane_roughness"])
+    out = score_levels(ctx, levels, False, it, unvisited(len(levels)))
+    returns = out["lane_episode_return"]
+    buffer.add(levels, out["score"], it, out["lane_roughness"], returns)
     return {**out, "replay": 0, **buffer.stats()}
+
+
+def terrain_iteration(ctx: TrainContext) -> dict[str, Any]:
+    lanes = ctx.terrain
+    if lanes is None:
+        raise ValueError("terrain_iteration needs mode.curriculum=terrain_cl")
+    out = run_levels(ctx, lanes.levels(), train=True)
+    outcome = LaneOutcome(
+        out["lane_success"], out["lane_travel"], out["lane_cmd_distance"]
+    )
+    return {**out, **lanes.advance(outcome, ctx.rng), "replay": 1}
 
 
 def paired_iteration(ctx: TrainContext, it: int) -> dict[str, Any]:
@@ -132,5 +158,7 @@ def run_iteration(
         return accel_iteration(ctx, buffer, it)
     if curriculum == Curriculum.paired:
         return paired_iteration(ctx, it)
+    if curriculum == Curriculum.terrain_cl:
+        return terrain_iteration(ctx)
     levels = dr_levels(ctx, curriculum)
     return {**run_levels(ctx, levels, train=True), "replay": 1}

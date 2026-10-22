@@ -5,12 +5,12 @@
 A benchmark of Unsupervised Environment Design (UED) and domain-randomization
 curricula for legged locomotion. A brax-PPO student walks on procedurally
 generated heightfield levels; the curriculum decides which levels it sees.
-12 curricula x 5 quadrupeds, trained, evaluated and compared with one
+14 curricula x 5 quadrupeds, trained, evaluated and compared with one
 pipeline. Physics runs on MJX (jax or warp backend).
 
 **Methods** (`mode=`, [details](docs/overview.md#methods)):
-DR, DR-easy, DR-mixed, PLR⊥, SFL, ACCEL, ACCEL-grow, ACCEL-SFL, PAIRED,
-PAIRED+UniBC, PAIRED+BiBC, PAIRED+Evo.
+DR, DR-easy, DR-mixed, Terrain-CL, PLR⊥, SFL, ACCEL, ACCEL-grow, ACCEL-SFL,
+ACCEL-LP, PAIRED, PAIRED+UniBC, PAIRED+BiBC, PAIRED+Evo.
 
 **Robots** (`robot=`, [details](docs/robots.md)): Wojtek (W01-TEK), Unitree
 Go1, Unitree Go2, Google Barkour vB, Boston Dynamics Spot.
@@ -55,7 +55,7 @@ just train --cfg job mode=paired robot=go1 name=x
 
 ## Reproduce the paper
 
-12 methods (`conf/mode/*`) x 5 robots (`conf/robot/*`) x seeds 0-4 = **300
+14 methods (`conf/mode/*`) x 5 robots (`conf/robot/*`) x seeds 0-4 = **350
 training runs**, each followed by one final eval, then the domination
 comparison, tables and figures.
 
@@ -94,35 +94,35 @@ git archive HEAD src conf assets | tar -x -C "$COPY"
 BUILD=$(SRC="$COPY/src" sbatch --parsable slurm/build_assets.sbatch)
 ```
 
-### 3. Train (60 tasks per robot)
+### 3. Train (70 tasks per robot)
 
 ```bash
 export SRC="$COPY/src" NSEEDS=5 TAGS=paper
-export MODES="dr dr_easy dr_mixed plr sfl accel accel_grow accel_sfl paired paired_uni paired_bi paired_evo"
+export MODES="dr dr_easy dr_mixed terrain_cl plr sfl accel accel_grow accel_sfl accel_lp paired paired_uni paired_bi paired_evo"
 
 # Wojtek: 300M steps, warp; each robot's eval array starts task by task
 # as its training task finishes (aftercorr)
 T=$(ROBOT=wojtek NUM_TIMESTEPS=300000000 BACKEND=warp sbatch --parsable \
-  --time=04:00:00 --dependency="afterok:$BUILD" --array=0-59 slurm/brax_ued.sbatch)
-ROBOT=wojtek BACKEND=warp sbatch --dependency="aftercorr:$T" --array=0-59 \
+  --time=04:00:00 --dependency="afterok:$BUILD" --array=0-69 slurm/brax_ued.sbatch)
+ROBOT=wojtek BACKEND=warp sbatch --dependency="aftercorr:$T" --array=0-69 \
   slurm/eval_brax.sbatch
 
 # Playground robots: 1B steps, jax
 for ROBOT in go1 barkour spot go2; do
   T=$(ROBOT="$ROBOT" NUM_TIMESTEPS=1000000000 BACKEND=jax sbatch --parsable \
-    --time=06:00:00 --dependency="afterok:$BUILD" --array=0-59 slurm/brax_ued.sbatch)
-  ROBOT="$ROBOT" BACKEND=jax sbatch --dependency="aftercorr:$T" --array=0-59 \
+    --time=06:00:00 --dependency="afterok:$BUILD" --array=0-69 slurm/brax_ued.sbatch)
+  ROBOT="$ROBOT" BACKEND=jax sbatch --dependency="aftercorr:$T" --array=0-69 \
     slurm/eval_brax.sbatch
 done
 ```
 
 - WCSS caps submitted jobs per user (500 array tasks): the full grid is
-  600 tasks, so submit the last robot once the first tasks have finished.
+  700 tasks, so submit the last robot once the first tasks have finished.
 
 - Task = mode index x 5 + seed; checkpoints:
   `$PDW/artifacts/brax_ued/ued_<robot>_<mode>_seed<N>.pkl`.
 - Variables and defaults: [docs/slurm.md](docs/slurm.md#job-variables).
-- Cost: Wojtek ~8 GPU-h per seed over the 12 methods (warp, H100); a
+- Cost: Wojtek ~9 GPU-h per seed over the 14 methods (warp, H100); a
   Playground run is ~1 GPU-h per 1B steps, PAIRED variants ~2x (two
   students). Throughput: [docs/training.md](docs/training.md#throughput).
 
@@ -132,9 +132,9 @@ Submitted with the training arrays above (`aftercorr`). To re-run them for
 finished checkpoints:
 
 ```bash
-ROBOT=wojtek BACKEND=warp sbatch --array=0-59 slurm/eval_brax.sbatch
+ROBOT=wojtek BACKEND=warp sbatch --array=0-69 slurm/eval_brax.sbatch
 for ROBOT in go1 barkour spot go2; do
-  ROBOT="$ROBOT" BACKEND=jax sbatch --array=0-59 slurm/eval_brax.sbatch
+  ROBOT="$ROBOT" BACKEND=jax sbatch --array=0-69 slurm/eval_brax.sbatch
 done
 ```
 

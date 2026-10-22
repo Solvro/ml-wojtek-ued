@@ -78,6 +78,8 @@ def make_unroll(
                         "diverged": diverged,
                         "reward": reward,
                         "cmd_vx": cmd_vx,
+                        # body-frame (vx, vy, wz); Wojtek appends a height
+                        "command": state.info["command"][:, :3],
                         "forward_vel": forward_vel,
                         "xy": next_state.data.qpos[:, :2],
                     },

@@ -75,13 +75,13 @@ level_space:
   edit_scale: 0.1
 
 # --- UED algorithm ----------------------------------------------------------
-# The 12 named algorithms are combinations of the switches
+# The 14 named algorithms are combinations of the switches
 # (docs/configuration.md, `mode/`).
 mode:
-  # dr | dr_easy | dr_mixed | accel | plr | paired | paired_evo
+  # dr | dr_easy | dr_mixed | terrain_cl | accel | plr | paired | paired_evo
   curriculum: accel
   mutation: local # ACCEL mutation of a replayed level: local | grow
-  score: pvl # level score: pvl | learnability
+  score: pvl # level score: pvl | learnability | lp
   generator: easy # ACCEL explore levels: easy | mixed
   bc: none # PAIRED distillation: none | uni | bi
   replay_prob: 0.8 # replay probability once the buffer holds num_lanes levels

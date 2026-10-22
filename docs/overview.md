@@ -2,7 +2,7 @@
 
 Quadruped UED Benchmark: Unsupervised Environment Design (UED) for quadruped
 locomotion on procedural terrain. A brax-PPO student trains against a
-curriculum that generates, replays or edits heightfield levels. 12 curricula
+curriculum that generates, replays or edits heightfield levels. 14 curricula
 (`conf/mode/`) x 5 robots (`conf/robot/`), every level of an iteration on its
 own tile of one shared MJX heightfield. Commands to reproduce the paper:
 [README](../README.md#reproduce-the-paper).
@@ -35,19 +35,22 @@ flowchart LR
 | `dr` | fresh uniform levels at full difficulty | domain randomization (Tobin et al. 2017) |
 | `dr_easy` | DR over the easy generator (control points within `generator_scale` of flat) | ablation: "train easy" without a curriculum |
 | `dr_mixed` | uniform levels scaled by a per-level difficulty `U(0, 1)` | ablation |
+| `terrain_cl` | per lane a fixed uniform level at row `r` in `0..10` (shrunk to `d = r/10`); promote at >= 50 % success, demote below half the commanded distance | Terrain-CL (Rudin et al. 2022, legged_gym `terrain_levels`) |
 | `plr` | robust PLR (PLR⊥): rank + staleness replay of high-regret levels, explore iterations score fresh DR levels without training | Jiang et al. 2021 (PLR; Replay-Guided Adversarial Environment Design) |
 | `sfl` | PLR⊥ scored by learnability `p(1-p)` | approximation of SFL (Rutherford et al. 2024) |
 | `accel` | PLR⊥ buffer + mutation of replayed levels; explore iterations score children + fresh easy levels | ACCEL (Parker-Holder et al. 2022) |
 | `accel_grow` | ACCEL, mutation also scales the level away from flat by `U(1, grow_max)` | ablation |
 | `accel_sfl` | `accel_grow` scored by learnability | ACCEL + SFL score |
+| `accel_lp` | `accel` scored by learning progress: signed change in mean episodic return since the level's previous visit | ACCEL + learning progress (LP-ACRL, Li et al. 2026) |
 | `paired` | learned level generator, protagonist + antagonist, PAIRED regret | PAIRED (Dennis et al. 2020) |
 | `paired_uni` | PAIRED + UniBC (protagonist distils the antagonist) | Mediratta et al. 2023 (Stabilizing UED with a Learned Adversary) |
 | `paired_bi` | PAIRED + BiBC (both directions) | Mediratta et al. 2023 |
 | `paired_evo` | ACCEL's buffer and mutation scored by PAIRED regret, two students | PAIRED regret + ACCEL editing |
 
 - Level score: positive value loss = mean positive GAE advantage of a lane
-  (`plr`, `accel`, `accel_grow`); learnability (`sfl`, `accel_sfl`); PAIRED
-  regret (`paired*`). The `dr*` modes score nothing.
+  (`plr`, `accel`, `accel_grow`); learnability (`sfl`, `accel_sfl`);
+  learning progress (`accel_lp`); PAIRED regret (`paired*`). The `dr*`
+  modes score nothing; `terrain_cl` moves lanes by success and travel.
 - Details and switches: [training.md](training.md#trainer), [PAIRED](training.md#paired).
 
 ## Robots

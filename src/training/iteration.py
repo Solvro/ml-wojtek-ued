@@ -12,14 +12,34 @@ from training.context import TrainContext
 from training.student import Student
 
 
+@jax.jit
+def commanded_motion(
+    heading: jax.Array, displacement: jax.Array, command: jax.Array, dt: float
+) -> tuple[jax.Array, jax.Array]:
+    """Heading (rad) and planar displacement (m) of a robot that tracks
+    `command` (env, step, (vx, vy, wz) in its body frame) exactly."""
+    wz = command[..., 2]
+    turned = heading[:, None] + dt * jnp.cumsum(wz, axis=1)
+    yaw = turned - dt * wz
+    vx, vy = command[..., 0], command[..., 1]
+    cos, sin = jnp.cos(yaw), jnp.sin(yaw)
+    velocity = jnp.stack([cos * vx - sin * vy, sin * vx + cos * vy], axis=-1)
+    return turned[:, -1], displacement + dt * velocity.sum(axis=1)
+
+
 class LaneTotals:
     """Per-env sums over one iteration's unrolls."""
 
-    def __init__(self, n: int) -> None:
+    def __init__(self, n: int, dt: float) -> None:
+        self.dt = dt
         self.regret = jnp.zeros(n)
         self.episode_return = jnp.zeros(n)
+        self.first_return = jnp.zeros(n)
+        self.alive = jnp.ones(n)
         self.fell_any = jnp.zeros(n)
         self.leaked = jnp.zeros(n, bool)
+        self.cmd_heading = jnp.zeros(n)
+        self.cmd_displacement = jnp.zeros((n, 2))
         self.bc_kl = jnp.zeros(())
         self.logs: list[dict[str, jax.Array]] = []
 
@@ -35,8 +55,18 @@ class LaneTotals:
         if bc_kl is not None:
             self.bc_kl = self.bc_kl + bc_kl
         self.episode_return = self.episode_return + data.reward.sum(axis=1)
+        # a terminated env restarts at its spawn on the same tile; only its
+        # first episode counts, through the terminating step
+        alive = self.alive[:, None] * jnp.cumprod(data.discount, axis=1)
+        counted = jnp.concatenate([self.alive[:, None], alive[:, :-1]], axis=1)
+        lived = (counted * data.reward).sum(axis=1)
+        self.first_return = self.first_return + lived
+        self.alive = alive[:, -1]
         self.fell_any = jnp.maximum(self.fell_any, log["fell"].max(axis=1))
         self.leaked = self.leaked | leaked.any(axis=1)
+        self.cmd_heading, self.cmd_displacement = commanded_motion(
+            self.cmd_heading, self.cmd_displacement, log["command"], self.dt
+        )
         self.logs.append(jax.tree.map(jnp.mean, log))
 
 
@@ -65,7 +95,7 @@ def run_levels(
     dr_model, _ = env.sample_dr(ctx.next_key(), n)
     _, state = ctx.reset(jax.random.split(key, n), hfield, dr_model, tile_xy)
     start_xy = state.data.qpos[:, :2]
-    totals = LaneTotals(n)
+    totals = LaneTotals(n, env.travel.dt)
     unrolls = level_steps(cfg.robot, cfg.level_steps) // cfg.ppo.unroll_length
     for _ in range(unrolls):
         state, data = ctx.unroll(
@@ -112,6 +142,9 @@ def summarize_lanes(
         (totals.fell_any == 0) & (travel >= threshold), dtype=float
     )
     lane_success = success.reshape(lanes, -1).mean(axis=1)
+    # how far the commands asked to go (Terrain-CL demotion): travel is a
+    # displacement too, so commanded turns shorten it as they shorten travel
+    cmd_distance = jnp.linalg.norm(totals.cmd_displacement, axis=-1)
     lane_regret = lane_regret / unrolls
     # SFL learnability: highest where the student sometimes succeeds
     learnability = lane_success * (1.0 - lane_success)
@@ -121,6 +154,11 @@ def summarize_lanes(
         "regret": lane_regret,
         "score": learnability if use_learnability else lane_regret,
         "lane_returns": lane_returns,
+        # undiscounted return of each env's first episode on the level
+        "lane_episode_return": lane_mean(totals.first_return, lanes),
+        "lane_success": lane_success,
+        "lane_travel": lane_mean(travel, lanes),
+        "lane_cmd_distance": lane_mean(cmd_distance, lanes),
         "train_success": float(success.mean()),
         "learnability_mean": float(learnability.mean()),
         "falls_per_step": log["fell"],
@@ -132,3 +170,7 @@ def summarize_lanes(
         # envs whose feet or height scan reached another lane's level
         "tile_leak_frac": float(totals.leaked.mean()),
     }
+
+
+def lane_mean(per_env: jax.Array, lanes: int) -> np.ndarray:
+    return np.asarray(per_env.reshape(lanes, -1).mean(axis=1))

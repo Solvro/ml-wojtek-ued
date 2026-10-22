@@ -1,6 +1,6 @@
 # Training
 
-The brax-PPO student, the 12 curricula (`conf/mode/`), PAIRED, and the
+The brax-PPO student, the 14 curricula (`conf/mode/`), PAIRED, and the
 measured throughput.
 
 ## Trainer
@@ -36,6 +36,30 @@ levels.
   `generator_scale` of flat) — isolates the curriculum from "train easy".
 - `mode=dr_mixed`: uniform levels scaled by a per-level difficulty
   drawn from `[0, 1]`.
+- `mode=terrain_cl`: the game-inspired terrain curriculum of Rudin et al.
+  2022 (legged_gym / Isaac Lab `terrain_levels`), per lane because all
+  `envs_per_lane` envs of a lane share its tile (`training/terrain_cl.py`).
+  - Column: each lane draws one uniform level (own noise seed) at the start
+    of the run and keeps it.
+  - Row `r` in `0..10`: the lane runs its column shrunk toward `flat` by
+    `d = r / 10` (`LevelSpace.shrink`, the `random/d<d>` formula). Initial
+    rows uniform in `0..5` (legged_gym `max_init_terrain_level`).
+  - Every iteration trains (as DR); afterwards each lane moves: up one row
+    when >= 50 % of its envs succeeded (no fall, >= `min_travel` m, as
+    `train_success`), else down one row when its mean travel < 0.5 x its
+    mean commanded distance; clipped at row 0. A lane promoted past row 10
+    goes to a uniformly random row.
+  - Commanded distance (`iteration.commanded_motion`): the displacement of
+    a robot tracking the iteration's commands exactly, body-frame
+    `(vx, vy)` integrated along the heading the `wz` commands turn, over
+    every step (resets included). A constant straight command gives
+    legged_gym's `|command_xy| x episode_length_s`. Travel is a
+    displacement, so a path length (`sum |command_xy| x dt`) would demote
+    perfect trackers: with the redrawn turning commands a perfect
+    tracker's mean displacement is ~0.43 of it on Spot, ~0.56 on Go1/Go2.
+  - Logged: `terrain_cl/row_mean`, `/row_p10`, `/row_p90` (rows the
+    iteration ran), `/promote_frac`, `/demote_frac`, `/top_reset_frac`,
+    plus the level composition.
 - `mode=accel`: replay iterations (`replay_prob`, once the buffer holds
   `num_lanes` levels) train on rank+staleness-prioritized buffer levels,
   refresh their scores and queue their mutations; explore iterations do not
@@ -50,13 +74,40 @@ levels.
   - `mode.score=learnability` — level score `p(1-p)` (SFL), `p` = fraction of
     the lane's envs that never fell and ended >= `min_travel` m out,
     instead of positive value loss.
+  - `mode.score=lp` — learning progress, signed (`training/progress.py`),
+    after LP-ACRL (Li et al. 2026, arXiv 2601.17428:
+    `LP = R_c(ζ) - R_c-1(ζ)`, the change in expected episodic reward
+    between consecutive stages), adapted to ACCEL's buffer:
+    - `R` per visit of a level = mean over its `envs_per_lane` envs of the
+      undiscounted return (full task reward) of the env's first episode on
+      the level: reward summed from the level's first step through its
+      first termination, else over all `H` = resolved `level_steps` steps
+      (Spot 780, Wojtek 300). `lane_episode_return`, `LaneTotals` in
+      `training/iteration.py`.
+    - A terminated env (fall, divergence, Wojtek's `no_progress` cut)
+      auto-resets onto its spawn on the same tile and keeps stepping for
+      the rest of the level; those steps still train PPO and still count
+      in `lane_returns` (PAIRED regret), but not in `R`. `H` stays below
+      the env's 1000-step episode length, so no truncation inside a level.
+    - Score = `R(this visit) - R(previous visit of the level)`: negative
+      on forgetting. A level's first visit scores 0; LP is defined from
+      its second visit on. A mutated child is a new level, so its first
+      visit also scores 0: it does not inherit its parent's `R`, since a
+      child-vs-parent difference mixes the change in difficulty the
+      mutation made with the student's learning progress.
+    - The buffer stores each level's last `R` (every buffered mode tracks
+      it; only `lp` scores by it). Sampling, replay, mutation and the
+      generator are plain ACCEL's. Negative scores rank last and are
+      evicted first; at the start the buffer fills with 0-score fresh
+      levels (eviction only past `buffer_size`) and replays them.
   - `mode.generator=mixed` — explore iterations draw fresh levels from the
     `dr_mixed` distribution instead of the easy generator.
   - Logged: `buffer_roughness_mean`/`_p90`, `buffer_score_roughness_spearman`
     (rank correlation of level score vs roughness), `children_roughness`,
     `train_success`, `learnability_mean`.
-  - Mode options `mode=accel_grow` (grow) and `mode=accel_sfl` (grow +
-    learnability). `level_space=grid` composes 16 edits for both (8
+  - Mode options `mode=accel_grow` (grow), `mode=accel_sfl` (grow +
+    learnability) and `mode=accel_lp` (plain ACCEL + `lp`).
+    `level_space=grid` composes 16 edits for the two `grow` modes (8
     otherwise); `param` edits 2 parameters either way.
 - `mode=paired` / `paired_uni` / `paired_bi` / `paired_evo`: PAIRED and
   its variants, two students; see [PAIRED](#paired).

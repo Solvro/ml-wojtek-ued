@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 Quadruped UED Benchmark: Unsupervised Environment Design for quadruped
-locomotion on procedural terrain (12 curricula x 5 robots). The global
+locomotion on procedural terrain (14 curricula x 5 robots). The global
 `~/.claude/CLAUDE.md` applies; this file records where things live and where
 this repo deviates. **Read the matching doc before touching an area; update it
 when the code changes.** Page map: [docs/index.md](docs/index.md).

@@ -10,6 +10,7 @@ from training.adversary import Adversary
 from training.context import KeyStream, TrainContext
 from training.curricula import PAIRED
 from training.student import Student
+from training.terrain_cl import TerrainLanes
 from training.unroll import make_unroll
 
 
@@ -82,6 +83,10 @@ def build(cfg: TrainConfig) -> TrainContext:
         adversary = Adversary(cfg.mode, space.gen_shape, next_key())
     _, dr_in_axes = env.sample_dr(jax.random.key(0), num_envs)
     reset = jax.jit(jax.vmap(env.reset, in_axes=(0, None, dr_in_axes, 0)))
+    rng = np.random.default_rng(cfg.seed)
+    terrain = None
+    if cfg.mode.curriculum == Curriculum.terrain_cl:
+        terrain = TerrainLanes(space, rng, cfg.num_lanes)
 
     return TrainContext(
         cfg=cfg,
@@ -92,11 +97,12 @@ def build(cfg: TrainConfig) -> TrainContext:
         space=space,
         layout=layout,
         assemble=jax.jit(layout.assemble),
-        rng=np.random.default_rng(cfg.seed),
+        rng=rng,
         next_key=next_key,
         reset=reset,
         eval_reset=tile_reset(eval_env),
         unroll=make_unroll(env, student.make_policy, dr_in_axes),
         eval_unroll=make_unroll(eval_env, student.make_policy, None),
         children=np.zeros((0, *space.shape)),
+        terrain=terrain,
     )

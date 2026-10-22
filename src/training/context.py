@@ -11,6 +11,7 @@ from hfield.level_space import LevelSpace
 from hfield.tiles import TileLayout
 from training.adversary import Adversary
 from training.student import Student
+from training.terrain_cl import TerrainLanes
 from training.unroll import Unroll
 
 
@@ -44,3 +45,5 @@ class TrainContext:
     eval_unroll: Unroll
     # ACCEL mutations queued for the next explore iteration
     children: np.ndarray
+    # Terrain-CL's lanes, None elsewhere
+    terrain: TerrainLanes | None
