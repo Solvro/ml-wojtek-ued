@@ -1,0 +1,41 @@
+defaults:
+  - paper_stats_schema
+  - _self_
+
+prefixes:
+  wojtek: ued_wojtek
+  go1: ued_go1
+  go2: ued_go2
+  barkour: ued_barkour
+  spot: ued_spot
+eval_dir: ???
+# [X, Y] pairs for poi.pdf and named_pairs; a pair without dumps is skipped
+pairs:
+  - [accel, dr]
+  - [accel, dr_easy]
+  - [dr_easy, dr]
+  - [plr, dr]
+  - [accel_sfl, accel]
+  - [paired, plr]
+  - [paired_evo, paired]
+  - [terrain_cl, accel]
+  - [terrain_cl, dr]
+  - [accel_lp, accel]
+  - [accel_lp, dr]
+reps: 50000
+poi_reps: 2000
+seed: 0
+out: artifacts/paper/stats
+
+hydra:
+  job:
+    chdir: false
+  # rliable logs a line per bootstrap, mathtext one per glyph fallback
+  job_logging:
+    loggers:
+      absl:
+        level: WARNING
+      matplotlib:
+        level: WARNING
+  run:
+    dir: artifacts/hydra/paper_stats/${now:%Y-%m-%d_%H-%M-%S}

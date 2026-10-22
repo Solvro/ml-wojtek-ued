@@ -57,6 +57,7 @@ touching any of those pins.
 | `just sim2sim *args` | `scripts/eval_sim2sim.py` (`conf/sim2sim.yaml`) |
 | `just render-video *args` | `scripts/render_video.py` (`conf/render.yaml`) |
 | `just paper-tables *args` | `scripts/paper_tables.py` (`conf/paper_tables.yaml`) |
+| `just paper-stats *args` | `scripts/paper_stats.py` (`conf/paper_stats.yaml`) |
 | `just paper-figures *args` | `scripts/paper_figures.py` (`conf/paper_figures.yaml`) |
 | `just domination *args` | `scripts/compare_domination.py` (`conf/domination.yaml`) |
 

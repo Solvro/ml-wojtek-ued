@@ -30,6 +30,10 @@ dependencies = [
     "mediapy>=1.2.7",
     "onnx==1.23.2",
     "onnxruntime==1.31.0",
+    # IQM / stratified bootstrap / probability of improvement (paper_stats)
+    "rliable==1.2.0",
+    # rliable 1.2.0 caps arch<8, and arch 7.x fails to import on pandas 3
+    "pandas==2.3.3",
 ]
 
 [project.optional-dependencies]

@@ -13,7 +13,7 @@ locomotion on procedural terrain. Start with the [README](../README.md)
 | [training.md](training.md) | trainer, the 12 curricula, PAIRED, throughput | `src/training/` |
 | [robots.md](robots.md) | Go1, Go2, Barkour vB, Spot on the tiled arena | `src/robots/` |
 | [evaluation.md](evaluation.md) | final eval, sim2sim, demo videos | `src/evaluation/`, `src/rendering/` |
-| [results.md](results.md) | paper tables, figures, domination comparison | `src/paper/`, `src/evaluation/domination.py` |
+| [results.md](results.md) | paper tables, statistics (rliable), figures, domination comparison | `src/paper/`, `src/evaluation/domination.py` |
 | [export.md](export.md) | train from one YAML, export to ONNX, the generated deployment README | `src/export/`, `conf/policy/` |
 | [configuration.md](configuration.md) | every Hydra config group and field | `conf/`, `src/config/` |
 | [slurm.md](slurm.md) | job variables, per-robot budgets, cluster values | `slurm/` |

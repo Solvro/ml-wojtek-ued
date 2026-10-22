@@ -48,6 +48,69 @@ just paper-tables eval_dir=<evals> \
   that JSON.
 - Robot names in headers: `ROBOT_LABEL` (`wojtek` prints as W01-TEK).
 
+## Paper statistics
+
+Entry point `scripts/paper_stats.py`; code in `src/paper/stats.py`,
+`stats_plots.py`. The rliable protocol (Agarwal et al. 2021) via the
+`rliable` package.
+
+```sh
+just paper-stats eval_dir=<evals>
+```
+
+- Inputs: the `eval_brax.py` JSONs `paper_tables` reads, same
+  `prefixes.<robot>` (`conf/paper_stats.yaml`). Metrics:
+  `random/d0.25/success_rate` (headline) and `suite/success_rate` (held-out);
+  a run without a finite value is skipped with a warning.
+- IQM: interquartile mean = 25 % trimmed mean (`scipy.stats.trim_mean`),
+  over all runs pooled. With 5 seeds it is the mean of the middle 3.
+- CIs: 95 % percentile stratified bootstrap (`reps` resamples): seeds are
+  resampled with replacement within each robot (the strata); per robot
+  that is a plain bootstrap over seeds.
+- Per robot (`per_robot`): IQM and mean of the raw success rate over the
+  method's seeds, with CIs.
+- Normalisation (aggregate only): per robot and metric, each run's score
+  becomes (x - min) / (max - min), min / max = the lowest / highest
+  seed-mean among the methods with runs on that robot. 0 = the worst
+  method's mean, 1 = the best's; single runs can fall outside [0, 1].
+  A robot where every method has the same mean (incl. a single method) is
+  refused: drop it with `prefixes.<robot>=null`.
+- Aggregate (`aggregate`): IQM and mean over all robot x seed runs of the
+  normalised scores, CIs from the bootstrap stratified by robot. Only
+  methods with runs on every robot; a method missing on a robot warns, is
+  listed in `missing` and gets `--` in `stats.tex` (like `paper_tables`).
+- Unequal seed counts: the bootstrap needs a (seeds x robots) matrix, so
+  a method keeps its lowest-numbered `n` seeds on every robot, `n` = its
+  smallest count; dropped runs warn.
+- Probability of improvement (`poi[X][Y]`): per robot P(X > Y) = Mann-Whitney
+  U / (n m) over the two methods' seeds (ties count 1/2), averaged over the
+  robots both methods have runs on (`robots`); CI from the independent
+  stratified bootstrap (`poi_reps` resamples, both methods resampled
+  per robot). Computed once per unordered pair, `P(Y > X) = 1 - P(X > Y)`
+  with the CI mirrored. Normalisation does not change it (rank-based).
+  P = 0.5: indistinguishable; a CI excluding 0.5: X better (> 0.5) or worse.
+- `pairs` (`conf/paper_stats.yaml`): the comparisons the paper discusses
+  (ACCEL vs DR, ACCEL vs DR-easy, DR-easy vs DR, PLR⊥ vs DR, ACCEL-SFL vs
+  ACCEL, PAIRED vs PLR⊥, PAIRED+Evo vs PAIRED, `terrain_cl` and
+  `accel_lp` vs ACCEL and vs DR) -> `named_pairs`; pairs without runs of
+  both go to `skipped_pairs`.
+- Bootstrap RNG: rliable draws from numpy's global RNG (it ignores
+  `random_state`), so the script seeds it with `seed`.
+- Writes to `out` (default `artifacts/paper/stats`):
+  - `stats.json`: per metric `per_robot`, `normalisation` (min / max and
+    their methods), `missing`, `aggregate`, `poi` (all ordered pairs),
+    `named_pairs`, `skipped_pairs`; plus robots, methods, paper labels,
+    `reps`, `poi_reps`, `seed`.
+  - `stats.tex`: bare booktabs `tabular`, methods x aggregate IQM
+    `[95 % CI]` at d = 0.25 and on the suite, normalised scores.
+  - `iqm.pdf`: rliable interval estimates, aggregate IQM and mean per metric.
+  - `poi.pdf`: rliable probability-of-improvement plot of `named_pairs`,
+    one panel per metric.
+- Methods in `paper/labels.py` order under their paper names, unknown
+  methods after them.
+- Cost: about 10 min on one laptop core with the defaults (12 methods, 5
+  robots); `reps` dominates the per-robot part, `poi_reps` the 66 pairs.
+
 ## Paper figures
 
 Entry point `scripts/paper_figures.py`; code in `src/paper/figures.py`,

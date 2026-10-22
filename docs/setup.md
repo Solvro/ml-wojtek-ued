@@ -32,6 +32,11 @@ carry the reasons:
 graph against opset 17, `onnxruntime` runs the export-time check and is
 what the robot runs, so a drifting pair would change the shipped contract.
 
+`rliable == 1.2.0` (IQM, stratified bootstrap, probability of improvement,
+[results.md](results.md#paper-statistics)) is pinned exactly; it caps
+`arch < 8`, and `arch` 7.x fails to import on pandas 3, hence
+`pandas == 2.3.3`.
+
 Everything else (`brax`, `playground`, `equinox`, `distrax`, `optax`,
 `hydra-core`, `wandb`, `gymnasium`, `ml-collections`, `matplotlib`,
 `mediapy`) floats on `>=` in `pyproject.toml`; the lockfile fixes the
