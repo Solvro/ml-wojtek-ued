@@ -181,3 +181,18 @@ def test_unequal_seed_counts_keep_the_common_count(
     values = report["metrics"][D025]
     assert values["aggregate"]["dr"]["runs"] == 4
     assert values["per_robot"]["go1"]["dr"]["runs"] == 3
+
+
+@pytest.mark.parametrize("pair", ["[accel]", "[accel,dr,plr]", "[dr,dr]"])
+def test_refuses_a_pair_that_is_not_two_methods(
+    pair: str, tmp_path: Path, compose_cfg: Callable[..., Any]
+) -> None:
+    write_method(tmp_path, "go1", "dr", [0.1, 0.2])
+    cfg = compose_cfg(
+        "paper_stats",
+        f"eval_dir={tmp_path}",
+        f"pairs=[{pair}]",
+        *[f"prefixes.{r}=null" for r in Robot if r != "go1"],
+    )
+    with pytest.raises(ValueError, match="not \\[X, Y\\]"):
+        stats(cfg)

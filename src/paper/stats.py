@@ -241,7 +241,17 @@ def stats_table(report: dict[str, Any]) -> str:
     return tabular("l" + "c" * len(METRICS), head, body)
 
 
+def check_pairs(pairs: list[list[str]]) -> None:
+    for pair in pairs:
+        if len(pair) != 2 or pair[0] == pair[1]:
+            raise ValueError(
+                f"pairs: {pair} is not [X, Y] of two different methods; "
+                "fix it in conf/paper_stats.yaml or pass pairs=[[accel,dr]]"
+            )
+
+
 def stats(cfg: PaperStatsConfig) -> None:
+    check_pairs(cfg.pairs)
     prefixes = run_prefixes(cfg.prefixes)
     eval_dir = Path(cfg.eval_dir)
     runs = {r: load_runs(eval_dir, r, p) for r, p in prefixes.items()}
