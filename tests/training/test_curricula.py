@@ -8,7 +8,6 @@ import pytest
 from config.schema import Score
 from training import curricula
 from training.buffer import LevelBuffer
-from training.progress import unvisited
 
 Compose = Callable[..., Any]
 
@@ -37,12 +36,11 @@ def accel_ctx(compose_cfg: Compose, mode: str) -> Any:
         rng=np.random.default_rng(0),
         space=space,
         children=np.zeros((0, 2)),
-        children_return=unvisited(0),
     )
 
 
 @pytest.mark.parametrize("mode", ["accel_lp", "accel"])
-def test_accel_lp_scores_against_the_previous_visit_and_the_parent(
+def test_accel_lp_scores_children_as_fresh_levels_until_replayed(
     compose_cfg: Compose, monkeypatch: pytest.MonkeyPatch, mode: str
 ) -> None:
     ctx = accel_ctx(compose_cfg, mode)
@@ -54,17 +52,22 @@ def test_accel_lp_scores_against_the_previous_visit_and_the_parent(
     monkeypatch.setattr(curricula, "run_levels", fake_run_levels([3.0, 0.5]))
     replay = curricula.accel_iteration(ctx, buffer, 1)
     np.testing.assert_array_equal(buffer.last_return, [0.5, 3.0])
-    np.testing.assert_array_equal(ctx.children_return, [3.0, 0.5])
     np.testing.assert_array_equal(ctx.children, [[6.0, 6.0], [1.0, 1.0]])
 
     ctx.cfg.mode.replay_prob = 0.0
-    monkeypatch.setattr(curricula, "run_levels", fake_run_levels([2.0, 2.0]))
+    monkeypatch.setattr(curricula, "run_levels", fake_run_levels([2.0, 1.0]))
     explore = curricula.accel_iteration(ctx, buffer, 2)
-    np.testing.assert_array_equal(buffer.last_return[-2:], [2.0, 2.0])
+    np.testing.assert_array_equal(buffer.last_return[-2:], [2.0, 1.0])
+
+    ctx.cfg.mode.replay_prob = 1.0
+    monkeypatch.setattr(buffer, "sample", lambda *_: np.array([2, 3]))
+    monkeypatch.setattr(curricula, "run_levels", fake_run_levels([2.5, 0.0]))
+    child_replay = curricula.accel_iteration(ctx, buffer, 3)
     if ctx.cfg.mode.score == Score.lp:
         np.testing.assert_allclose(replay["score"], [1.0, -0.5])
-        np.testing.assert_allclose(explore["score"], [-1.0, 1.5])
-        np.testing.assert_allclose(buffer.scores, [-0.5, 1.0, -1.0, 1.5])
+        np.testing.assert_array_equal(explore["score"], [0.0, 0.0])
+        np.testing.assert_allclose(child_replay["score"], [0.5, -1.0])
+        np.testing.assert_allclose(buffer.scores, [-0.5, 1.0, 0.5, -1.0])
     else:
         np.testing.assert_array_equal(explore["score"], [7.0, 7.0])
 

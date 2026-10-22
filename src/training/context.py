@@ -43,9 +43,7 @@ class TrainContext:
     eval_reset: Callable[..., Any]
     unroll: Unroll
     eval_unroll: Unroll
-    # ACCEL mutations queued for the next explore iteration, with their
-    # parents' latest mean episodic return (the `lp` score's previous visit)
+    # ACCEL mutations queued for the next explore iteration
     children: np.ndarray
-    children_return: np.ndarray
     # Terrain-CL's lanes, None elsewhere
     terrain: TerrainLanes | None

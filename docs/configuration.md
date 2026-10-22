@@ -120,7 +120,7 @@ each `mode/<option>.yaml` sets its switches.
 | `generator_scale` | `0.1` | easy generator: control points within this of flat (`dr_easy`, ACCEL explore) |
 | `mutation` | `local` | `local` edits, or `grow`: also scale the level away from flat by `U(1, grow_max)` |
 | `grow_max` | `1.3` | upper bound of the `grow` factor |
-| `score` | `pvl` | level score: positive value loss, `learnability` `p(1-p)`, or `lp` learning progress: signed change in a level's mean episodic return since its previous visit (a child's: its parent's); `paired_evo` scores PAIRED regret and requires `pvl` |
+| `score` | `pvl` | level score: positive value loss, `learnability` `p(1-p)`, or `lp` learning progress: signed change in a level's mean episodic return since its previous visit (first visit, mutated children included: 0); `paired_evo` scores PAIRED regret and requires `pvl` |
 | `generator` | `easy` | ACCEL explore levels: `easy` generator or `mixed` (`dr_mixed` draw) |
 | `latent_dim` | `16` | PAIRED adversary latent size |
 | `gen_learning_rate` | `1e-4` | PAIRED adversary Adam step |

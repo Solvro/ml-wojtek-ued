@@ -9,7 +9,6 @@ from robots.scale import hfield_config, level_steps, min_travel, robot_scale
 from training.adversary import Adversary
 from training.context import KeyStream, TrainContext
 from training.curricula import PAIRED
-from training.progress import unvisited
 from training.student import Student
 from training.terrain_cl import TerrainLanes
 from training.unroll import make_unroll
@@ -105,6 +104,5 @@ def build(cfg: TrainConfig) -> TrainContext:
         unroll=make_unroll(env, student.make_policy, dr_in_axes),
         eval_unroll=make_unroll(eval_env, student.make_policy, None),
         children=np.zeros((0, *space.shape)),
-        children_return=unvisited(0),
         terrain=terrain,
     )

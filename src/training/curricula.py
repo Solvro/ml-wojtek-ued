@@ -113,15 +113,12 @@ def accel_iteration(
         mutates = (Curriculum.accel, Curriculum.paired_evo)
         if cfg.mode.curriculum in mutates:
             ctx.children = np.stack([mutate(ctx, level) for level in levels])
-            ctx.children_return = returns
         return {**out, "replay": 1, **buffer.stats()}
     new = explore_levels(ctx, cfg.num_lanes - len(ctx.children))
     queued = len(ctx.children)
     levels = np.concatenate([ctx.children, new]) if queued else new
-    prior = np.concatenate([ctx.children_return, unvisited(len(new))])
     ctx.children = np.zeros((0, *ctx.space.shape))
-    ctx.children_return = unvisited(0)
-    out = score_levels(ctx, levels, False, it, prior)
+    out = score_levels(ctx, levels, False, it, unvisited(len(levels)))
     returns = out["lane_episode_return"]
     buffer.add(levels, out["score"], it, out["lane_roughness"], returns)
     return {**out, "replay": 0, **buffer.stats()}

@@ -90,9 +90,11 @@ levels.
       in `lane_returns` (PAIRED regret), but not in `R`. `H` stays below
       the env's 1000-step episode length, so no truncation inside a level.
     - Score = `R(this visit) - R(previous visit of the level)`: negative
-      on forgetting. A fresh level's first visit scores 0; a mutated
-      child's previous visit is its parent's latest one (the replay that
-      mutated it).
+      on forgetting. A level's first visit scores 0; LP is defined from
+      its second visit on. A mutated child is a new level, so its first
+      visit also scores 0: it does not inherit its parent's `R`, since a
+      child-vs-parent difference mixes the change in difficulty the
+      mutation made with the student's learning progress.
     - The buffer stores each level's last `R` (every buffered mode tracks
       it; only `lp` scores by it). Sampling, replay, mutation and the
       generator are plain ACCEL's. Negative scores rank last and are
