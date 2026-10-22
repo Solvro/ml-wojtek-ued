@@ -178,10 +178,8 @@ def plot_composition(
             if i == len(robots) - 1:
                 ax.set_xlabel("env steps (M)", fontsize=7)
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(
-        handles, labels, loc="lower center", ncol=len(METHODS), fontsize=7
-    )
-    fig.tight_layout(rect=(0, 0.08, 1, 1), w_pad=0.3)
+    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=8)
+    fig.tight_layout(rect=(0, 0.06, 1, 1), w_pad=0.3)
     fig.savefig(out / "composition.pdf")
     plt.close(fig)
 
