@@ -153,7 +153,9 @@ rsync -a "user@login-node:$PDW/runs/final_eval/" artifacts/final_eval/
 ### 5. Domination comparison
 
 ```bash
-just domination eval_dir=artifacts/final_eval                  # ACCEL vs DR
+just domination eval_dir=artifacts/final_eval                  # ACCEL vs DR, d0.25
+just domination eval_dir=artifacts/final_eval level_set=param_uniform \
+  out=artifacts/paper/domination_param_uniform                  # appendix
 just domination eval_dir=artifacts/final_eval method_a=plr method_b=dr \
   out=artifacts/paper/domination_plr_dr
 ```

@@ -349,7 +349,7 @@ data layout), `level_space` (always `param`), `alphas` and `tags`;
 |---|---|---|
 | `prefixes.<robot>` | `ued_<robot>` | run-name prefix per robot, as in `paper_tables`; a robot set to `null` is skipped |
 | `eval_dir` | `???` | dir of `eval_brax.py` npz dumps |
-| `level_set` | `param_uniform` | per-level npz set: `param_uniform` or `random_d<d>` (`random_d1.0`, ...) |
+| `level_set` | `random_d0.25` | per-level npz set: `random_d<d>` (`random_d1.0`, ...) or `param_uniform` |
 | `method_a` / `method_b` | `accel` / `dr` | the heatmap's pair: A on x, B on y |
 | `min_travel` | `1.0` | m (Wojtek units, scaled by robot) for a solved episode, as eval_brax |
 | `bins` | `10` | heatmap bins per axis |

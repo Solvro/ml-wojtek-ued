@@ -92,9 +92,13 @@ just domination eval_dir=<evals> method_a=accel method_b=dr
 - Inputs: `eval_dir` of eval_brax npz dumps
   `<prefix>_<method>_seed<k>_final_eval.npz`, `prefixes.<robot>` as in
   `paper_tables`; methods and seeds come from the file names.
-  `level_set` picks the per-level set: `param_uniform` (default, needs
-  `level_space=param` evals) or `random_d<d>`; a dump without it fails
-  naming the sets it has.
+  `level_set` picks the per-level set: `random_d0.25` (default) or another
+  `random_d<d>`, or `param_uniform` (needs `level_space=param` evals); a
+  dump without it fails naming the sets it has.
+  - The paper's main comparison is `random_d0.25`; `param_uniform` goes to
+    the appendix (`out=artifacts/paper/domination_param_uniform`). On
+    `param_uniform` Go2, Barkour and Spot solve <= 4 % of levels (falls
+    ~90 %), so most levels tie at 0 and the heatmap says little.
 - Pairing: every dump of a robot must hold the same level genomes
   (`param_uniform_levels`, `random_levels` for `random_d*`); otherwise it
   refuses (rerun eval_brax with the same seed / `num_levels` /
