@@ -1,5 +1,6 @@
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +16,7 @@ from paper.labels import METHODS, ROBOT_LABEL
 from paper.runs import ENTITY, PROJECT, run_prefixes
 from robots.scale import ROBOT_SCALE
 
-EVAL_KEYS = ("eval/d0.5/success_rate", "eval/d1.0/success_rate")
+EVAL_KEYS = ("eval/d0.25/success_rate", "eval/d0.5/success_rate")
 # magnitude parameters only: the shape ones (wavelength, step width, block
 # size) sit at mid-range under every method
 LEVEL_KEYS = (
@@ -27,10 +28,15 @@ LEVEL_KEYS = (
     "level/genome_dist",
 )
 GRID_POINTS = 200
+HISTORY_WORKERS = 16
 # composition is logged every iteration and PLR alternates replay and new
 # levels, so it is smoothed with a running mean over this many grid points
 SMOOTH = 9
-COLORS = {m: plt.get_cmap("tab10")(i) for i, m in enumerate(METHODS)}
+# tab10 has ten colours for twelve methods; the PAIRED family is dashed
+_TAB10 = plt.get_cmap("tab10")
+COLORS = dict(
+    zip(METHODS, [*map(_TAB10, range(10)), "black", "goldenrod"], strict=True)
+)
 
 
 def _scan(run: Any, keys: tuple[str, ...]) -> dict[str, list[float]]:
@@ -45,22 +51,25 @@ def _scan(run: Any, keys: tuple[str, ...]) -> dict[str, list[float]]:
     return out
 
 
+def _run_history(run: Any) -> dict[str, Any]:
+    out = {"eval": _scan(run, EVAL_KEYS), "level": _scan(run, LEVEL_KEYS)}
+    print(f"{run.name}: {len(out['eval']['env_steps'])} evals", flush=True)
+    return out
+
+
 def dump_history(prefixes: dict[str, str], path: Path) -> None:
     api = wandb.Api(timeout=60)
-    history: dict[str, Any] = {}
+    runs = []
     for prefix in prefixes.values():
         name = rf"^{re.escape(prefix)}_.+_seed[0-9]+$"
-        runs = api.runs(
+        runs += api.runs(
             f"{ENTITY}/{PROJECT}",
             filters={"display_name": {"$regex": name}, "state": "finished"},
         )
-        for run in runs:
-            history[run.name] = {
-                "eval": _scan(run, EVAL_KEYS),
-                "level": _scan(run, LEVEL_KEYS),
-            }
-            evals = len(history[run.name]["eval"]["env_steps"])
-            print(f"{run.name}: {evals} evals")
+    # one scan_history per run is network-bound; 300 runs take ~2 h serially
+    with ThreadPoolExecutor(max_workers=HISTORY_WORKERS) as pool:
+        histories = pool.map(_run_history, runs)
+        history = {run.name: h for run, h in zip(runs, histories, strict=True)}
     path.write_text(json.dumps(history))
     print(f"wrote {len(history)} run histories to {path}")
 
@@ -89,7 +98,10 @@ def _smooth(ys: np.ndarray) -> np.ndarray:
 
 def _band(ax: Any, grid: np.ndarray, ys: np.ndarray, method: str) -> None:
     color = COLORS[method]
-    ax.plot(grid, ys.mean(axis=0), color=color, lw=1.2, label=METHODS[method])
+    style = "--" if method.startswith("paired") else "-"
+    ax.plot(
+        grid, ys.mean(axis=0), style, color=color, lw=1.2, label=METHODS[method]
+    )
     ax.fill_between(
         grid, ys.min(axis=0), ys.max(axis=0), color=color, alpha=0.15
     )
@@ -100,14 +112,15 @@ def plot_curves(
 ) -> None:
     robots = list(prefixes)
     fig, axes = plt.subplots(
-        len(robots),
         len(EVAL_KEYS),
-        figsize=(6.5, 2.2 * len(robots)),
+        len(robots),
+        figsize=(1.6 * len(robots), 2.0 * len(EVAL_KEYS) + 0.6),
         squeeze=False,
+        sharey="row",
     )
     for i, robot in enumerate(robots):
         for j, key in enumerate(EVAL_KEYS):
-            ax = axes[i, j]
+            ax = axes[j, i]
             for method in METHODS:
                 runs = _runs_of(history, prefixes[robot], method)
                 if runs:
@@ -120,10 +133,8 @@ def plot_curves(
             ax.tick_params(labelsize=7)
             ax.grid(alpha=0.3)
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(
-        handles, labels, loc="lower center", ncol=len(METHODS), fontsize=8
-    )
-    fig.tight_layout(rect=(0, 0.06, 1, 1))
+    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=8)
+    fig.tight_layout(rect=(0, 0.1, 1, 1))
     fig.savefig(out / "curves.pdf")
     plt.close(fig)
 
@@ -167,10 +178,8 @@ def plot_composition(
             if i == len(robots) - 1:
                 ax.set_xlabel("env steps (M)", fontsize=7)
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(
-        handles, labels, loc="lower center", ncol=len(METHODS), fontsize=7
-    )
-    fig.tight_layout(rect=(0, 0.08, 1, 1), w_pad=0.3)
+    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=8)
+    fig.tight_layout(rect=(0, 0.06, 1, 1), w_pad=0.3)
     fig.savefig(out / "composition.pdf")
     plt.close(fig)
 

@@ -6,9 +6,9 @@ defaults:
 prefixes:
   wojtek: ued_wojtek
   go1: ued_go1
+  go2: ued_go2
   barkour: ued_barkour
   spot: ued_spot
-  go2: ued_go2
 dump_history: null
 history: null
 terrains: false

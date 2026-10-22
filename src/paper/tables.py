@@ -22,9 +22,15 @@ from paper.runs import (
 
 MAIN_COLUMNS = (
     (r"$d{=}0.25$", "random/d0.25/success_rate"),
-    (r"CVaR$_{25}$", "random/d0.25/cvar0.25_success"),
     ("OOD suite", "suite/success_rate"),
-    ("Flat", "flat/success_rate"),
+)
+# (header, metric key, scale, digits)
+DETAIL_COLUMNS = (
+    (r"$d{=}0.25$", "random/d0.25/success_rate", 100.0, 1),
+    (r"CVaR$_{25}$", "random/d0.25/cvar0.25_success", 100.0, 1),
+    (r"$d{=}0.5$", "random/d0.5/success_rate", 100.0, 1),
+    ("OOD suite", "suite/success_rate", 100.0, 1),
+    ("Flat", "flat/success_rate", 100.0, 1),
 )
 # (header, metric key, scale, digits)
 UNIFORM_COLUMNS = (
@@ -110,6 +116,12 @@ def envelopes_table(runs: RunsByRobot) -> str:
     return tabular(spec, head, body)
 
 
+def detail_table(runs: RunsByRobot) -> str:
+    """Success (%) on every level set per robot x method."""
+    head, body = per_robot_table(runs, DETAIL_COLUMNS, bold=True)
+    return tabular("ll" + "c" * len(DETAIL_COLUMNS), head, body)
+
+
 def uniform_table(runs: RunsByRobot) -> str:
     """Success (%) on the `param/uniform` levels per robot x method."""
     head, body = per_robot_table(runs, UNIFORM_COLUMNS, bold=True)
@@ -123,7 +135,7 @@ def compute_table(runs: RunsByRobot) -> str:
 
 def write_csv(runs: RunsByRobot, path: Path) -> None:
     """One row per run, every value the tables use."""
-    keys = [key for _, key in MAIN_COLUMNS]
+    keys = [key for _, key, _, _ in DETAIL_COLUMNS]
     keys += [key for _, key, _, _ in UNIFORM_COLUMNS]
     keys += [f"axis/{name}/envelope" for name, _, _ in AXES]
     keys += [key for _, key, _, _ in COMPUTE_COLUMNS]
@@ -156,6 +168,7 @@ def tables(cfg: PaperTablesConfig) -> None:
     out = Path(cfg.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "main.tex").write_text(main_table(runs))
+    (out / "detail.tex").write_text(detail_table(runs))
     (out / "uniform.tex").write_text(uniform_table(runs))
     (out / "envelopes.tex").write_text(envelopes_table(runs))
     if summaries:

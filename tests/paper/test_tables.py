@@ -30,6 +30,7 @@ def write_eval(eval_dir: Path, run: str, success: float) -> None:
     metrics = {
         "random/d0.25/success_rate": success,
         "random/d0.25/cvar0.25_success": success / 2,
+        "random/d0.5/success_rate": success / 3,
         "suite/success_rate": success,
         "flat/success_rate": 1.0,
         "param/uniform/success_rate": success / 10,
@@ -56,6 +57,10 @@ def test_main_table_reads_d025_and_uniform_goes_to_its_own_table(
     assert r"$d{=}0.25$" in main
     assert r"\textbf{55.0" in main
     assert "Uniform" not in main
+    assert "CVaR" not in main
+    detail = (out / "detail.tex").read_text()
+    assert r"$d{=}0.5$" in detail
+    assert r"\textbf{18.3" in detail
     uniform = (out / "uniform.tex").read_text()
     assert "Uniform" in uniform
     assert r"\textbf{5.5" in uniform

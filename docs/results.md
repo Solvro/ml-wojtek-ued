@@ -24,9 +24,11 @@ just paper-tables eval_dir=<evals> \
   ACCEL, ACCEL-grow, ACCEL-SFL, PAIRED, PAIRED+UniBC, PAIRED+BiBC,
   PAIRED+Evo; other methods follow under their own name; missing ones are
   skipped.
-- `main.tex`: success (%) per method x robot: `random/d0.25` mean, its
-  CVaR25, `suite/success_rate`, `flat/success_rate`; mean ± std over
-  seeds, best per column in bold, `--` if absent.
+- `main.tex`: success (%) per method x robot: `random/d0.25` mean and
+  `suite/success_rate`; mean ± std over seeds, best per column in bold,
+  `--` if absent.
+- `detail.tex` (appendix): `random/d0.25` mean, its CVaR25, `random/d0.5`,
+  suite and `flat/success_rate` per robot x method.
 - `uniform.tex` (appendix): `param/uniform` mean, its CVaR25 and the
   solvable subset per robot x method (why not the main table:
   [Domination comparison](#domination-comparison)).
@@ -58,10 +60,11 @@ JAX_PLATFORMS=cpu just paper-figures terrains=true
 ```
 
 - `conf/paper_figures.yaml`; output in `out` (default `artifacts/paper/figs`).
-- `dump_history`: per finished run, `eval/d{0.5,1.0}/success_rate` and the
-  `level/*` composition vs `env_steps` from wandb; rows with a NaN are dropped.
-- `curves.pdf`: eval success vs env steps, robot x d panels, seed mean with
-  min-max band.
+- `dump_history`: per finished run, `eval/d{0.25,0.5}/success_rate` and the
+  `level/*` composition vs `env_steps` from wandb, 16 runs fetched in
+  parallel; rows with a NaN are dropped.
+- `curves.pdf`: eval success vs env steps, one row per d, one column per
+  robot, seed mean with min-max band.
 - `composition.pdf`: mean physical value of the magnitude parameters and
   genome distance among training levels, Wojtek units, running mean over 9 points.
 - `terrains.pdf` / `robots.pdf` (`paper/terrains.py`): offscreen MuJoCo
