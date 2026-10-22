@@ -74,7 +74,8 @@ just paper-stats eval_dir=<evals>
   seed-mean among the methods with runs on that robot. 0 = the worst
   method's mean, 1 = the best's; single runs can fall outside [0, 1].
   A robot where every method has the same mean (incl. a single method) is
-  refused: drop it with `prefixes.<robot>=null`.
+  refused: drop it with `prefixes.<robot>=null`. The bounds come from the
+  methods present, so adding a method can move every normalised score.
 - Aggregate (`aggregate`): IQM and mean over all robot x seed runs of the
   normalised scores, CIs from the bootstrap stratified by robot. Only
   methods with runs on every robot; a method missing on a robot warns, is
@@ -86,7 +87,9 @@ just paper-stats eval_dir=<evals>
   U / (n m) over the two methods' seeds (ties count 1/2), averaged over the
   robots both methods have runs on (`robots`); CI from the independent
   stratified bootstrap (`poi_reps` resamples, both methods resampled
-  per robot). Computed once per unordered pair, `P(Y > X) = 1 - P(X > Y)`
+  per robot). Same values as rliable's `probability_of_improvement`,
+  vectorised in numpy instead of one `scipy` Mann-Whitney call per robot
+  per resample. Computed once per unordered pair, `P(Y > X) = 1 - P(X > Y)`
   with the CI mirrored. Normalisation does not change it (rank-based).
   P = 0.5: indistinguishable; a CI excluding 0.5: X better (> 0.5) or worse.
 - `pairs` (`conf/paper_stats.yaml`): the comparisons the paper discusses
@@ -108,8 +111,10 @@ just paper-stats eval_dir=<evals>
     one panel per metric.
 - Methods in `paper/labels.py` order under their paper names, unknown
   methods after them.
-- Cost: about 10 min on one laptop core with the defaults (12 methods, 5
-  robots); `reps` dominates the per-robot part, `poi_reps` the 66 pairs.
+- Cost: about 1.5 min on one laptop core with the defaults (12 methods, 5
+  robots), mostly the 144 IQM / mean bootstraps (`reps`). 10000 resamples
+  move no CI end by more than 0.003 against 50000 (rliable's default);
+  with 5 seeds a per-robot bootstrap has only 126 distinct resamples.
 
 ## Paper figures
 
