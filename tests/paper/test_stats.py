@@ -5,9 +5,10 @@ from typing import Any
 
 import numpy as np
 import pytest
+from rliable import metrics
 
 from config.schema import Robot
-from paper.stats import stats
+from paper.stats import probability_of_improvement, stats
 
 D025 = "random/d0.25/success_rate"
 SUITE = "suite/success_rate"
@@ -97,6 +98,16 @@ def test_probability_of_improvement(report: dict[str, Any]) -> None:
     assert poi["dr"]["accel"]["p"] == 0.0
     assert poi["plr"]["dr"]["p"] == 0.5
     assert poi["plr"]["dr"]["robots"] == ["go1", "spot"]
+
+
+def test_probability_of_improvement_matches_rliable() -> None:
+    rng = np.random.default_rng(0)
+    # rounded so robots have ties within and across methods
+    x = rng.random((5, 4)).round(1)
+    y = rng.random((3, 4)).round(1)
+    for a, b in ((x, y), (y, x), (x, x)):
+        expected = metrics.probability_of_improvement(a, b)
+        assert probability_of_improvement(a, b) == pytest.approx([expected])
 
 
 def test_named_pairs_skip_methods_without_runs(

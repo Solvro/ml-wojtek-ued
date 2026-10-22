@@ -140,6 +140,15 @@ def aggregate(
     return result
 
 
+def probability_of_improvement(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """rliable's `metrics.probability_of_improvement` on (runs, robots)
+    matrices, vectorised: equal run counts per robot make the mean over
+    all (x run, y run, robot) triples the robot mean of U / (n m)."""
+    wins = x[:, None, :] > y[None, :, :]
+    ties = x[:, None, :] == y[None, :, :]
+    return np.array([np.mean(wins + 0.5 * ties)])
+
+
 def improvement(scores: Scores, x: str, y: str, reps: int) -> Estimate | None:
     """P(X > Y) over the robots both methods have runs on: per robot the
     Mann-Whitney U / (n m), averaged over robots; None without such a robot."""
@@ -148,11 +157,11 @@ def improvement(scores: Scores, x: str, y: str, reps: int) -> Estimate | None:
         return None
     pair = [score_matrix(scores, x, robots), score_matrix(scores, y, robots)]
     points, cis = library.get_interval_estimates(
-        {"p": pair}, metrics.probability_of_improvement, reps=reps
+        {"p": pair}, probability_of_improvement, reps=reps
     )
     lo, hi = np.ravel(cis["p"])
     return {
-        "p": float(points["p"]),
+        "p": float(points["p"][0]),
         "ci": [float(lo), float(hi)],
         "robots": robots,
     }

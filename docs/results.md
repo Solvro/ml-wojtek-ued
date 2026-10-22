@@ -86,7 +86,9 @@ just paper-stats eval_dir=<evals>
   U / (n m) over the two methods' seeds (ties count 1/2), averaged over the
   robots both methods have runs on (`robots`); CI from the independent
   stratified bootstrap (`poi_reps` resamples, both methods resampled
-  per robot). Computed once per unordered pair, `P(Y > X) = 1 - P(X > Y)`
+  per robot). Same values as rliable's `probability_of_improvement`,
+  vectorised in numpy instead of one `scipy` Mann-Whitney call per robot
+  per resample. Computed once per unordered pair, `P(Y > X) = 1 - P(X > Y)`
   with the CI mirrored. Normalisation does not change it (rank-based).
   P = 0.5: indistinguishable; a CI excluding 0.5: X better (> 0.5) or worse.
 - `pairs` (`conf/paper_stats.yaml`): the comparisons the paper discusses
