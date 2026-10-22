@@ -92,6 +92,12 @@ mode samples, mutates and renders levels through it.
     ±20°, stairs ±0.08 m, gaps 0–0.25 m, blocks 0–0.10 m), where the best
     methods solved ~8 % of uniform levels. Features compound, so uniform
     levels range from trivial to unsolved.
+  - Gaps narrower than one hfield cell (every `param` gap for Playground
+    robots) do not render as trenches: ~1 % of the ring's nodes drop
+    `GAP_DEPTH_M` x scale, each an isolated V-pit two cells wide (Go1:
+    0.25 m wide x 0.375 m deep). Wojtek's feet, ~6x larger relative to the
+    cell, bridge them; Playground robots fall in, so few `param_uniform`
+    levels are solvable for them.
   - `flat` = genome of zero slope/step, so it is off 0.5 on asymmetric ranges.
   - DR: uniform genome; `scaled(d)` shrinks it toward `flat` (no features)
     by d; `easy(s)` = `scaled(s)`; DR-mixed draws d per level.

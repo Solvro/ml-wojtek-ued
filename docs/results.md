@@ -24,9 +24,12 @@ just paper-tables eval_dir=<evals> \
   ACCEL, ACCEL-grow, ACCEL-SFL, PAIRED, PAIRED+UniBC, PAIRED+BiBC,
   PAIRED+Evo; other methods follow under their own name; missing ones are
   skipped.
-- `main.tex`: success (%) per method x robot: `param/uniform` mean, its
-  CVaR25, solvable subset, `suite/success_rate`, `flat/success_rate`;
-  mean ± std over seeds, best per column in bold, `--` if absent.
+- `main.tex`: success (%) per method x robot: `random/d0.25` mean, its
+  CVaR25, `suite/success_rate`, `flat/success_rate`; mean ± std over
+  seeds, best per column in bold, `--` if absent.
+- `uniform.tex` (appendix): `param/uniform` mean, its CVaR25 and the
+  solvable subset per robot x method (why not the main table:
+  [Domination comparison](#domination-comparison)).
 - Solvable subset: `param/uniform` levels that at least one run of the robot
   (any method) passes on >= 1 episode of pass A; each run is scored on pass
   B on them and vice versa, averaged (cross-fitted, like CVaR). Needs
@@ -92,9 +95,13 @@ just domination eval_dir=<evals> method_a=accel method_b=dr
 - Inputs: `eval_dir` of eval_brax npz dumps
   `<prefix>_<method>_seed<k>_final_eval.npz`, `prefixes.<robot>` as in
   `paper_tables`; methods and seeds come from the file names.
-  `level_set` picks the per-level set: `param_uniform` (default, needs
-  `level_space=param` evals) or `random_d<d>`; a dump without it fails
-  naming the sets it has.
+  `level_set` picks the per-level set: `random_d0.25` (default) or another
+  `random_d<d>`, or `param_uniform` (needs `level_space=param` evals); a
+  dump without it fails naming the sets it has.
+  - The paper's main comparison is `random_d0.25`; `param_uniform` goes to
+    the appendix (`out=artifacts/paper/domination_param_uniform`): the
+    Playground robots solve few `param_uniform` levels (sub-cell gap pits,
+    [levels.md](levels.md#level-spaces)), so most levels tie at 0.
 - Pairing: every dump of a robot must hold the same level genomes
   (`param_uniform_levels`, `random_levels` for `random_d*`); otherwise it
   refuses (rerun eval_brax with the same seed / `num_levels` /

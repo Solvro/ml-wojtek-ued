@@ -9,7 +9,7 @@ prefixes:
   spot: ued_spot
   go2: ued_go2
 eval_dir: ???
-level_set: param_uniform
+level_set: random_d0.25
 method_a: accel
 method_b: dr
 min_travel: 1.0

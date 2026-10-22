@@ -153,7 +153,9 @@ rsync -a "user@login-node:$PDW/runs/final_eval/" artifacts/final_eval/
 ### 5. Domination comparison
 
 ```bash
-just domination eval_dir=artifacts/final_eval                  # ACCEL vs DR
+just domination eval_dir=artifacts/final_eval                  # ACCEL vs DR, d0.25
+just domination eval_dir=artifacts/final_eval level_set=param_uniform \
+  out=artifacts/paper/domination_param_uniform                  # appendix
 just domination eval_dir=artifacts/final_eval method_a=plr method_b=dr \
   out=artifacts/paper/domination_plr_dr
 ```
@@ -174,7 +176,7 @@ JAX_PLATFORMS=cpu just paper-figures terrains=true
 
 | output | from |
 |---|---|
-| `artifacts/paper/tables/main.tex`, `envelopes.tex`, `results.csv` | final evals |
+| `artifacts/paper/tables/main.tex`, `uniform.tex`, `envelopes.tex`, `results.csv` | final evals |
 | `artifacts/paper/tables/compute.tex` | wandb run summaries (`summaries.json`) |
 | `artifacts/paper/figs/curves.pdf`, `composition.pdf` | wandb histories (`history.json`) |
 | `artifacts/paper/figs/terrains.pdf`, `robots.pdf` | rendered levels (built assets) |

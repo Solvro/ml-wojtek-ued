@@ -40,13 +40,12 @@ def write_dump(
     its 8 episodes, the rest fall."""
     flat = np.arange(PASSES * EPISODES)[None] >= np.asarray(solved)[:, None]
     fell = flat.reshape(len(solved), PASSES, EPISODES).transpose(1, 0, 2)
-    np.savez(
-        eval_dir / f"{run}_final_eval.npz",
-        param_uniform_fell=fell.astype(np.float32),
-        param_uniform_travel=np.full(fell.shape, 3.0, np.float32),
-        param_uniform_levels=genomes,
-        random_levels=genomes,
-    )
+    arrays: dict[str, Any] = {"random_levels": genomes}
+    arrays["param_uniform_levels"] = genomes
+    for level_set in ("random_d0.25", "param_uniform"):
+        arrays[f"{level_set}_fell"] = fell.astype(np.float32)
+        arrays[f"{level_set}_travel"] = np.full(fell.shape, 3.0, np.float32)
+    np.savez(eval_dir / f"{run}_final_eval.npz", **arrays)
 
 
 def rates(
@@ -78,13 +77,19 @@ def test_threshold_scales_with_the_robot(
     assert report.robots["spot"].methods["accel"].mean_solve_rate == 0.0
 
 
-def test_rates_average_over_seeds(tmp_path: Path, compose_cfg: Compose) -> None:
+@pytest.mark.parametrize("level_set", ["random_d0.25", "param_uniform"])
+def test_rates_average_over_seeds(
+    tmp_path: Path, compose_cfg: Compose, level_set: str
+) -> None:
     write_dump(tmp_path, "w_accel_seed0", [8, 0, 4, 2, 0, 0])
     write_dump(tmp_path, "w_accel_seed1", [0, 0, 4, 6, 0, 8])
     write_dump(tmp_path, "w_dr_seed0", [0] * 6)
     write_dump(tmp_path, "w_dr_seed1", [0] * 6)
     cfg = compose_cfg(
-        "domination", f"eval_dir={tmp_path}", *only_prefixes(wojtek="w")
+        "domination",
+        f"eval_dir={tmp_path}",
+        f"level_set={level_set}",
+        *only_prefixes(wojtek="w"),
     )
     accel = compare(cfg).robots["wojtek"].methods["accel"]
     assert accel.seeds == [0, 1]
