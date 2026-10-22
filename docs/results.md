@@ -74,7 +74,8 @@ just paper-stats eval_dir=<evals>
   seed-mean among the methods with runs on that robot. 0 = the worst
   method's mean, 1 = the best's; single runs can fall outside [0, 1].
   A robot where every method has the same mean (incl. a single method) is
-  refused: drop it with `prefixes.<robot>=null`.
+  refused: drop it with `prefixes.<robot>=null`. The bounds come from the
+  methods present, so adding a method can move every normalised score.
 - Aggregate (`aggregate`): IQM and mean over all robot x seed runs of the
   normalised scores, CIs from the bootstrap stratified by robot. Only
   methods with runs on every robot; a method missing on a robot warns, is
