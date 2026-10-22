@@ -81,3 +81,21 @@ def test_paired_variant_cpu_smoke(
     if mode_name == "paired_evo":
         assert {row["replay"] for row in run.logs} == {0, 1}
         assert run.logs[-1]["buffer_size"] > 0
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("mode_name", ["terrain_cl", "accel_lp"])
+@pytest.mark.usefixtures("compile_cache")
+def test_terrain_cl_and_accel_lp_cpu_smoke(
+    compose_cfg: Compose, monkeypatch: pytest.MonkeyPatch, mode_name: str
+) -> None:
+    run = FakeRun()
+    monkeypatch.setattr(train_module.wandb, "init", lambda **_: run)
+    cfg = compose_cfg("train", f"mode={mode_name}", "name=t", *TINY)
+    train_module.train(cfg, mode_name)
+    assert len(run.logs) == 3
+    for row in run.logs:
+        assert not any(key.startswith("lane_") for key in row)
+        if mode_name == "terrain_cl":
+            assert row["replay"] == 1
+            assert 0 <= row["terrain_cl/row_mean"] <= 10

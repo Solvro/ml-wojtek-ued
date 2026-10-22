@@ -75,19 +75,21 @@ level_space:
   edit_scale: 0.1
 
 # --- UED algorithm ----------------------------------------------------------
-# The 12 named algorithms are combinations of the switches
+# The 14 named algorithms are combinations of the switches
 # (docs/configuration.md, `mode/`).
 mode:
-  # dr | dr_easy | dr_mixed | accel | plr | paired | paired_evo
+  # dr | dr_easy | dr_mixed | terrain_cl | accel | plr | paired | paired_evo
   curriculum: accel
   mutation: local # ACCEL mutation of a replayed level: local | grow
-  score: pvl # level score: pvl | learnability
+  score: pvl # level score: pvl | learnability | lp
   generator: easy # ACCEL explore levels: easy | mixed
   bc: none # PAIRED distillation: none | uni | bi
   replay_prob: 0.8 # replay probability once the buffer holds num_lanes levels
   buffer_size: 4000 # levels kept, highest score first
   generator_scale: 0.1 # easy generator: control points within this of flat
   grow_max: 1.3 # `grow` mutation: scale away from flat by U(1, grow_max)
+  lp_fast_rate: 0.5 # `lp` score: fast success EMA rate
+  lp_slow_rate: 0.1 # `lp` score: slow success EMA rate
   latent_dim: 16 # PAIRED adversary latent size
   gen_learning_rate: 1.0e-4 # PAIRED adversary
   gen_entropy_coef: 0.1 # PAIRED adversary

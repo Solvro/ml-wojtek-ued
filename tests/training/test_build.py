@@ -16,6 +16,8 @@ Compose = Callable[..., Any]
         (("mode=paired_uni", "mode.bc_every=0"), "bc_every"),
         (("mode=paired_evo", "mode.score=learnability"), "PAIRED regret"),
         (("mode=paired", "level_steps=30"), "multiple"),
+        (("mode=accel_lp", "mode.lp_fast_rate=0"), "lp_fast_rate"),
+        (("mode=accel_lp", "mode.lp_slow_rate=1.5"), "lp_slow_rate"),
     ],
 )
 def test_check_config_rejects(

@@ -1,5 +1,6 @@
 """Level spaces (docs/levels.md#level-spaces): `flat` is a featureless
-genome, `scaled(d)` shrinks a uniform draw toward it by d (0 = flat)."""
+genome, `shrink(levels, d)` scales each level toward it by its d (0 = flat),
+`scaled(d)` shrinks a uniform draw."""
 
 from typing import NamedTuple, Protocol
 
@@ -16,6 +17,9 @@ class LevelSpace(Protocol):
     config: HFieldConfig
 
     def uniform(self, rng: np.random.Generator, n: int) -> np.ndarray: ...
+    def shrink(
+        self, levels: np.ndarray, difficulty: np.ndarray
+    ) -> np.ndarray: ...
     def scaled(
         self, rng: np.random.Generator, n: int, difficulty: float
     ) -> np.ndarray: ...
@@ -58,10 +62,13 @@ class GridSpace:
     def uniform(self, rng: np.random.Generator, n: int) -> np.ndarray:
         return rng.uniform(0.0, 1.0, (n, *self.shape))
 
+    def shrink(self, levels: np.ndarray, difficulty: np.ndarray) -> np.ndarray:
+        return 0.5 + (levels - 0.5) * difficulty[:, None, None]
+
     def scaled(
         self, rng: np.random.Generator, n: int, difficulty: float
     ) -> np.ndarray:
-        return 0.5 + (self.uniform(rng, n) - 0.5) * difficulty
+        return self.shrink(self.uniform(rng, n), np.full(n, difficulty))
 
     def easy(
         self, rng: np.random.Generator, n: int, scale: float
@@ -152,13 +159,15 @@ class ParamSpace:
     def uniform(self, rng: np.random.Generator, n: int) -> np.ndarray:
         return self._with_seed(rng.uniform(0.0, 1.0, (n, len(PARAMS))), rng)
 
+    def shrink(self, levels: np.ndarray, difficulty: np.ndarray) -> np.ndarray:
+        genome = levels[:, : len(PARAMS)]
+        shrunk = self.flat + (genome - self.flat) * difficulty[:, None]
+        return np.concatenate([shrunk, levels[:, len(PARAMS) :]], axis=1)
+
     def scaled(
         self, rng: np.random.Generator, n: int, difficulty: float
     ) -> np.ndarray:
-        genome = rng.uniform(0.0, 1.0, (n, len(PARAMS)))
-        return self._with_seed(
-            self.flat + (genome - self.flat) * difficulty, rng
-        )
+        return self.shrink(self.uniform(rng, n), np.full(n, difficulty))
 
     def easy(
         self, rng: np.random.Generator, n: int, scale: float

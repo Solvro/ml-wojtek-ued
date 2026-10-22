@@ -20,6 +20,7 @@ class LaneTotals:
         self.episode_return = jnp.zeros(n)
         self.fell_any = jnp.zeros(n)
         self.leaked = jnp.zeros(n, bool)
+        self.cmd_speed = jnp.zeros(n)
         self.bc_kl = jnp.zeros(())
         self.logs: list[dict[str, jax.Array]] = []
 
@@ -37,6 +38,7 @@ class LaneTotals:
         self.episode_return = self.episode_return + data.reward.sum(axis=1)
         self.fell_any = jnp.maximum(self.fell_any, log["fell"].max(axis=1))
         self.leaked = self.leaked | leaked.any(axis=1)
+        self.cmd_speed = self.cmd_speed + log["cmd_speed"].sum(axis=1)
         self.logs.append(jax.tree.map(jnp.mean, log))
 
 
@@ -112,6 +114,8 @@ def summarize_lanes(
         (totals.fell_any == 0) & (travel >= threshold), dtype=float
     )
     lane_success = success.reshape(lanes, -1).mean(axis=1)
+    # the planar distance the commands asked for (Terrain-CL demotion)
+    cmd_distance = totals.cmd_speed * ctx.env.travel.dt
     lane_regret = lane_regret / unrolls
     # SFL learnability: highest where the student sometimes succeeds
     learnability = lane_success * (1.0 - lane_success)
@@ -121,6 +125,9 @@ def summarize_lanes(
         "regret": lane_regret,
         "score": learnability if use_learnability else lane_regret,
         "lane_returns": lane_returns,
+        "lane_success": lane_success,
+        "lane_travel": lane_mean(travel, lanes),
+        "lane_cmd_distance": lane_mean(cmd_distance, lanes),
         "train_success": float(success.mean()),
         "learnability_mean": float(learnability.mean()),
         "falls_per_step": log["fell"],
@@ -132,3 +139,7 @@ def summarize_lanes(
         # envs whose feet or height scan reached another lane's level
         "tile_leak_frac": float(totals.leaked.mean()),
     }
+
+
+def lane_mean(per_env: jax.Array, lanes: int) -> np.ndarray:
+    return np.asarray(per_env.reshape(lanes, -1).mean(axis=1))

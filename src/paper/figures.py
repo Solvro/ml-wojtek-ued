@@ -32,11 +32,10 @@ HISTORY_WORKERS = 16
 # composition is logged every iteration and PLR alternates replay and new
 # levels, so it is smoothed with a running mean over this many grid points
 SMOOTH = 9
-# tab10 has ten colours for twelve methods; the PAIRED family is dashed
+# tab10 has ten colours for fourteen methods; the PAIRED family is dashed
 _TAB10 = plt.get_cmap("tab10")
-COLORS = dict(
-    zip(METHODS, [*map(_TAB10, range(10)), "black", "goldenrod"], strict=True)
-)
+_EXTRA = ("black", "goldenrod", "darkviolet", "darkslategray")
+COLORS = dict(zip(METHODS, [*map(_TAB10, range(10)), *_EXTRA], strict=True))
 
 
 def _scan(run: Any, keys: tuple[str, ...]) -> dict[str, list[float]]:
@@ -133,7 +132,7 @@ def plot_curves(
             ax.tick_params(labelsize=7)
             ax.grid(alpha=0.3)
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=8)
+    fig.legend(handles, labels, loc="lower center", ncol=7, fontsize=8)
     fig.tight_layout(rect=(0, 0.1, 1, 1))
     fig.savefig(out / "curves.pdf")
     plt.close(fig)
@@ -178,7 +177,7 @@ def plot_composition(
             if i == len(robots) - 1:
                 ax.set_xlabel("env steps (M)", fontsize=7)
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=8)
+    fig.legend(handles, labels, loc="lower center", ncol=7, fontsize=8)
     fig.tight_layout(rect=(0, 0.06, 1, 1), w_pad=0.3)
     fig.savefig(out / "composition.pdf")
     plt.close(fig)

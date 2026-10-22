@@ -14,6 +14,8 @@ class LevelBuffer:
         self.scores = np.zeros(0)
         self.last_seen = np.zeros(0)
         self.roughness = np.zeros(0)
+        # (fast, slow) success EMAs per level, the learning-progress state
+        self.progress = np.zeros((0, 2))
 
     def __len__(self) -> int:
         return len(self.levels)
@@ -24,18 +26,21 @@ class LevelBuffer:
         scores: np.ndarray,
         now: int,
         roughness: np.ndarray,
+        progress: np.ndarray,
     ) -> None:
         self.levels.extend(levels)
         self.scores = np.concatenate([self.scores, scores])
         seen = np.full(len(scores), now)
         self.last_seen = np.concatenate([self.last_seen, seen])
         self.roughness = np.concatenate([self.roughness, roughness])
+        self.progress = np.concatenate([self.progress, progress])
         if len(self.levels) > self.capacity:
             keep = np.argsort(self.scores)[-self.capacity :]
             self.levels = [self.levels[i] for i in keep]
             self.scores = self.scores[keep]
             self.last_seen = self.last_seen[keep]
             self.roughness = self.roughness[keep]
+            self.progress = self.progress[keep]
 
     def sample(self, rng: np.random.Generator, n: int, now: int) -> np.ndarray:
         ranks = np.empty(len(self)).astype(int)
@@ -47,9 +52,16 @@ class LevelBuffer:
         p = (1 - self.staleness) * score_p + self.staleness * stale_p
         return rng.choice(len(self), size=n, p=p)
 
-    def update(self, idx: np.ndarray, scores: np.ndarray, now: int) -> None:
+    def update(
+        self,
+        idx: np.ndarray,
+        scores: np.ndarray,
+        now: int,
+        progress: np.ndarray,
+    ) -> None:
         self.scores[idx] = scores
         self.last_seen[idx] = now
+        self.progress[idx] = progress
 
     def stats(self) -> dict[str, float]:
         if len(self) < 2:

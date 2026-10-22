@@ -101,6 +101,8 @@ mode samples, mutates and renders levels through it.
   - `flat` = genome of zero slope/step, so it is off 0.5 on asymmetric ranges.
   - DR: uniform genome; `scaled(d)` shrinks it toward `flat` (no features)
     by d; `easy(s)` = `scaled(s)`; DR-mixed draws d per level.
+  - `shrink(levels, d)`: the same shrink of given levels by a per-level d,
+    seed kept (`scaled` = `shrink` of a uniform draw); Terrain-CL's rows.
   - ACCEL: `mutate` edits `level_space.n_edits` (2) parameters by
     ±`level_space.edit_scale` (0.1); `mode.mutation=grow` also scales the
     genome away from `flat`.

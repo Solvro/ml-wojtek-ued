@@ -1,6 +1,6 @@
 # Training
 
-The brax-PPO student, the 12 curricula (`conf/mode/`), PAIRED, and the
+The brax-PPO student, the 14 curricula (`conf/mode/`), PAIRED, and the
 measured throughput.
 
 ## Trainer
@@ -36,6 +36,24 @@ levels.
   `generator_scale` of flat) — isolates the curriculum from "train easy".
 - `mode=dr_mixed`: uniform levels scaled by a per-level difficulty
   drawn from `[0, 1]`.
+- `mode=terrain_cl`: the game-inspired terrain curriculum of Rudin et al.
+  2022 (legged_gym / Isaac Lab `terrain_levels`), per lane because all
+  `envs_per_lane` envs of a lane share its tile (`training/terrain_cl.py`).
+  - Column: each lane draws one uniform level (own noise seed) at the start
+    of the run and keeps it.
+  - Row `r` in `0..10`: the lane runs its column shrunk toward `flat` by
+    `d = r / 10` (`LevelSpace.shrink`, the `random/d<d>` formula). Initial
+    rows uniform in `0..5` (legged_gym `max_init_terrain_level`).
+  - Every iteration trains (as DR); afterwards each lane moves: up one row
+    when >= 50 % of its envs succeeded (no fall, >= `min_travel` m, as
+    `train_success`), else down one row when its mean travel < 0.5 x its
+    mean commanded distance (sum of `|command_xy| x dt` over the
+    iteration's steps; legged_gym's `|command_xy| x episode_length_s x
+    0.5`); clipped at row 0. A lane promoted past row 10 goes to a uniformly
+    random row.
+  - Logged: `terrain_cl/row_mean`, `/row_p10`, `/row_p90` (rows the
+    iteration ran), `/promote_frac`, `/demote_frac`, `/top_reset_frac`,
+    plus the level composition.
 - `mode=accel`: replay iterations (`replay_prob`, once the buffer holds
   `num_lanes` levels) train on rank+staleness-prioritized buffer levels,
   refresh their scores and queue their mutations; explore iterations do not
@@ -50,13 +68,23 @@ levels.
   - `mode.score=learnability` — level score `p(1-p)` (SFL), `p` = fraction of
     the lane's envs that never fell and ended >= `min_travel` m out,
     instead of positive value loss.
+  - `mode.score=lp` — learning progress (`training/progress.py`): per
+    buffer level a fast and a slow exponential moving average of `p`
+    (rates `mode.lp_fast_rate` 0.5, `mode.lp_slow_rate` 0.1), score
+    `|fast - slow|`. A fresh level's first visit sets both to its `p`
+    (score 0); a mutated child inherits its parent's EMAs (after the
+    parent's replay) and updates them with its own `p`. LP-ACRL (Li et
+    al. 2026) scores the change in mean episodic reward between two
+    consecutive evaluations and gives no EMA rates; 0.5 / 0.1 are this
+    repo's choice. Every buffered mode tracks the EMAs; only `lp` scores
+    by them.
   - `mode.generator=mixed` — explore iterations draw fresh levels from the
     `dr_mixed` distribution instead of the easy generator.
   - Logged: `buffer_roughness_mean`/`_p90`, `buffer_score_roughness_spearman`
     (rank correlation of level score vs roughness), `children_roughness`,
     `train_success`, `learnability_mean`.
-  - Mode options `mode=accel_grow` (grow) and `mode=accel_sfl` (grow +
-    learnability). `level_space=grid` composes 16 edits for both (8
+  - Mode options `mode=accel_grow` (grow), `mode=accel_sfl` (grow +
+    learnability) and `mode=accel_lp` (plain ACCEL + `lp`). `level_space=grid` composes 16 edits for both (8
     otherwise); `param` edits 2 parameters either way.
 - `mode=paired` / `paired_uni` / `paired_bi` / `paired_evo`: PAIRED and
   its variants, two students; see [PAIRED](#paired).

@@ -99,9 +99,11 @@ each `mode/<option>.yaml` sets its switches.
 | `dr` | `dr` | — |
 | `dr_easy` | `dr_easy` | — |
 | `dr_mixed` | `dr_mixed` | — |
+| `terrain_cl` | `terrain_cl` | — |
 | `accel` | `accel` | — |
 | `accel_grow` | `accel` | `mutation: grow` |
 | `accel_sfl` | `accel` | `mutation: grow`, `score: learnability` |
+| `accel_lp` | `accel` | `score: lp` |
 | `plr` | `plr` | — |
 | `sfl` | `plr` | `score: learnability` |
 | `paired` | `paired` | — |
@@ -111,13 +113,15 @@ each `mode/<option>.yaml` sets its switches.
 
 | field | default | meaning |
 |---|---|---|
-| `curriculum` | — | `dr` / `dr_easy` / `dr_mixed` / `accel` / `plr` / `paired` / `paired_evo` ([training.md](training.md#trainer)) |
+| `curriculum` | — | `dr` / `dr_easy` / `dr_mixed` / `terrain_cl` / `accel` / `plr` / `paired` / `paired_evo` ([training.md](training.md#trainer)) |
 | `replay_prob` | `0.8` | ACCEL/PLR/PAIRED+Evo: replay probability once the buffer holds `num_lanes` levels |
 | `buffer_size` | `4000` | ACCEL/PLR/PAIRED+Evo: levels kept (highest score) |
 | `generator_scale` | `0.1` | easy generator: control points within this of flat (`dr_easy`, ACCEL explore) |
 | `mutation` | `local` | `local` edits, or `grow`: also scale the level away from flat by `U(1, grow_max)` |
 | `grow_max` | `1.3` | upper bound of the `grow` factor |
-| `score` | `pvl` | level score: positive value loss, or `learnability` `p(1-p)`; `paired_evo` scores PAIRED regret and requires `pvl` |
+| `score` | `pvl` | level score: positive value loss, `learnability` `p(1-p)`, or `lp` learning progress `\|fast - slow\|`; `paired_evo` scores PAIRED regret and requires `pvl` |
+| `lp_fast_rate` | `0.5` | `lp`: fast EMA rate of a level's success fraction, in (0, 1] |
+| `lp_slow_rate` | `0.1` | `lp`: slow EMA rate, in (0, 1] |
 | `generator` | `easy` | ACCEL explore levels: `easy` generator or `mixed` (`dr_mixed` draw) |
 | `latent_dim` | `16` | PAIRED adversary latent size |
 | `gen_learning_rate` | `1e-4` | PAIRED adversary Adam step |

@@ -32,6 +32,7 @@ class Curriculum(StrEnum):
     dr = "dr"
     dr_easy = "dr_easy"
     dr_mixed = "dr_mixed"
+    terrain_cl = "terrain_cl"
     accel = "accel"
     plr = "plr"
     paired = "paired"
@@ -46,6 +47,7 @@ class Mutation(StrEnum):
 class Score(StrEnum):
     pvl = "pvl"
     learnability = "learnability"
+    lp = "lp"
 
 
 class Generator(StrEnum):
@@ -98,6 +100,8 @@ class ModeConfig:
     mutation: Mutation = MISSING
     grow_max: float = MISSING
     score: Score = MISSING
+    lp_fast_rate: float = MISSING
+    lp_slow_rate: float = MISSING
     generator: Generator = MISSING
     latent_dim: int = MISSING
     gen_learning_rate: float = MISSING
