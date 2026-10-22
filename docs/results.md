@@ -24,9 +24,11 @@ just paper-tables eval_dir=<evals> \
   ACCEL, ACCEL-grow, ACCEL-SFL, PAIRED, PAIRED+UniBC, PAIRED+BiBC,
   PAIRED+Evo; other methods follow under their own name; missing ones are
   skipped.
-- `main.tex`: success (%) per method x robot: `random/d0.25` mean, its
-  CVaR25, `suite/success_rate`, `flat/success_rate`; mean ± std over
-  seeds, best per column in bold, `--` if absent.
+- `main.tex`: success (%) per method x robot: `random/d0.25` mean and
+  `suite/success_rate`; mean ± std over seeds, best per column in bold,
+  `--` if absent.
+- `detail.tex` (appendix): `random/d0.25` mean, its CVaR25, `random/d0.5`,
+  suite and `flat/success_rate` per robot x method.
 - `uniform.tex` (appendix): `param/uniform` mean, its CVaR25 and the
   solvable subset per robot x method (why not the main table:
   [Domination comparison](#domination-comparison)).
