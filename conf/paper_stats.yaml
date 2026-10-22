@@ -22,7 +22,7 @@ pairs:
   - [terrain_cl, dr]
   - [accel_lp, accel]
   - [accel_lp, dr]
-reps: 50000
+reps: 10000
 poi_reps: 2000
 seed: 0
 out: artifacts/paper/stats

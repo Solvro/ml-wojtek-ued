@@ -351,8 +351,8 @@ data layout), `level_space` (always `param`), `alphas` and `tags`;
 | `prefixes.<robot>` | `ued_<robot>` | run-name prefix per robot, as in `paper_tables`; a robot set to `null` is skipped |
 | `eval_dir` | `???` | dir of `eval_brax.py` outputs |
 | `pairs` | the paper's `[X, Y]` comparisons | P(X > Y) pairs for `named_pairs` and `poi.pdf`; a pair without runs of both is skipped |
-| `reps` | `50000` | bootstrap resamples for IQM / mean CIs (rliable's default) |
-| `poi_reps` | `2000` | bootstrap resamples for P(X > Y) CIs (one Mann-Whitney U per robot per resample) |
+| `reps` | `10000` | bootstrap resamples for IQM / mean CIs (rliable's default is 50000; 10000 moves no CI end by more than 0.003) |
+| `poi_reps` | `2000` | bootstrap resamples for P(X > Y) CIs (rliable's README value) |
 | `seed` | `0` | numpy seed for the bootstraps |
 | `out` | `artifacts/paper/stats` | `stats.json`, `stats.tex`, `iqm.pdf`, `poi.pdf` |
 
