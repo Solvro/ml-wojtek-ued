@@ -191,9 +191,11 @@ just domination eval_dir=<evals> method_a=accel method_b=dr
     counts, row = A's bin, column = B's bin); `matrix`.
   - `domination_<a>_vs_<b>.pdf`: one heatmap per robot in a row, plus
     `domination_<a>_vs_<b>_<robot>.{pdf,png}`.
-  - `domination_matrix.pdf`: per robot, methods x methods, cell = fraction
-    of levels where the row method's rate beats the column's
-    (`row_better`; the diagonal is 0, `M[a,b] + M[b,a] + ties = 1`).
+  - `domination_matrix.pdf`: per robot, methods x methods, cell colour =
+    fraction of levels where the row method's rate beats the column's
+    (`row_better`; the diagonal is blank, `M[a,b] + M[b,a] + ties = 1`),
+    no cell labels, robots in a 3-column grid with the colorbar in the
+    spare slot.
 - Reading the heatmap: x = A's solve rate, y = B's, `bins` (10) bins of
   10 %, the last one closed at 100 %; cells show the fraction of levels
   (sum 1) on one log scale for every robot, from a single level of the
