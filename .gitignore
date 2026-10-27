@@ -8,7 +8,9 @@ runs/
 wandb/
 artifacts/
 multirun/
+experiments/
 .env
+.DS_Store
 
 # generated MJX model + terrain arenas (build_model.py / build_terrain.py outputs)
 assets/wojtek_description/mujoco/wojtek_mjx.xml
