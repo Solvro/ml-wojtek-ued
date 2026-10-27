@@ -27,6 +27,8 @@ CMAP.set_bad("white")
 INK_MUTED = "#52514e"
 DIAGONAL = "#9a9893"
 PANEL = 2.4
+MATRIX_PANEL = 3.0
+MATRIX_COLUMNS = 3
 
 
 def _label(method: str) -> str:
@@ -130,18 +132,6 @@ def draw_matrix(ax: Any, robot: str, report: RobotReport) -> Any:
         cmap=CMAP,
         norm=Normalize(0, 1),
     )
-    for i, j in np.ndindex(values.shape):
-        if i != j:
-            ink = "white" if values[i, j] > 0.5 else "black"
-            ax.text(
-                j,
-                i,
-                f"{values[i, j]:.0%}",
-                ha="center",
-                va="center",
-                fontsize=5.5,
-                color=ink,
-            )
     labels = [_label(m) for m in methods]
     ax.set_xticks(range(len(methods)), labels, rotation=45, ha="right")
     ax.set_yticks(range(len(methods)), labels)
@@ -154,16 +144,27 @@ def plot_matrices(report: Report, out: Path) -> Path:
     """Per robot: the fraction of levels where the row method's solve rate
     beats the column method's."""
     robots = report.robots
+    rows = -(-len(robots) // MATRIX_COLUMNS)
     fig, axes = plt.subplots(
-        1,
-        len(robots),
-        figsize=(PANEL * len(robots) + 1.0, PANEL + 0.6),
+        rows,
+        MATRIX_COLUMNS,
+        figsize=(MATRIX_PANEL * MATRIX_COLUMNS, MATRIX_PANEL * rows),
         squeeze=False,
         layout="constrained",
     )
-    for ax, (robot, rep) in zip(axes[0], robots.items(), strict=True):
+    flat = list(axes.flat)
+    for ax, (robot, rep) in zip(flat, robots.items(), strict=False):
         image = draw_matrix(ax, robot, rep)
-    bar = fig.colorbar(image, ax=axes, shrink=0.8, pad=0.03)
+    spare = flat[len(robots) :]
+    for ax in spare:
+        ax.set_axis_off()
+    bar = fig.colorbar(
+        image,
+        ax=spare or flat,
+        location="left" if spare else "right",
+        shrink=0.6,
+        aspect=12,
+    )
     bar.set_label("levels where row beats column", fontsize=7)
     bar.ax.tick_params(labelsize=6)
     path = out / "domination_matrix.pdf"
