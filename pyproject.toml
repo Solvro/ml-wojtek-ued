@@ -1,8 +1,8 @@
 [project]
 name = "quadruped-ued-benchmark"
 version = "0.1.0"
-description = "Unsupervised Environment Design for quadruped locomotion on procedural terrain: 12 UED/DR curricula x 5 quadrupeds"
-license = "Apache-2.0"
+description = "Unsupervised Environment Design for quadruped locomotion on procedural terrain: 14 UED/DR curricula x 5 quadrupeds"
+license = "MIT"
 requires-python = ">=3.11,<3.13"
 dependencies = [
     # jax 0.9.2 is the proven pin for this driver family; cuda extra only on linux
